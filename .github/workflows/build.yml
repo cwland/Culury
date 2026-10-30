@@ -34,13 +34,13 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
-      - name: API: install, typecheck, test
+      - name: "API: install, typecheck, test"
         working-directory: backend
         run: |
           npm ci
           npm run typecheck
           npm test
-      - name: Web app: install and build
+      - name: "Web app: install and build"
         working-directory: frontend
         run: |
           npm ci
