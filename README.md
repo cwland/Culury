@@ -10,8 +10,8 @@ Built in steps:
 |---|---|---|
 | 1 | Foundation: sign-in (password, passkeys, OAuth), devices, API keys with scopes, AI services with failover, email, logs, backups, themes + dark mode, Docker, CI | **Done** |
 | 2 | Recipes: database, add/edit, ingredient parsing, tags, categories, collections, favorites, ratings, notes, substitutions, full-text search | **Done** |
-| 3 | Import: schema.org JSON-LD, AI fallback, background jobs, photo uploads | Next |
-| 4 | Recipe pages and Cook Mode (wake lock, steps, timers, scaling, units) | |
+| 3 | Import: schema.org JSON-LD, AI fallback, pasted text, background jobs, photo uploads, Android share | **Done** |
+| 4 | Cook Mode (wake lock, steps, timers, scaling, units) | Next |
 | 5 | Meal planner calendar | |
 | 6 | Grocery lists and pantry, household sync | |
 | 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas | |
@@ -91,6 +91,16 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   https://recipes.example.com/api/recipes
 ```
 
+Import a recipe from a link (or `"text"` for pasted text). `"wait"` holds the request up to that many seconds so you get the result in one go; without it you get a job to check at `GET /api/imports/:id`:
+
+```
+curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  -d '{"url":"https://www.seriouseats.com/...","wait":30}' \
+  https://recipes.example.com/api/recipes/import
+```
+
+For an **iOS Shortcut** that imports from the share sheet: *Receive URLs from Share Sheet* → *Get Contents of URL* (method POST, header `X-API-Key`, JSON body `url` = Shortcut Input, `wait` = 30) → *Show Result*. A Recipe push key is all it needs.
+
 Main recipe routes: `GET /api/recipes?q=&tag=&category=&collection=&favorite=true&sort=recent|newest|title|rating`, `GET/PATCH/DELETE /api/recipes/:id`, `POST /api/recipes/:id/duplicate`, `PUT /api/recipes/:id/me` (your favorite, pin, rating, notes; signed in only), `POST /api/recipes/:id/substitutions`, and `/api/tags`, `/api/categories`, `/api/collections`.
 
 ### API key access
@@ -136,6 +146,15 @@ A passkey belongs to the address it was added on, and browsers only offer them o
 4. Optional: **OAuth only** hides the password form.
 
 **Locked out?** `docker compose exec culury npm run auth:reset`, or set `EMERGENCY_DISABLE_OAUTH=true` in `.env` and restart.
+
+## Importing recipes
+
+- **From a link:** recipe sites that include schema.org recipe data (most do) import without AI. Other pages, and TikTok, Instagram or YouTube videos (their description), are read by your AI service.
+- **Pasted text:** read straight away when it has "Ingredients" and "Instructions" headings, otherwise by AI.
+- Imports run in the background (a job queue in PostgreSQL), so they survive a restart. Results and problems show in Settings › Logs › Imports.
+- Some sites turn away apps (403). Paste the recipe text instead.
+- The server fetches links for you, so it refuses addresses that point at itself (localhost, link-local). Pages on your LAN import fine.
+- Photos are saved in `/app/data/photos` (resized to 1600 px, WebP) and served at `/api/photos/...` without signing in (the names are random). Unused ones are cleared daily.
 
 ## AI
 

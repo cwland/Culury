@@ -10,6 +10,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.3.0",
+    date: "2026-10-30",
+    title: "Import",
+    changes: [
+      "Add recipe › From a link: most recipe sites import as they are (their schema.org recipe data), with the photo saved here. Other pages, and TikTok, Instagram or YouTube videos, are read by your AI service.",
+      "Add recipe › Paste the recipe: with Ingredients and Instructions headings it's read straight away; anything else goes to your AI service.",
+      "Already have it? Importing the same page again opens the one you saved (or keeps another copy if you ask).",
+      "Imports run in the background, so a slow site or AI never freezes the app. Recent imports, and why one didn't work, show in the Add recipe window and in Settings › Logs › Imports.",
+      "Photos: add or change a recipe's photo from its page (click or drop a file) or in the editor. Photos are resized and kept on your server.",
+      "On Android, share a link to Culury (once it's installed from the browser menu) to import it.",
+      "API: POST /api/recipes/import with a url or text, and \"wait\" for the answer in one request (handy for iOS Shortcuts).",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-10-30",
     title: "Recipes",

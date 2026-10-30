@@ -23,6 +23,12 @@ import exportRoutes from "./routes/export.js";
 import profileRoutes from "./routes/profile.js";
 import settingsRoutes from "./routes/settings.js";
 import recipeRoutes from "./routes/recipes.js";
+import importRoutes from "./routes/imports.js";
+import multipart from "@fastify/multipart";
+import { JobQueue } from "./lib/jobs.js";
+import { Photos } from "./lib/photos.js";
+import { registerImportJobs } from "./lib/importJobs.js";
+import type { FetchImpl, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
 import { AiService, type AiFetch } from "./lib/ai.js";
@@ -45,6 +51,8 @@ declare module "fastify" {
     ai: AiService;
     updates: UpdateService;
     now: () => Date; // the clock (tests set the date)
+    jobs: JobQueue;
+    photos: Photos;
   }
   interface FastifyRequest {
     auth?: { method: "token"; userId: number; sessionId: number } | { method: "apiKey"; keyId: number };
@@ -67,6 +75,9 @@ export interface AppOptions {
   githubToken?: string | null; // GITHUB_TOKEN: needed while that repository is private
   now?: () => Date; // tests set "today"
   rateLimit?: RateLimitOptions | false; // limits on sign-in routes and unknown API keys (tests turn it off)
+  photoDir?: string; // where recipe photos are kept (<data>/photos)
+  importFetch?: FetchImpl; // tests swap in fake web pages
+  importResolve?: Resolve; // tests skip DNS
 }
 
 // Everything Culury keeps on disk lives under DATA_DIR (/app/data in Docker; <repo>/data otherwise)
@@ -76,6 +87,7 @@ export const defaultBackupDir = path.join(process.env.DATA_DIR || defaultDataDir
 
 // Routes anyone can call without logging in
 const PUBLIC_ROUTES = new Set([
+  "GET /api/photos/:name",
   "GET /api/health",
   "GET /api/auth/status",
   "POST /api/auth/setup",
@@ -89,7 +101,7 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/auth/oauth/finish",
 ]);
 
-export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT }: AppOptions): FastifyInstance {
+export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT, photoDir = path.join(process.env.DATA_DIR || defaultDataDir, "photos"), importFetch, importResolve }: AppOptions): FastifyInstance {
   if (!jwtSecret || jwtSecret.length < 16) {
     throw new Error("JWT_SECRET must be set to at least 16 characters");
   }
@@ -109,6 +121,10 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("ai", new AiService(db, jwtSecret, aiFetch));
   app.decorate("now", now);
   app.decorate("updates", new UpdateService(db, updateRepo, githubToken, updateFetch, now));
+  app.decorate("photos", new Photos(photoDir));
+  app.decorate("jobs", new JobQueue(db));
+  registerImportJobs(app.jobs, { db, ai: app.ai, photos: app.photos, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } });
+  app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
   securityHeaders(app);
   const limits = rateLimits(app, rateLimit);
@@ -210,6 +226,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(profileRoutes);
   app.register(settingsRoutes);
   app.register(recipeRoutes);
+  app.register(importRoutes);
   app.register(organizeRoutes);
 
   return app;

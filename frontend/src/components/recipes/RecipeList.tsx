@@ -3,8 +3,11 @@ import { api } from "../../api";
 import { formatMinutes, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
 import { ChefIcon, ClockIcon, FilterIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
 import { Popup } from "../Popup";
+import ImportDialog from "./ImportDialog";
 
 type Filters = { q: string; tag: string; category: string; collection: string; favorite: string; sort: string };
+// Open the import dialog from anywhere (the empty state, the menu)
+export const openImport = () => window.dispatchEvent(new Event("culury:import"));
 const KEYS: (keyof Filters)[] = ["q", "tag", "category", "collection", "favorite", "sort"];
 const fromParams = (p: URLSearchParams): Filters => Object.fromEntries(KEYS.map((k) => [k, p.get(k) ?? ""])) as Filters;
 
@@ -24,6 +27,13 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
   const [categories, setCategories] = useState<TagInfo[]>([]);
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // ?import=<link or text>: shared from another app (Android share sheet), or a bookmarklet
+  const [importing, setImporting] = useState<{ initial?: string } | null>(() => (params.get("import") ? { initial: params.get("import")! } : null));
+  useEffect(() => {
+    const open = () => setImporting({});
+    window.addEventListener("culury:import", open);
+    return () => window.removeEventListener("culury:import", open);
+  }, []);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -105,9 +115,9 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="mr-auto text-2xl font-semibold">{heading}</h1>
-          <a href="#/recipes/new" className="flex items-center gap-1.5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed">
+          <button type="button" onClick={() => setImporting({})} className="flex items-center gap-1.5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed">
             <PlusIcon className="size-4" /> Add recipe
-          </a>
+          </button>
         </div>
         {collection?.description && <p className="mt-1 text-subtle">{collection.description}</p>}
 
@@ -157,6 +167,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
         {data && data.recipes.length === 0 && <Empty searching={!!(f.q || f.tag || f.category || f.collection || f.favorite)} />}
       </div>
 
+      {importing && <ImportDialog initial={importing.initial} onClose={() => setImporting(null)} />}
       {filtersOpen && (
         <Popup title="Browse" onClose={() => setFiltersOpen(false)}>
           <div className="p-5">{sidebar}</div>
@@ -282,10 +293,10 @@ function Empty({ searching }: { searching: boolean }) {
       ) : (
         <>
           <p className="mt-4 text-lg">Your recipe box is empty.</p>
-          <p className="mt-1 text-subtle">Add your first recipe: type it in or paste it. Importing from links and photos comes next.</p>
-          <a href="#/recipes/new" className="mt-5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed">
+          <p className="mt-1 text-subtle">Add your first one from a link to any recipe site, by pasting it, or by typing it in.</p>
+          <button type="button" onClick={openImport} className="mt-5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed">
             Add a recipe
-          </a>
+          </button>
         </>
       )}
     </section>

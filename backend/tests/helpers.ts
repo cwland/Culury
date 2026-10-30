@@ -21,13 +21,24 @@ import type { RateLimitOptions } from "../src/lib/security.js";
 const url = process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/culury_test";
 if (!url.includes("test")) throw new Error("TEST_DATABASE_URL must point at a test database");
 
-export async function setupTestApp(opts: { email?: boolean; backupKey?: string; jwtSecret?: string; oauthFetch?: typeof fetch; githubToken?: string; rateLimit?: RateLimitOptions } = {}) {
+export async function setupTestApp(opts: { email?: boolean; pages?: Record<string, { status?: number; type?: string; body: string | Buffer; location?: string }>; backupKey?: string; jwtSecret?: string; oauthFetch?: typeof fetch; githubToken?: string; rateLimit?: RateLimitOptions } = {}) {
   const { db, pool } = createDb(url);
   await db.execute(sql`drop schema if exists public cascade`);
   await db.execute(sql`drop schema if exists drizzle cascade`);
   await db.execute(sql`create schema public`);
   await runMigrations(db);
   const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-backups-"));
+  const photoDir = fs.mkdtempSync(path.join(os.tmpdir(), "culury-photos-"));
+  // Fake web for imports: pages[url] = { status, type, body, location }. Unknown addresses: 404.
+  const web = { pages: { ...(opts.pages ?? {}) } as Record<string, { status?: number; type?: string; body: string | Buffer; location?: string }>, calls: [] as string[] };
+  const importFetch = async (url: string) => {
+    web.calls.push(url);
+    const p = web.pages[url];
+    if (!p) return new Response("not found", { status: 404 });
+    const headers: Record<string, string> = { "content-type": p.type ?? "text/html; charset=utf-8" };
+    if (p.location) headers.location = p.location;
+    return new Response(typeof p.body === "string" ? p.body : new Uint8Array(p.body), { status: p.status ?? 200, headers });
+  };
   // Fake mail transport: records messages (and the settings used) instead of sending
   const sent: (MailMessage & { from: string; config: EmailConfig })[] = [];
   const failNext = { value: "" };
@@ -77,6 +88,9 @@ export async function setupTestApp(opts: { email?: boolean; backupKey?: string; 
     oauthFetch: opts.oauthFetch,
     backupKeep: 3,
     rateLimit: opts.rateLimit ?? false,
+    photoDir,
+    importFetch,
+    importResolve: async () => ["93.184.216.34"],
     emailEnv,
     mailTransport: (config) => ({
       sendMail: async (m) => {
@@ -108,6 +122,8 @@ export async function setupTestApp(opts: { email?: boolean; backupKey?: string; 
     db,
     api,
     backupDir,
+    photoDir,
+    web,
     sent,
     failNext,
     ai,
@@ -115,6 +131,9 @@ export async function setupTestApp(opts: { email?: boolean; backupKey?: string; 
     clock,
     async reset() {
       clock.date = null;
+      web.pages = {};
+      web.calls.length = 0;
+      for (const f of fs.readdirSync(photoDir)) fs.rmSync(path.join(photoDir, f), { force: true });
       sent.length = 0;
       failNext.value = "";
       ai.calls.length = 0;
@@ -123,7 +142,7 @@ export async function setupTestApp(opts: { email?: boolean; backupKey?: string; 
       github.calls.length = 0;
       github.down = false;
       github.respond = () => ({ status: 404, json: { message: "Not Found" } });
-      await db.execute(sql`truncate users, password_resets, app_settings, api_keys, sessions, login_events, app_log, passkeys, recipes, tags, categories, collections, substitutions restart identity cascade`);
+      await db.execute(sql`truncate users, password_resets, app_settings, api_keys, sessions, login_events, app_log, passkeys, recipes, tags, categories, collections, substitutions, jobs restart identity cascade`);
       await db.execute(sql`insert into categories (name, sort_order) values ('Breakfast', 0), ('Lunch', 1), ('Dinner', 2), ('Side', 3), ('Snack', 4), ('Dessert', 5), ('Drink', 6)`);
       resetSessionTouches();
       resetLoginLockouts();
@@ -142,6 +161,7 @@ export async function setupTestApp(opts: { email?: boolean; backupKey?: string; 
     },
     async close() {
       fs.rmSync(backupDir, { recursive: true, force: true });
+      fs.rmSync(photoDir, { recursive: true, force: true });
       await app.close();
       await pool.end();
     },

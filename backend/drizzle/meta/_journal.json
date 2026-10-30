@@ -15,6 +15,13 @@
       "when": 1793337313218,
       "tag": "0001_recipes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793371460733,
+      "tag": "0002_jobs",
+      "breakpoints": true
     }
   ]
 }

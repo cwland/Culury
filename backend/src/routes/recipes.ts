@@ -35,14 +35,22 @@ export default async function recipeRoutes(app: FastifyInstance) {
   // Change any of its fields (tags, categories and collections, when given, replace the old ones)
   app.patch("/api/recipes/:id", async (req) => {
     const { id } = idParam.parse(req.params);
-    await saveRecipe(db, id, updateRecipe.parse(req.body), userOf(req));
+    const body = updateRecipe.parse(req.body);
+    const [before] = await db.select({ imageUrl: recipes.imageUrl }).from(recipes).where(eq(recipes.id, id));
+    await saveRecipe(db, id, body, userOf(req));
+    // A new photo (or none): the old one goes, if it was uploaded here and nothing else uses it
+    if (body.imageUrl !== undefined && before?.imageUrl && body.imageUrl !== before.imageUrl) {
+      const [other] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.imageUrl, before.imageUrl));
+      if (!other) await app.photos.remove(before.imageUrl);
+    }
     return loadRecipe(db, id, userOf(req));
   });
 
   app.delete("/api/recipes/:id", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    const gone = await db.delete(recipes).where(eq(recipes.id, id)).returning({ id: recipes.id });
+    const gone = await db.delete(recipes).where(eq(recipes.id, id)).returning({ id: recipes.id, imageUrl: recipes.imageUrl });
     if (!gone.length) throw notFound("Recipe");
+    await app.photos.remove(gone[0].imageUrl); // (only photos uploaded here)
     return reply.status(204).send();
   });
 

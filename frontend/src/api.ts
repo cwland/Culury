@@ -88,3 +88,14 @@ export interface BackupInfo {
   size: number;
   createdAt: string;
 }
+
+// Upload one photo (multipart). Returns the new picture's address.
+export async function uploadPhoto(path: string, file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const token = getToken();
+  const res = await fetch(path, { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {}, body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.error ?? `Upload failed (${res.status})`);
+  return data.imageUrl as string;
+}

@@ -5,7 +5,7 @@ import { Card } from "./settingsUi";
 interface LogRow {
   id: number;
   at: string;
-  category: "email" | "ai" | "bank" | "api" | "schedule";
+  category: "email" | "ai" | "api" | "import" | "schedule";
   level: "info" | "warning" | "error";
   source: string | null;
   event: string;
@@ -17,11 +17,11 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "email", label: "Email" },
   { id: "ai", label: "AI" },
-  { id: "bank", label: "Bank sync" },
+  { id: "import", label: "Imports" },
   { id: "api", label: "API" },
   { id: "schedule", label: "Scheduled tasks" },
 ];
-const CATEGORY_LABEL: Record<LogRow["category"], string> = { email: "Email", ai: "AI", bank: "Bank sync", api: "API", schedule: "Scheduled" };
+const CATEGORY_LABEL: Record<LogRow["category"], string> = { email: "Email", ai: "AI", api: "API", import: "Imports", schedule: "Scheduled" };
 const LEVEL: Record<LogRow["level"], { mark: string; cls: string; label: string }> = {
   info: { mark: "✓", cls: "text-success", label: "OK" },
   warning: { mark: "!", cls: "text-warning", label: "Warning" },
@@ -65,7 +65,7 @@ export default function LogsSettings() {
   const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
 
   return (
-    <Card title="Logs" description="What the app has been doing, and anything that went wrong: emails, AI services, bank syncs, API requests and scheduled tasks. Kept for 30 days.">
+    <Card title="Logs" description="What the app has been doing, and anything that went wrong: emails, AI services, recipe imports, API requests and scheduled tasks. Kept for 30 days.">
       <div className="flex flex-wrap items-center gap-2">
         <div role="radiogroup" aria-label="Type of log" className="flex flex-wrap gap-1 rounded-lg bg-page p-1">
           {FILTERS.map((f) => {

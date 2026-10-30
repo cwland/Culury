@@ -6,8 +6,9 @@ import { appLog } from "../db/schema.js";
 //  - email:    every email sent or failed (type and subject, never the message)
 //  - ai:       an AI service that didn't answer, timed out, or answered with something unusable
 //  - api:      requests from API keys that were refused, and server errors
-//  - schedule: scheduled task runs (backups, imports, reminders)
-export const LOG_CATEGORIES = ["email", "ai", "api", "schedule"] as const;
+//  - import:   recipes imported (or not) from links and pasted text
+//  - schedule: scheduled task runs (backups, reminders)
+export const LOG_CATEGORIES = ["email", "ai", "api", "import", "schedule"] as const;
 export type LogCategory = (typeof LOG_CATEGORIES)[number];
 export type LogLevel = "info" | "warning" | "error";
 export const LOG_DAYS = 30;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ApiError, api } from "../../api";
+import { ApiError, api, uploadPhoto } from "../../api";
 import { ingredientsText, stepsText, type CollectionInfo, type Recipe, type TagInfo } from "../../recipes";
 import { clearUnsaved, useUnsavedGuard } from "../../unsavedGuard";
 import { BackIcon, CloseIcon } from "../Icons";
@@ -138,10 +138,32 @@ export default function RecipeEditor({ id }: { id?: number }) {
           </label>
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
             <label className="block">
-              <span className={labelText}>Photo address</span>
-              <input aria-label="Photo address" value={form.imageUrl} onChange={(e) => set("imageUrl", e.target.value)} className={field} placeholder="https://…/photo.jpg" inputMode="url" />
+              <span className={labelText}>Photo</span>
+              <input aria-label="Photo address" value={form.imageUrl.startsWith("/api/photos/") ? "Uploaded photo" : form.imageUrl} readOnly={form.imageUrl.startsWith("/api/photos/")} onChange={(e) => set("imageUrl", e.target.value)} className={field} placeholder="Upload one, or paste a picture address (https://…)" inputMode="url" />
               <Err k="imageUrl" />
-              <span className="mt-1 block text-xs text-muted">Uploading photos comes with import.</span>
+              <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setError("");
+                    try {
+                      set("imageUrl", await uploadPhoto("/api/photos", file));
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                />
+                Upload a photo
+              </label>
+              {form.imageUrl && (
+                <button type="button" onClick={() => set("imageUrl", "")} className="ml-2 px-2 py-2 text-sm font-semibold text-error hover:underline">
+                  Remove photo
+                </button>
+              )}
             </label>
             <RecipeImage src={form.imageUrl.trim() || null} title="" className="mt-6 hidden aspect-[4/3] w-full rounded-lg sm:flex" />
           </div>

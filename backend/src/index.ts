@@ -27,6 +27,12 @@ const app = buildApp({
 // Production (Docker): the API also serves the built web app from WEB_DIR
 if (process.env.WEB_DIR) await serveWeb(app, path.resolve(process.env.WEB_DIR));
 
+// Background jobs (recipe imports). Once a day: old finished jobs and unused photos are cleared away.
+await app.jobs.start(async () => {
+  const removed = await app.photos.sweep(db);
+  if (removed) app.log.info(`Removed ${removed} unused photo(s)`);
+});
+
 // Daily automatic backup (set BACKUP_ENABLED=false to turn off)
 if (process.env.BACKUP_ENABLED !== "false") {
   startBackupSchedule(db, backupDir, backupKeep, {

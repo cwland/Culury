@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api } from "../../api";
+import { api, uploadPhoto } from "../../api";
 import { formatMinutes, formatQuantity, listAddress, siteName, unitLabel, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
 import { BackIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
@@ -49,11 +49,18 @@ export default function RecipeView({ id }: { id: number }) {
   ].filter(([, m]) => m) as [string, number][];
   const source = r.sourceName || siteName(r.sourceUrl);
 
+  const imported = /[?&]imported=/.test(window.location.hash);
   return (
     <Shell>
+      {imported && (
+        <p role="status" className="mb-3 rounded-lg bg-success-subtle px-4 py-3 text-success">
+          Imported. Give it a quick look, and <a href={`#/recipes/${r.id}/edit`} className="font-semibold underline">edit</a> anything that came through wrong.
+          {/[?&]imported=warn/.test(window.location.hash) && " The photo couldn't be saved here, so it's shown from the site."}
+        </p>
+      )}
       {/* Header: photo, name, the facts, and what you can do with it */}
       <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        <RecipeImage src={r.imageUrl} title={r.title} className="aspect-[4/3] w-full md:aspect-auto md:h-full md:min-h-72" />
+        <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
         <div className="flex flex-col p-5 sm:p-7">
           {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
           <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
@@ -186,6 +193,41 @@ export default function RecipeView({ id }: { id: number }) {
         </Popup>
       )}
     </Shell>
+  );
+}
+
+// The recipe's photo; click (or drop a file) to add or change it
+function PhotoSlot({ recipe, onChange }: { recipe: Recipe; onChange: (url: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const send = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      onChange(await uploadPhoto(`/api/recipes/${recipe.id}/photo`, file));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <label
+      className="group relative block cursor-pointer"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        void send(e.dataTransfer.files[0]);
+      }}
+    >
+      <RecipeImage src={recipe.imageUrl} title={recipe.title} className="aspect-[4/3] h-full w-full md:aspect-auto md:min-h-72" />
+      <input type="file" accept="image/*" className="sr-only" aria-label={recipe.imageUrl ? "Change photo" : "Add a photo"} onChange={(e) => void send(e.target.files?.[0])} />
+      <span className={`absolute bottom-3 left-3 rounded-full bg-container/90 px-3 py-1.5 text-sm font-semibold shadow transition ${recipe.imageUrl && !busy ? "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}>
+        {busy ? "Uploading…" : recipe.imageUrl ? "Change photo" : "Add a photo"}
+      </span>
+      {error && <span role="alert" className="absolute inset-x-3 top-3 rounded bg-error-subtle px-3 py-2 text-sm text-error">{error}</span>}
+    </label>
   );
 }
 

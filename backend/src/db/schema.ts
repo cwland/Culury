@@ -294,3 +294,32 @@ export const substitutions = pgTable(
   },
   (t) => [index("substitutions_recipe_idx").on(t.recipeId)]
 );
+
+// ---------- Background jobs ----------
+// Work that takes a while (importing a recipe from a link, reading pasted text with AI) runs in
+// the background, picked up by the worker in lib/jobs.ts. Finished jobs are kept 30 days.
+export interface JobResult {
+  recipeId?: number;
+  title?: string;
+  duplicateOf?: number; // already in your recipes (import again with force to keep both)
+  how?: "schema.org" | "ai" | "text"; // how the recipe was read
+  warnings?: string[];
+}
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(), // import-url, import-text
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    status: text("status").$type<"queued" | "running" | "done" | "failed">().notNull().default("queued"),
+    result: jsonb("result").$type<JobResult>(),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("jobs_status_idx").on(t.status, t.id)]
+);

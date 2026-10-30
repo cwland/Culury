@@ -1,0 +1,127 @@
+import { asc, ilike } from "drizzle-orm";
+import type { Db } from "../db/index.js";
+import { categories, recipes, type JobResult } from "../db/schema.js";
+import type { AiService } from "./ai.js";
+import { logEvent } from "./appLog.js";
+import { fetchUrl, type FetchOptions } from "./fetchPage.js";
+import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromText, recipeWithAi, type ImportedRecipe } from "./importRecipe.js";
+import type { JobQueue, JobRow } from "./jobs.js";
+import type { Photos } from "./photos.js";
+import { createRecipe, saveRecipe } from "./recipes.js";
+
+interface Deps {
+  db: Db;
+  ai: AiService;
+  photos: Photos;
+  fetchOptions: FetchOptions; // tests swap in fake pages
+}
+
+// A recipe already saved from this page, if any
+export async function findDuplicate(db: Db, url: string) {
+  const want = normalizeUrl(url);
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+  const rows = await db.select({ id: recipes.id, sourceUrl: recipes.sourceUrl }).from(recipes).where(ilike(recipes.sourceUrl, `%${host}%`));
+  return rows.find((r) => r.sourceUrl && normalizeUrl(r.sourceUrl) === want)?.id ?? null;
+}
+
+async function store(d: Deps, r: ImportedRecipe, job: JobRow, how: JobResult["how"]): Promise<JobResult> {
+  const warnings: string[] = [];
+  let imageUrl = r.imageUrl ?? null;
+  // Keep a copy of the picture here, so it stays even if the site changes or goes away
+  if (imageUrl && /^https?:/i.test(imageUrl)) {
+    try {
+      imageUrl = await d.photos.download(imageUrl, d.fetchOptions);
+    } catch (e) {
+      warnings.push(`The photo couldn't be saved (${(e as Error).message}); it's linked from the site instead.`);
+    }
+  }
+  const mine = await d.db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+  const input = createRecipe.parse({
+    title: r.title.slice(0, 300),
+    description: r.description?.slice(0, 5000) ?? null,
+    ingredients: r.ingredients.slice(0, 500).map((i) => i.slice(0, 1000)),
+    steps: r.steps.slice(0, 300).map((s) => (typeof s === "string" ? s.slice(0, 10000) : { section: s.section.slice(0, 200) })),
+    servings: r.servings ?? null,
+    yieldText: r.yieldText ?? null,
+    prepMinutes: r.prepMinutes ?? null,
+    cookMinutes: r.cookMinutes ?? null,
+    totalMinutes: r.totalMinutes ?? (r.prepMinutes || r.cookMinutes ? (r.prepMinutes ?? 0) + (r.cookMinutes ?? 0) : null),
+    sourceUrl: r.sourceUrl?.slice(0, 2000) ?? null,
+    sourceName: r.sourceName?.slice(0, 200) ?? null,
+    imageUrl,
+    tags: (r.tags ?? []).map((t) => t.slice(0, 60)).slice(0, 12),
+    categories: matchCategories(r.categories ?? [], mine),
+  });
+  const recipeId = await saveRecipe(d.db, null, input, job.createdBy);
+  return { recipeId, title: input.title, how, ...(warnings.length ? { warnings } : {}) };
+}
+
+export function registerImportJobs(queue: JobQueue, d: Deps) {
+  // A link: schema.org data on the page, or AI on the page's text (or a video's description)
+  queue.handle("import-url", async (job) => {
+    const { url, force } = job.payload as { url: string; force?: boolean };
+    try {
+      if (!force) {
+        const dup = await findDuplicate(d.db, url);
+        if (dup) return { duplicateOf: dup };
+      }
+      const page = await fetchUrl(url, d.fetchOptions);
+      if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
+      const html = page.body.toString("utf8");
+      const info = pageInfo(html, page.url);
+      const sourceUrl = info.canonical && new URL(info.canonical).hostname === new URL(page.url).hostname ? info.canonical : page.url;
+      if (!force && sourceUrl !== url) {
+        const dup = await findDuplicate(d.db, sourceUrl);
+        if (dup) return { duplicateOf: dup };
+      }
+      const found = recipeFromJsonLd(html, page.url);
+      let r: ImportedRecipe;
+      let how: JobResult["how"];
+      if (found) {
+        r = found;
+        how = "schema.org";
+      } else {
+        const text = [info.title && `Title: ${info.title}`, info.description && `Summary: ${info.description}`, info.videoDescription && `Video description:\n${info.videoDescription}`, info.text && `Page text:\n${info.text}`].filter(Boolean).join("\n\n");
+        r = await recipeWithAi(d.ai, text, `This is from ${page.url}.`);
+        how = "ai";
+      }
+      const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName }, job, how);
+      await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${how === "ai" ? " with AI" : ""}`, detail: result.warnings?.join(" ") ?? url });
+      return result;
+    } catch (e) {
+      await logEvent(d.db, { category: "import", level: "warning", source: url.slice(0, 200), event: "Couldn't import a recipe", detail: (e as Error).message });
+      throw e;
+    }
+  });
+
+  // Pasted text: read directly when it has Ingredients / Instructions headings, otherwise with AI
+  queue.handle("import-text", async (job) => {
+    const { text } = job.payload as { text: string };
+    try {
+      const plainRead = recipeFromText(text);
+      const r = plainRead ?? (await recipeWithAi(d.ai, text));
+      const result = await store(d, r, job, plainRead ? "text" : "ai");
+      await logEvent(d.db, { category: "import", level: "info", source: "Pasted text", event: `Imported "${result.title}"${plainRead ? "" : " with AI"}` });
+      return result;
+    } catch (e) {
+      await logEvent(d.db, { category: "import", level: "warning", source: "Pasted text", event: "Couldn't import a recipe", detail: (e as Error).message });
+      throw e;
+    }
+  });
+}
+
+export const jobView = (j: JobRow) => ({
+  id: j.id,
+  kind: j.kind,
+  status: j.status,
+  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : "Pasted text",
+  result: j.result ?? null,
+  error: j.error,
+  createdAt: j.createdAt,
+  finishedAt: j.finishedAt,
+});
