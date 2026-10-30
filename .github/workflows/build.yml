@@ -77,3 +77,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Load the image to try it
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: culury:ci
+          cache-from: type=gha
+      - name: "Smoke test: the image starts its tools and resizes a photo"
+        run: |
+          docker run --rm --entrypoint node culury:ci -e "
+            const sharp = require('sharp');
+            sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#20b35b' } }).jpeg().toBuffer()
+              .then((b) => sharp(b).resize({ width: 1600, height: 1600, fit: 'inside' }).webp().toBuffer())
+              .then((w) => sharp(w).metadata())
+              .then((m) => { if (m.width !== 1600 || m.format !== 'webp') throw new Error('resize failed'); console.log('sharp ok', m.width, m.format); })
+              .catch((e) => { console.error(e); process.exit(1); });"
+          docker run --rm --entrypoint sh culury:ci -c "test -f dist/index.js && test -f web/index.html && test -d drizzle && echo layout ok"
