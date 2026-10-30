@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   jsonb,
   date,
+  real,
   primaryKey,
   customType,
 } from "drizzle-orm/pg-core";
@@ -346,3 +347,55 @@ export const mealPlan = pgTable(
   },
   (t) => [index("meal_plan_date_idx").on(t.date, t.slot, t.position), index("meal_plan_recipe_idx").on(t.recipeId)]
 );
+
+// ---------- Grocery lists and pantry ----------
+export const groceryLists = pgTable("grocery_lists", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Where an item on the list came from ("Chili", "Pizza") so you know what it's for
+export interface ItemSource {
+  recipeId?: number;
+  title: string;
+}
+
+export const groceryItems = pgTable(
+  "grocery_items",
+  {
+    id: serial("id").primaryKey(),
+    listId: integer("list_id")
+      .notNull()
+      .references(() => groceryLists.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    quantity: real("quantity"), // null: just "some"
+    unit: text("unit"),
+    note: text("note"),
+    aisle: text("aisle").notNull().default("other"), // lib/grocery.ts AISLES
+    aisleBy: text("aisle_by").$type<"words" | "ai" | "you">().notNull().default("words"), // who sorted it
+    checked: boolean("checked").notNull().default(false),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    position: integer("position").notNull().default(0),
+    sources: jsonb("sources").$type<ItemSource[]>().notNull().default([]),
+    addedBy: integer("added_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("grocery_items_list_idx").on(t.listId, t.checked)]
+);
+
+// What's at home. Staples (salt, oil...) are things you always have: never added to a list.
+export const pantryItems = pgTable("pantry_items", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  quantity: real("quantity"),
+  unit: text("unit"),
+  aisle: text("aisle").notNull().default("other"),
+  staple: boolean("staple").notNull().default(false),
+  expiresOn: date("expires_on", { mode: "string" }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

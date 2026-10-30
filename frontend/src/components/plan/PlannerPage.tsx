@@ -6,6 +6,8 @@ import { formatMinutes, type RecipeSummary } from "../../recipes";
 import { ChevronLeft, ChevronRight, ClockIcon, PlusIcon, SearchIcon } from "../Icons";
 import { Popup } from "../Popup";
 import { RecipeImage } from "../recipes/RecipeList";
+import AddToListDialog from "../grocery/AddToListDialog";
+import { useLive } from "../../live";
 
 // The meal plan: a week of days and meal slots. Drag recipes in from the list on the right (or use +),
 // drag dishes between days, and tap one to open it, change servings or move it.
@@ -29,6 +31,7 @@ export default function PlannerPage() {
   const [open, setOpen] = useState<PlanEntry | null>(null);
   const [dragging, setDragging] = useState<{ title: string; imageUrl: string | null } | null>(null);
   const [menu, setMenu] = useState(false);
+  const [shopping, setShopping] = useState(false);
 
   useEffect(() => {
     void api<PlannerSettings>("GET", "/api/plan/settings").then((s) => {
@@ -47,6 +50,7 @@ export default function PlannerPage() {
       .catch((e) => setError((e as Error).message));
   }, [start]);
   useEffect(load, [load]);
+  useLive(["plan"], () => load());
 
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -109,6 +113,9 @@ export default function PlannerPage() {
               </button>
               {menu && (
                 <div role="menu" className="absolute right-0 z-30 mt-1 w-60 overflow-hidden rounded-xl bg-container py-1 shadow-[0_8px_28px_rgba(0,0,0,0.16)]" onMouseLeave={() => setMenu(false)}>
+                  <button role="menuitem" type="button" className="block w-full px-4 py-2.5 text-left hover:bg-pressed" onClick={() => (setMenu(false), setShopping(true))}>
+                    Add this week to the grocery list
+                  </button>
                   <button role="menuitem" type="button" className="block w-full px-4 py-2.5 text-left hover:bg-pressed" onClick={() => (setMenu(false), void run(() => api("POST", "/api/plan/copy", { from: addDays(start, -7), to: start })))}>
                     Copy last week into this one
                   </button>
@@ -199,6 +206,7 @@ export default function PlannerPage() {
       <DragOverlay dropAnimation={null}>{dragging && <div className="w-48 rotate-2 rounded-xl bg-container p-2 text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.25)]">{dragging.title}</div>}</DragOverlay>
 
       {adding && <AddDialog settings={settings} at={adding} onClose={() => setAdding(null)} onAdded={() => (setAdding(null), load())} />}
+      {shopping && start && <AddToListDialog title={weekLabel(start)} source={{ from: start, to: addDays(start, 6) }} onClose={() => setShopping(false)} />}
       {open && <EntryDialog e={open} settings={settings} onClose={() => setOpen(null)} onChanged={() => (setOpen(null), load())} />}
     </DndContext>
   );

@@ -134,6 +134,7 @@ export default async function planRoutes(app: FastifyInstance) {
       .insert(mealPlan)
       .values({ date: body.date, slot: body.slot, recipeId: body.recipeId ?? null, title: title!, servings: body.servings ?? null, note: body.note || null, position: await nextPosition(body.date, body.slot), createdBy: userOf(req) })
       .returning({ id: mealPlan.id });
+    app.events.emit({ topic: "plan", by: userOf(req) });
     return reply.status(201).send(await one(row.id));
   });
 
@@ -173,6 +174,7 @@ export default async function planRoutes(app: FastifyInstance) {
       const changes = { servings: body.servings, note: body.note === undefined ? undefined : body.note || null, title: cur.recipeId ? undefined : body.title };
       if (Object.values(changes).some((v) => v !== undefined)) await tx.update(mealPlan).set(changes).where(eq(mealPlan.id, id));
     });
+    app.events.emit({ topic: "plan", by: userOf(req) });
     return one(id);
   });
 
@@ -180,6 +182,7 @@ export default async function planRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const gone = await db.delete(mealPlan).where(eq(mealPlan.id, id)).returning({ id: mealPlan.id });
     if (!gone.length) throw notFound("Planned meal");
+    app.events.emit({ topic: "plan", by: userOf(req) });
     return reply.status(204).send();
   });
 
@@ -192,6 +195,7 @@ export default async function planRoutes(app: FastifyInstance) {
       const date = addDays(r.date, shift);
       await db.insert(mealPlan).values({ date, slot: r.slot, recipeId: r.recipeId, title: r.title, servings: r.servings, note: r.note, position: await nextPosition(date, r.slot), createdBy: userOf(req) });
     }
+    app.events.emit({ topic: "plan", by: userOf(req) });
     return { copied: rows.length };
   });
 
@@ -199,6 +203,7 @@ export default async function planRoutes(app: FastifyInstance) {
   app.delete("/api/plan", async (req) => {
     const q = z.object({ from: isoDate, to: isoDate }).parse(req.query);
     const gone = await db.delete(mealPlan).where(and(gte(mealPlan.date, q.from), lte(mealPlan.date, q.to))).returning({ id: mealPlan.id });
+    app.events.emit({ topic: "plan", by: userOf(req) });
     return { removed: gone.length };
   });
 }

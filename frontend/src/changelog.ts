@@ -10,6 +10,21 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.6.0",
+    date: "2026-10-30",
+    title: "Grocery list and pantry",
+    changes: [
+      "Grocery list: type or paste what you need (“eggs, 2 lb chicken thighs, milk”) and it's sorted by store aisle. Tap to put things in the cart.",
+      "Add to grocery list from any recipe (at the servings you chose) or from the meal plan's Week menu. The same thing from different recipes is added up, so it's one line: 1 lb + ½ lb ground beef is 1½ lb.",
+      "Before anything is added you see the list: what's in your pantry starts unticked, and staples (salt, oil, spices) are never added.",
+      "Everyone in the household sees the list change as it happens, so two people can shop from it at once. The meal plan updates live too.",
+      "Make more lists (Costco, Farmers market) and move items between them.",
+      "Pantry: what you have at home, with use-by dates. When you finish shopping, put what's in the cart into the pantry with one tap.",
+      "Cook with what you have: the pantry shows which recipes you can make, and what you'd still need.",
+      "Home Assistant and other apps can add to the list with a Grocery API key (POST /api/grocery/items).",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-10-30",
     title: "Meal plan and household",

@@ -1,0 +1,171 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { setupTestApp, type TestApp } from "./helpers.js";
+import { guessAisle, itemKey, sameItem, splitLine, tidy } from "../src/lib/grocery.js";
+
+let t: TestApp;
+beforeAll(async () => (t = await setupTestApp()));
+afterAll(async () => t.close());
+let listId: number;
+beforeEach(async () => {
+  await t.reset();
+  await t.login();
+  listId = (await t.api("GET", "/api/grocery/lists")).body[0].id;
+});
+
+const items = async (id = listId) => (await t.api("GET", `/api/grocery/lists/${id}/items`)).body;
+const add = (body: object, id = listId) => t.api("POST", `/api/grocery/lists/${id}/items`, body);
+
+describe("aisles and matching", () => {
+  it("sorts items into store aisles by their words", () => {
+    expect(["2 lb boneless chicken thighs", "yellow onions", "frozen peas", "heavy cream", "kosher salt", "paper towels", "sourdough loaf", "olive oil", "sparkling water", "mystery thing"].map(guessAisle)).toEqual([
+      "meat", "produce", "frozen", "dairy", "spices", "household", "bakery", "pantry", "beverages", "other",
+    ]);
+  });
+  it("knows the same thing written differently", () => {
+    expect(itemKey("Large Yellow Onions, diced")).toBe("onion");
+    expect(itemKey("fresh tomatoes")).toBe("tomato");
+    expect(sameItem("extra-virgin olive oil", "olive oil")).toBe(true);
+    expect(sameItem("chicken stock", "chicken breast")).toBe(false);
+    expect(sameItem("eggs", "egg")).toBe(true);
+  });
+});
+
+describe("typing and amounts", () => {
+  it("splits a typed line into things, keeping prep notes with their item", () => {
+    expect(splitLine("eggs, 2 lb chicken thighs, milk")).toEqual(["eggs", "2 lb chicken thighs", "milk"]);
+    expect(splitLine("1 onion, finely diced, 2 cups rice")).toEqual(["1 onion, finely diced", "2 cups rice"]);
+    expect(splitLine("butter, softened")).toEqual(["butter, softened"]);
+    expect(splitLine("milk, bread, and bananas")).toEqual(["milk", "bread", "bananas"]);
+  });
+  it("moves up to a bigger unit once amounts add up", () => {
+    expect(tidy(35, "tbsp")).toEqual({ quantity: 2.19, unit: "cup" });
+    expect(tidy(24, "oz")).toEqual({ quantity: 1.5, unit: "lb" });
+    expect(tidy(3, "tbsp")).toEqual({ quantity: 3, unit: "tbsp" });
+    expect(tidy(1500, "g")).toEqual({ quantity: 1.5, unit: "kg" });
+  });
+});
+
+describe("grocery list", () => {
+  it("counts what's left on each list", async () => {
+    await add({ text: "eggs, milk, 2 lb chicken" });
+    const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
+    await add({ text: "paper towels" }, costco.id);
+    expect((await t.api("GET", "/api/grocery/lists")).body.map((l: any) => [l.name, l.open])).toEqual([["Groceries", 3], ["Costco", 1]]);
+  });
+
+
+  it("adds typed items, sorted by aisle, and adds the same thing up", async () => {
+    await add({ text: "2 cups flour\n3 eggs\nmilk, bread, and bananas" });
+    const first = await items();
+    expect(first.map((i: any) => [i.name, i.quantity, i.unit, i.aisle])).toEqual([
+      ["bananas", null, null, "produce"],
+      ["eggs", 3, null, "dairy"],
+      ["milk", null, null, "dairy"],
+      ["bread", null, null, "bakery"],
+      ["flour", 2, "cup", "pantry"],
+    ]);
+    const r = await add({ items: [{ name: "flour", quantity: 4, unit: "tbsp" }, { name: "egg", quantity: 2 }] });
+    expect(r.body).toMatchObject({ added: 0, merged: 2 });
+    const after = await items();
+    expect(after.find((i: any) => i.name === "flour")).toMatchObject({ quantity: 2.25, unit: "cup" });
+    expect(after.find((i: any) => i.name === "eggs").quantity).toBe(5);
+  });
+
+  it("checks off, moves, and clears into the pantry", async () => {
+    await add({ text: "2 lb chicken thighs\n1 cup rice" });
+    const list = await items();
+    const rice = list.find((i: any) => i.name === "rice");
+    const chicken = list.find((i: any) => i.name === "chicken thighs");
+    expect((await t.api("PATCH", `/api/grocery/items/${chicken.id}`, { checked: true })).body.checked).toBe(true);
+    expect((await items()).map((i: any) => i.name)).toEqual(["rice", "chicken thighs"]); // checked go last
+    // a checked item isn't topped up: a new line is made
+    await add({ text: "1 lb chicken thighs" });
+    expect((await items()).filter((i: any) => i.name === "chicken thighs")).toHaveLength(2);
+    // choose its aisle yourself
+    expect((await t.api("PATCH", `/api/grocery/items/${rice.id}`, { aisle: "other" })).body).toMatchObject({ aisle: "other", aisleBy: "you" });
+    expect((await t.api("POST", `/api/grocery/lists/${listId}/clear-checked`, { toPantry: true })).body).toEqual({ removed: 1 });
+    expect((await t.api("GET", "/api/pantry")).body.map((p: any) => [p.name, p.quantity, p.unit])).toEqual([["chicken thighs", 2, "lb"]]);
+  });
+
+  it("several lists; Home Assistant adds to the first one", async () => {
+    const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
+    await add({ name: "paper towels" }, costco.id);
+    expect((await items(costco.id)).map((i: any) => i.name)).toEqual(["paper towels"]);
+    const key = (await t.api("POST", "/api/keys", { name: "ha", access: "grocery_write" })).body.key;
+    t.setToken("");
+    const r = await t.api("POST", "/api/grocery/items", { text: "milk" }, { "x-api-key": key });
+    expect(r.body).toMatchObject({ listId, added: 1 });
+    expect((await t.api("GET", `/api/grocery/lists/${listId}/items`, undefined, { "x-api-key": key })).status).toBe(403); // write only
+  });
+});
+
+describe("recipes onto the list", () => {
+  it("adds up what the planned recipes need, and shows what the pantry has", async () => {
+    const chili = (await t.api("POST", "/api/recipes", { title: "Chili", servings: 4, ingredients: "1 lb ground beef\n1 onion, diced\n2 tbsp chili powder\nsalt" })).body;
+    const tacos = (await t.api("POST", "/api/recipes", { title: "Tacos", servings: 2, ingredients: "1/2 lb ground beef\n1 onion\n8 tortillas" })).body;
+    await t.api("POST", "/api/pantry", { text: "chili powder" });
+    await t.api("POST", "/api/pantry", { name: "salt", staple: true });
+    await t.api("POST", "/api/plan", { date: "2026-11-02", slot: "dinner", recipeId: chili.id, servings: 8 });
+    await t.api("POST", "/api/plan", { date: "2026-11-03", slot: "dinner", recipeId: tacos.id });
+    const p = (await t.api("POST", "/api/grocery/preview", { from: "2026-11-02", to: "2026-11-08" })).body;
+    expect(p.recipes).toBe(2);
+    const by = (n: string) => p.lines.find((l: any) => l.name === n);
+    expect(by("ground beef")).toMatchObject({ quantity: 2.5, unit: "lb", aisle: "meat", pantry: null });
+    expect(by("ground beef").sources.map((s: any) => s.title)).toEqual(["Chili", "Tacos"]);
+    expect(by("onion")).toMatchObject({ quantity: 3 });
+    expect(by("chili powder")).toMatchObject({ quantity: 4, pantry: { name: "chili powder", staple: false } });
+    expect(by("salt").pantry).toMatchObject({ staple: true });
+    // the app sends what you kept ticked
+    const keep = p.lines.filter((l: any) => !l.pantry).map(({ name, quantity, unit, sources }: any) => ({ name, quantity, unit, sources }));
+    await add({ items: keep });
+    expect((await items()).map((i: any) => i.name).sort()).toEqual(["ground beef", "onion", "tortillas"]);
+    expect((await items()).find((i: any) => i.name === "ground beef").sources).toHaveLength(2);
+  });
+
+  it("one recipe at a chosen size", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Pancakes", servings: 4, ingredients: "2 cups flour\n2 eggs" })).body;
+    const p = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: r.id, servings: 2 }] })).body;
+    expect(p.lines.map((l: any) => [l.name, l.quantity])).toEqual([["flour", 1], ["eggs", 1]]);
+  });
+});
+
+describe("pantry", () => {
+  it("adds, tops up, marks staples, and finds what you can cook", async () => {
+    await t.api("POST", "/api/pantry", { text: "2 cups rice\neggs" });
+    await t.api("POST", "/api/pantry", { text: "1 cup rice" });
+    const pantry = (await t.api("GET", "/api/pantry")).body;
+    expect(pantry.find((p: any) => p.name === "rice")).toMatchObject({ quantity: 3, unit: "cup" });
+    await t.api("PATCH", `/api/pantry/${pantry[0].id}`, { expiresOn: "2026-11-10", staple: true });
+    await t.api("POST", "/api/recipes", { title: "Fried rice", ingredients: "2 cups cooked rice\n2 eggs\nsoy sauce" });
+    await t.api("POST", "/api/recipes", { title: "Steak", ingredients: "1 steak\nbutter\nthyme" });
+    const can = (await t.api("GET", "/api/recipes/cookable")).body;
+    expect(can.map((r: any) => [r.title, r.have, r.of, r.missing])).toEqual([["Fried rice", 2, 3, ["soy sauce"]]]);
+    expect((await t.api("POST", "/api/pantry/remove", { ids: pantry.map((p: any) => p.id) })).body.removed).toBe(2);
+  });
+});
+
+describe("live updates", () => {
+  it("tells every open app what changed, and who changed it", async () => {
+    const heard: any[] = [];
+    const off = t.app.events.on((e) => heard.push(e));
+    await add({ text: "milk" });
+    await t.api("POST", "/api/pantry", { text: "eggs" });
+    await t.api("POST", "/api/plan", { date: "2026-11-02", slot: "dinner", title: "Pizza night" });
+    off();
+    expect(heard).toEqual([{ topic: "grocery", id: listId, by: 1 }, { topic: "pantry", by: 1, id: undefined }, { topic: "plan", by: 1 }]);
+  });
+
+  it("streams them to signed-in apps", async () => {
+    await t.app.listen({ port: 0, host: "127.0.0.1" });
+    const port = (t.app.server.address() as { port: number }).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/events`, { headers: { authorization: `Bearer ${t.getToken()}` } });
+    expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
+    const reader = res.body!.getReader();
+    await reader.read(); // retry:
+    t.app.events.emit({ topic: "grocery", id: 5, by: 2 });
+    const { value } = await reader.read();
+    expect(new TextDecoder().decode(value)).toBe('data: {"topic":"grocery","id":5,"by":2}\n\n');
+    await reader.cancel();
+    expect((await fetch(`http://127.0.0.1:${port}/api/events`)).status).toBe(401);
+  });
+});

@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
+import { BackIcon, ChefIcon, GroceryIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
+import AddToListDialog from "../grocery/AddToListDialog";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
 import { StepText } from "./StepText";
 import { ingredientLine, recipeUnits, type Units } from "../../cooking";
@@ -16,6 +17,7 @@ export default function RecipeView({ id }: { id: number }) {
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [shopping, setShopping] = useState(false);
   const prefs = useCookPrefs(id);
 
   useEffect(() => {
@@ -107,6 +109,11 @@ export default function RecipeView({ id }: { id: number }) {
                 <ChefIcon className="size-4" /> Start cooking
               </a>
             )}
+            {r.ingredients.length > 0 && (
+              <button type="button" onClick={() => setShopping(true)} className={smallButton}>
+                <GroceryIcon className="size-4" /> Add to grocery list
+              </button>
+            )}
             <button type="button" aria-pressed={r.me.favorite} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${smallButton} ${r.me.favorite ? "border-warning/50 text-warning" : ""}`}>
               <StarIcon filled={r.me.favorite} className="size-4" /> {r.me.favorite ? "Favorite" : "Add to favorites"}
             </button>
@@ -188,6 +195,7 @@ export default function RecipeView({ id }: { id: number }) {
         <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
       </div>
 
+      {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : {}) }] }} onClose={() => setShopping(false)} />}
       {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}
       {confirmDelete && (
         <Popup title="Delete this recipe?" onClose={() => setConfirmDelete(false)}>

@@ -13,7 +13,7 @@ Built in steps:
 | 3 | Import: schema.org JSON-LD, AI fallback, pasted text, background jobs, photo uploads, Android share | **Done** |
 | 4 | Cook Mode: wake lock, step by step, ingredient checklist, tap-to-start timers, servings scaling, metric/US units | **Done** |
 | 5 | Meal planner (drag and drop week, custom meal slots) and household members (owner / member) | **Done** |
-| 6 | Grocery lists and pantry, household sync | |
+| 6 | Grocery lists and pantry, household sync | **Done** |
 | 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas | |
 | 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups | |
 
@@ -130,6 +130,15 @@ No key can ever see or change settings, other keys, sign-in details, or restore 
 - Everyone shares recipes, the meal plan, grocery lists and the pantry. Favorites, pins, ratings, private notes, theme and sign-in are each person's own.
 - Owners (there can be several) manage server settings: Email, AI, API keys, Data (backups), Logs, OAuth sign-in, and the household. Members don't see those tabs, and the API refuses them.
 - Locked out? `docker compose exec culury npm run reset-password -- <username>` (without a username it resets the owner).
+
+## Grocery list and pantry
+
+- **Grocery** (#/grocery): type or paste items (“eggs, 2 lb chicken thighs, milk”). They're sorted by store aisle; tap one to put it in the cart, tap ⋯ to change the amount, aisle, note or list.
+- **Add to grocery list** on a recipe (at the servings you chose) or **Week ▾ › Add this week to the grocery list** on the meal plan. The same ingredient from several recipes is added up into one line. Items in the pantry start unticked, and staples are never added.
+- When you're done shopping, **Done: put them in the pantry** moves what's in the cart to the pantry.
+- **Pantry** (#/pantry): what you have, with use-by dates and staples (salt, oil, spices). **Cook with what you have** lists recipes you can mostly make from it.
+- Changes show up live on every signed-in device in the household (grocery list, pantry and meal plan).
+- Home Assistant: make an API key with **Grocery list write** access and `POST /api/grocery/items` with `{"text": "milk"}` (header `x-api-key`). It goes on the first list.
 
 ## Accounts and passwords
 

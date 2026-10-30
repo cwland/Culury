@@ -143,3 +143,71 @@ export function unitLabel(unit: string | null | undefined, amount: number | null
   if (!WORD_UNITS.has(unit) || !amount || amount <= 1) return unit;
   return PLURAL[unit] ?? `${unit}s`;
 }
+
+// ---------- grocery and pantry ----------
+
+export interface ItemSource {
+  recipeId?: number;
+  title: string;
+}
+export interface GroceryItem {
+  id: number;
+  listId: number;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  note: string | null;
+  aisle: string;
+  checked: boolean;
+  sources: ItemSource[];
+}
+export interface GroceryList {
+  id: number;
+  name: string;
+  open: number;
+  done: number;
+}
+export interface PantryItem {
+  id: number;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  aisle: string;
+  staple: boolean;
+  expiresOn: string | null;
+  note: string | null;
+}
+export interface PreviewLine {
+  key: string;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  aisle: string;
+  sources: ItemSource[];
+  pantry: { id: number; name: string; staple: boolean; quantity: number | null; unit: string | null } | null;
+}
+export const AISLE_NAMES: Record<string, string> = {
+  produce: "Produce",
+  meat: "Meat & Seafood",
+  dairy: "Dairy & Eggs",
+  bakery: "Bakery",
+  pantry: "Pantry",
+  spices: "Spices & Seasonings",
+  frozen: "Frozen",
+  beverages: "Drinks",
+  snacks: "Snacks",
+  household: "Household",
+  other: "Other",
+};
+export const AISLE_ORDER = Object.keys(AISLE_NAMES);
+
+// "2¼ cups", "3", "" (just "some")
+export function itemAmount(i: { quantity: number | null; unit: string | null }) {
+  if (i.quantity === null) return i.unit ?? "";
+  // shopping amounts: to the nearest kitchen fraction (2.19 cups -> 2¼ cups)
+  const whole = Math.floor(i.quantity);
+  const snaps = [0, 1, ...FRACTIONS.map(([v]) => v)];
+  const frac = snaps.reduce((a, b) => (Math.abs(b - (i.quantity! - whole)) < Math.abs(a - (i.quantity! - whole)) ? b : a));
+  const q = Math.max(whole + frac, FRACTIONS[0]?.[0] ?? 0.125);
+  return [formatQuantity(q), unitLabel(i.unit, q)].filter(Boolean).join(" ");
+}

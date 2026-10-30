@@ -26,6 +26,8 @@ import recipeRoutes from "./routes/recipes.js";
 import importRoutes from "./routes/imports.js";
 import householdRoutes from "./routes/household.js";
 import planRoutes from "./routes/plan.js";
+import groceryRoutes from "./routes/grocery.js";
+import eventRoutes, { EventBus } from "./lib/events.js";
 import multipart from "@fastify/multipart";
 import { JobQueue } from "./lib/jobs.js";
 import { Photos } from "./lib/photos.js";
@@ -55,6 +57,7 @@ declare module "fastify" {
     now: () => Date; // the clock (tests set the date)
     jobs: JobQueue;
     photos: Photos;
+    events: EventBus;
   }
   interface FastifyRequest {
     auth?: { method: "token"; userId: number; sessionId: number; role: "owner" | "member" } | { method: "apiKey"; keyId: number };
@@ -131,6 +134,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("now", now);
   app.decorate("updates", new UpdateService(db, updateRepo, githubToken, updateFetch, now));
   app.decorate("photos", new Photos(photoDir));
+  app.decorate("events", new EventBus());
   app.decorate("jobs", new JobQueue(db));
   registerImportJobs(app.jobs, { db, ai: app.ai, photos: app.photos, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } });
   app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
@@ -240,6 +244,8 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(importRoutes);
   app.register(householdRoutes);
   app.register(planRoutes);
+  app.register(groceryRoutes);
+  app.register(eventRoutes);
   app.register(organizeRoutes);
 
   return app;
