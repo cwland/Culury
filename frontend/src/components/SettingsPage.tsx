@@ -7,6 +7,7 @@ import DataSettings from "./DataSettings";
 import EmailSettings from "./EmailSettings";
 import AiSettings from "./AiSettings";
 import ProfileSettings from "./ProfileSettings";
+import ReminderSettings from "./ReminderSettings";
 import LogsSettings from "./LogsSettings";
 import SignInSettings from "./SignInSettings";
 import { ApiKeys, ChangePassword, Devices, Passkeys, SignInHistory } from "./SecuritySettings";
@@ -72,6 +73,7 @@ export default function SettingsPage() {
         {tab === "profile" && (
           <>
             <ProfileSettings />
+            <ReminderSettings />
             <ThemePicker />
           </>
         )}

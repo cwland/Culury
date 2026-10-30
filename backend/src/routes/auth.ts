@@ -47,6 +47,7 @@ export const publicUser = (u: typeof users.$inferSelect) => ({
   theme: u.theme,
   colorMode: u.colorMode,
   role: u.role,
+  remindAt: u.remindAt,
 });
 
 export default async function authRoutes(app: FastifyInstance) {

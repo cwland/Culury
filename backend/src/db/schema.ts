@@ -33,6 +33,9 @@ export const users = pgTable("users", {
   theme: text("theme"), // Settings > Profile > Appearance (null: the default)
   colorMode: text("color_mode"), // light, dark or system (null: system)
   dismissedUpdate: text("dismissed_update"), // the newer version whose top bar was dismissed
+  // Daily meal plan email at this time ("17:30", server time; null: off), and the last day it went
+  remindAt: text("remind_at"),
+  remindedOn: date("reminded_on", { mode: "string" }),
   // The OAuth / OpenID Connect identity linked to this account (Settings > Security)
   oauthIssuer: text("oauth_issuer"),
   oauthSubject: text("oauth_subject"),

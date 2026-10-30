@@ -4,6 +4,7 @@ import { createDb } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { buildApp, defaultBackupDir } from "./app.js";
 import { startBackupSchedule } from "./lib/backup.js";
+import { startReminderSchedule } from "./lib/reminders.js";
 import { emailConfigFromEnv } from "./lib/mail.js";
 import { logEvent } from "./lib/appLog.js";
 import { emergencyResetAuth } from "./lib/oauth.js";
@@ -38,8 +39,11 @@ if (process.env.BACKUP_ENABLED !== "false") {
   startBackupSchedule(db, backupDir, backupKeep, {
     info: (msg) => app.log.info(msg),
     error: (err) => app.log.error(err),
-  }, app.backupSecrets());
+  }, app.backupSecrets(), app.photos.dir);
 }
+// Daily meal plan emails (each person picks a time in Settings › Profile)
+startReminderSchedule(db, app.mail, app.now, (err) => app.log.error(err));
+
 // Emergency: EMERGENCY_DISABLE_OAUTH=true turns password sign-in back on (and OAuth off) at start
 if (process.env.EMERGENCY_DISABLE_OAUTH === "true") {
   const r = await emergencyResetAuth(db);

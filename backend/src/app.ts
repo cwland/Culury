@@ -34,6 +34,7 @@ import { Photos } from "./lib/photos.js";
 import { registerImportJobs, registerPhotoImport } from "./lib/importJobs.js";
 import { registerAisleSorting } from "./lib/aiHelpers.js";
 import aiRoutes from "./routes/ai.js";
+import shareRoutes from "./routes/share.js";
 import type { FetchImpl, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
@@ -248,6 +249,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(recipeRoutes);
   app.register(importRoutes);
   app.register(aiRoutes);
+  app.register(shareRoutes);
   app.register(householdRoutes);
   app.register(planRoutes);
   app.register(groceryRoutes);

@@ -9,6 +9,7 @@ export interface User {
   theme?: string | null; // Settings › Profile › Appearance (null: the default)
   colorMode?: string | null; // light, dark or system (null: system)
   role?: "owner" | "member"; // the owner runs the server (settings, keys, backups, members)
+  remindAt?: string | null; // daily meal plan email time ("17:30"), null: off
 }
 
 export interface Session {

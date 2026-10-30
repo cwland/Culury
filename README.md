@@ -15,7 +15,7 @@ Built in steps:
 | 5 | Meal planner (drag and drop week, custom meal slots) and household members (owner / member) | **Done** |
 | 6 | Grocery lists and pantry, household sync | **Done** |
 | 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas, model cascading | **Done** |
-| 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups | |
+| 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups, meal plan emails | **Done** |
 
 The version is in `backend/package.json` and `frontend/package.json` (keep them the same); "What's new" notes are in `frontend/src/changelog.ts`.
 
@@ -149,6 +149,13 @@ Turn it on in **Settings › AI** and add one or more services (OpenAI, Claude, 
 - **Nutrition**: per serving, from the recipe's site, estimated by AI (`POST /api/recipes/:id/nutrition`), or typed in (`PUT`). The points figure is an approximation from calories, saturated fat, sugar and protein, not any diet program's official number.
 - **Meal ideas**: Meal plan › Week ▾ › Meal ideas, or on the Pantry page (`POST /api/ai/ideas`).
 - **Aisles**: items the word list can't place are sorted by AI once and remembered.
+
+## Sharing and backups
+
+- **Share** on a recipe: email it, print it or save it as a PDF (the print dialog's “Save as PDF”), or download it as schema.org JSON-LD (`GET /api/recipes/:id/jsonld`).
+- **Email** on the grocery list sends what's left, by aisle. Emails need **Settings › Email** set up, and are sent by signed-in people only (not API keys).
+- **Meal plan email**: Settings › Profile. Uses the server's time zone, so set `TZ` in `.env` (e.g. `TZ=America/Chicago`).
+- **Backups** are `.tar.gz` files with the data (`culury.json`) and every recipe photo (`photos/`), saved daily in `./data/app/backups`; the newest `BACKUP_KEEP` are kept. **Settings › Data › Restore** takes a `.tar.gz` backup or a `.json` export. A safety backup is saved before every restore.
 
 ## Accounts and passwords
 

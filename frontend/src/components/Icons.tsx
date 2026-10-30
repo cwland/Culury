@@ -11,6 +11,8 @@ import {
   Pencil,
   Pin,
   SlidersHorizontal,
+  Share2,
+  Mail,
   Users,
   CalendarDays,
   Check as LucideCheck,
@@ -70,6 +72,8 @@ export const CollectionAddIcon = icon(FolderPlus, "size-4", 1.8);
 export const EditIcon = icon(Pencil, "size-4", 1.8);
 export const ServingsIcon = icon(Users, "size-4", 1.8);
 export const FilterIcon = icon(SlidersHorizontal, "size-4", 1.8);
+export const ShareIcon = icon(Share2, "size-4", 1.8);
+export const MailIcon = icon(Mail, "size-4", 1.8);
 
 // Filled when on (pinned)
 export function PinIcon({ filled, className = "size-5" }: P & { filled?: boolean }) {

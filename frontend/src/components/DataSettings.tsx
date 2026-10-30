@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, downloadFile, type BackupInfo } from "../api";
+import { ApiError, api, downloadFile, getToken, type BackupInfo } from "../api";
 import { Popup } from "./Popup";
 
 const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
@@ -20,6 +20,8 @@ const button = "rounded border border-primary px-4 py-2.5 font-semibold text-pri
 interface RestoreFile {
   name: string;
   data: unknown;
+  raw: File | null; // a .tar.gz backup: sent as it is (with its photos)
+  photos: number;
   exportedAt?: string;
   counts: Record<string, number>; // rows per kind of data ("recipes": 120, ...)
   settings: "encrypted" | "left out" | null; // null: a backup without settings
@@ -37,6 +39,27 @@ interface RestoreResult {
   safetyBackup: string;
   counts: Record<string, number>;
   settings: { settingsRestored: number; secretsRestored: number; secretsKept: number; secretsMissing: number } | null;
+  photos?: number;
+}
+
+// A .tar.gz backup, read in the browser to show what's in it: culury.json and the photo count
+async function readBackupArchive(f: File) {
+  const tarBytes = new Uint8Array(await new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  let at = 0;
+  let json: unknown = null;
+  let photos = 0;
+  const text = (a: number, n: number) => new TextDecoder().decode(tarBytes.subarray(a, a + n)).replace(/\0.*$/s, "");
+  while (at + 512 <= tarBytes.length) {
+    const name = text(at, 100);
+    if (!name) break;
+    const size = parseInt(text(at + 124, 12).trim() || "0", 8);
+    const prefix = text(at + 345, 155);
+    const full = prefix ? `${prefix}/${name}` : name;
+    if (full === "culury.json") json = JSON.parse(new TextDecoder().decode(tarBytes.subarray(at + 512, at + 512 + size)));
+    else if (/^photos\/.+\.webp$/.test(full)) photos++;
+    at += 512 + Math.ceil(size / 512) * 512;
+  }
+  return { json, photos };
 }
 
 // "120 recipes, 3 meal plans" (or "your settings" when there's no data yet)
@@ -106,15 +129,18 @@ export default function DataSettings() {
         <Card title="Export">
           <p className="text-subtle">Download everything as one file. It restores here or on another Culury server.</p>
           <div className="mt-4 flex flex-wrap gap-3">
+            <button disabled={busy} className={button} onClick={() => run(async () => `Downloaded ${await downloadFile("/api/export?photos=true")}`)}>
+              Everything with photos (.tar.gz)
+            </button>
             <button disabled={busy} className={button} onClick={() => run(async () => `Downloaded ${await downloadFile("/api/export")}`)}>
-              Everything (JSON)
+              Data only (JSON)
             </button>
           </div>
         </Card>
 
         <Card title="Backups">
           <p className="text-subtle">
-            A backup is saved automatically once a day, and the newest {backups?.keep ?? 30} are kept.
+            A backup (your data and recipe photos, as a .tar.gz) is saved automatically once a day, and the newest {backups?.keep ?? 30} are kept.
             {backups && (
               <>
                 {" "}They're stored on the server in <code className="rounded bg-page px-1.5 py-0.5 text-sm text-ink">{backups.dir}</code>.
@@ -255,10 +281,12 @@ function RestoreDialog({ onClose, onDone }: { onClose: () => void; onDone: (mess
     setConfirm(false);
     if (!f) return;
     try {
-      const data = JSON.parse(await f.text());
+      const head = new Uint8Array(await f.slice(0, 2).arrayBuffer());
+      const archive = head[0] === 0x1f && head[1] === 0x8b ? await readBackupArchive(f) : null;
+      const data = (archive ? archive.json : JSON.parse(await f.text())) as { app?: string; data?: unknown; exportedAt?: string; settings?: { secrets?: "encrypted" | "left out" } };
       if (data?.app !== "Culury" || typeof data.data !== "object" || !data.data) throw new Error();
       const counts = Object.fromEntries(Object.entries(data.data as Record<string, unknown[]>).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]));
-      setFile({ name: f.name, data, exportedAt: data.exportedAt, counts, settings: data.settings?.secrets ?? null });
+      setFile({ name: f.name, data, raw: archive ? f : null, photos: archive?.photos ?? 0, exportedAt: data.exportedAt, counts, settings: data.settings?.secrets ?? null });
     } catch {
       setFileError("That file isn't a Culury backup.");
     }
@@ -270,8 +298,16 @@ function RestoreDialog({ onClose, onDone }: { onClose: () => void; onDone: (mess
     setBusy(true);
     setError("");
     try {
-      const res = await api<RestoreResult>("POST", "/api/import?confirm=replace", file.data, key.trim() ? { "x-backup-key": key.trim() } : undefined);
-      onDone(`Restored ${countsText(res.counts)}. Your previous data was saved as ${res.safetyBackup}.${settingsNote(res.settings)}`);
+      const extra = key.trim() ? { "x-backup-key": key.trim() } : undefined;
+      let res: RestoreResult;
+      if (file.raw) {
+        const token = getToken();
+        const r = await fetch("/api/import?confirm=replace", { method: "POST", headers: { "content-type": "application/gzip", ...(token ? { authorization: `Bearer ${token}` } : {}), ...extra }, body: file.raw });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new ApiError(r.status, body.error ?? `Restore failed (${r.status})`);
+        res = body as RestoreResult;
+      } else res = await api<RestoreResult>("POST", "/api/import?confirm=replace", file.data, extra);
+      onDone(`Restored ${countsText(res.counts)}${res.photos ? ` and ${res.photos} photo${res.photos === 1 ? "" : "s"}` : ""}. Your previous data was saved as ${res.safetyBackup}.${settingsNote(res.settings)}`);
     } catch (e) {
       setError((e as Error).message);
       setConfirm(false);
@@ -287,7 +323,7 @@ function RestoreDialog({ onClose, onDone }: { onClose: () => void; onDone: (mess
           Backup file
           <input
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,application/gzip,.gz,.tar.gz"
             aria-label="Backup file"
             onChange={(e) => pick(e.target.files?.[0])}
             className="mt-1 block w-full text-sm text-subtle file:mr-3 file:rounded file:border-0 file:bg-pressed file:px-4 file:py-2.5 file:font-semibold file:text-primary hover:file:bg-active"
@@ -304,6 +340,7 @@ function RestoreDialog({ onClose, onDone }: { onClose: () => void; onDone: (mess
               </p>
               <p className="mt-0.5">
                 {countsText(file.counts)}
+                {file.raw && `, ${file.photos} photo${file.photos === 1 ? "" : "s"}`}
               </p>
               <p className="mt-1 text-subtle">
                 {file.settings === null

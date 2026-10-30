@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
+import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
 import { NutritionCard } from "./NutritionCard";
+import ShareDialog from "./ShareDialog";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
 import { StepText } from "./StepText";
 import { ingredientLine, recipeUnits, type Units } from "../../cooking";
@@ -19,6 +20,7 @@ export default function RecipeView({ id }: { id: number }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
   const [shopping, setShopping] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const prefs = useCookPrefs(id);
 
   useEffect(() => {
@@ -124,6 +126,9 @@ export default function RecipeView({ id }: { id: number }) {
             <button type="button" onClick={() => setPicking(true)} className={smallButton}>
               <CollectionAddIcon /> Collections
             </button>
+            <button type="button" onClick={() => setSharing(true)} className={smallButton}>
+              <ShareIcon /> Share
+            </button>
             <a href={`#/recipes/${r.id}/edit`} className={smallButton}>
               <EditIcon /> Edit
             </a>
@@ -197,6 +202,7 @@ export default function RecipeView({ id }: { id: number }) {
         <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} onChange={(nutrition) => setR({ ...r, nutrition })} />
       </div>
 
+      {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : {}) }] }} onClose={() => setShopping(false)} />}
       {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}
       {confirmDelete && (

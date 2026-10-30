@@ -10,6 +10,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.8.0",
+    date: "2026-10-30",
+    title: "Sharing and backups with photos",
+    changes: [
+      "Share on any recipe: email it (a nicely laid-out email with an optional note), print it or save it as a PDF, or download it as a recipe file (schema.org JSON-LD) that other recipe apps import.",
+      "Email the grocery list from the Grocery page: what's left to get, by aisle.",
+      "Meal plan email (Settings › Profile): each day at the time you pick, today's and tomorrow's meals, and anything to start ahead (“soak the beans overnight”). Set TZ in your .env so the time is right.",
+      "Backups now include your recipe photos: they're .tar.gz files, saved daily and kept as before. Restore one in Settings › Data (older .json backups still restore). Export has “Everything with photos” too.",
+    ],
+  },
+  {
     version: "0.7.0",
     date: "2026-10-30",
     title: "More AI: photos, nutrition and meal ideas",

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../../api";
 import { useLive } from "../../live";
 import { AISLE_NAMES, AISLE_ORDER, itemAmount, type GroceryItem, type GroceryList } from "../../recipes";
-import { Check, PlusIcon, Trash } from "../Icons";
+import { Check, MailIcon, PlusIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
+import { useSession } from "../../session";
 
 // The grocery list, by store aisle. Tap to put it in the cart. Everyone in the household sees changes
 // as they happen, so two people can shop from one list.
@@ -15,6 +16,7 @@ export default function GroceryPage() {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<GroceryItem | null>(null);
   const [newList, setNewList] = useState(false);
+  const [emailing, setEmailing] = useState(false);
 
   const loadLists = useCallback(async () => {
     const l = await api<GroceryList[]>("GET", "/api/grocery/lists");
@@ -66,6 +68,11 @@ export default function GroceryPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold">Grocery list</h1>
         {open.length > 0 && <span className="text-sm text-subtle">{open.length} to get</span>}
+        {open.length > 0 && (
+          <button type="button" onClick={() => setEmailing(true)} className="flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
+            <MailIcon /> Email
+          </button>
+        )}
       </div>
 
       {/* Lists */}
@@ -136,6 +143,7 @@ export default function GroceryPage() {
       )}
 
       {editing && <EditItem i={editing} lists={lists} onClose={() => setEditing(null)} onDone={() => (setEditing(null), void loadItems(), void loadLists())} />}
+      {emailing && listId && <EmailList listId={listId} onClose={() => setEmailing(false)} />}
       {newList && (
         <NewList
           onClose={() => setNewList(false)}
@@ -302,5 +310,37 @@ function ListActions({ list, onChanged }: { list: GroceryList; onChanged: () => 
         {confirm ? `Delete "${list.name}" and everything on it?` : `Delete the "${list.name}" list`}
       </button>
     </div>
+  );
+}
+
+function EmailList({ listId, onClose }: { listId: number; onClose: () => void }) {
+  const { user } = useSession();
+  const [to, setTo] = useState(user.email ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const send = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api("POST", `/api/grocery/lists/${listId}/email`, to.trim() ? { to } : {});
+      setMsg({ ok: true, text: `Sent to ${to.trim()}. It has what's left to get, by aisle.` });
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    }
+    setBusy(false);
+  };
+  return (
+    <Popup title="Email the list" onClose={onClose}>
+      <form onSubmit={send} className="flex flex-col gap-3 p-5">
+        <label className="text-sm font-semibold text-subtle">
+          To
+          <input type="text" inputMode="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="you@example.com (commas for more)" className="mt-1 w-full rounded-lg border border-line bg-page px-3 py-2.5 outline-none focus:border-action" />
+        </label>
+        <button type="submit" disabled={busy || !to.trim()} className="self-start rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-60">
+          {busy ? "Sending…" : "Send"}
+        </button>
+        {msg && <p role={msg.ok ? "status" : "alert"} className={msg.ok ? "text-success" : "text-error"}>{msg.text}</p>}
+      </form>
+    </Popup>
   );
 }

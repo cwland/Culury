@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { BACKUP_NAME, listBackups, pruneBackups, writeBackup } from "../lib/backup.js";
+import os from "node:os";
+import { BACKUP_NAME, listBackups, pruneBackups, readArchive, restorePhotos, writeArchive, writeBackup } from "../lib/backup.js";
 import { buildExport, importData, importSchema } from "../lib/dataExport.js";
 import { checkBackupKey, type SettingsSection } from "../lib/settingsBackup.js";
 import { HttpError, notFound } from "../lib/errors.js";
@@ -15,10 +16,21 @@ function requireLogin(req: FastifyRequest) {
 
 export default async function exportRoutes(app: FastifyInstance) {
   const { db } = app;
+  // Backups with photos are sent as the .tar.gz file itself
+  app.addContentTypeParser(["application/gzip", "application/x-gzip", "application/octet-stream"], { parseAs: "buffer", bodyLimit: 2 * 1024 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   // ---------- downloads ----------
 
-  app.get("/api/export", async (_req, reply) => {
+  // The data as JSON; ?photos=true: a .tar.gz with every recipe photo too
+  app.get("/api/export", async (req, reply) => {
+    const { photos } = z.object({ photos: z.enum(["true", "false"]).optional() }).parse(req.query);
+    if (photos === "true") {
+      const file = path.join(os.tmpdir(), `culury-export-${Date.now()}-${Math.random().toString(36).slice(2)}.tar.gz`);
+      await writeArchive(db, file, app.backupSecrets(), app.photos.dir);
+      const data = await fs.readFile(file);
+      await fs.rm(file, { force: true });
+      return reply.type("application/gzip").header("Content-Disposition", `attachment; filename="culury-${today()}.tar.gz"`).send(data);
+    }
     const data = await buildExport(db, app.backupSecrets());
     return reply.header("Content-Disposition", `attachment; filename="culury-${today()}.json"`).send(data);
   });
@@ -35,7 +47,7 @@ export default async function exportRoutes(app: FastifyInstance) {
   }));
 
   app.post("/api/backups", async (_req, reply) => {
-    const created = await writeBackup(db, app.backupDir, app.backupSecrets());
+    const created = await writeBackup(db, app.backupDir, app.backupSecrets(), app.photos.dir);
     await pruneBackups(app.backupDir, app.backupKeep);
     return reply.status(201).send(created);
   });
@@ -45,7 +57,7 @@ export default async function exportRoutes(app: FastifyInstance) {
     if (!BACKUP_NAME.test(name)) throw notFound("Backup"); // also blocks ../ paths
     try {
       const data = await fs.readFile(path.join(app.backupDir, name));
-      return reply.type("application/json").header("Content-Disposition", `attachment; filename="${name}"`).send(data);
+      return reply.type(name.endsWith(".json") ? "application/json" : "application/gzip").header("Content-Disposition", `attachment; filename="${name}"`).send(data);
     } catch {
       throw notFound("Backup");
     }
@@ -54,12 +66,22 @@ export default async function exportRoutes(app: FastifyInstance) {
   // ---------- restore ----------
   // Replaces all recipe data with an export/backup file. Must be logged in (not an API key)
   // and pass ?confirm=replace. A safety backup is written first.
-  app.post("/api/import", { bodyLimit: 100 * 1024 * 1024 }, async (req) => {
+  app.post("/api/import", { bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req) => {
     requireLogin(req);
     const { confirm } = z.object({ confirm: z.string().optional() }).parse(req.query);
     if (confirm !== "replace") throw new HttpError(400, "Add ?confirm=replace to restore (this replaces all recipe data)");
 
-    const parsed = importSchema.safeParse(req.body);
+    // JSON (an export, or an older backup), or a .tar.gz backup with photos
+    let archive: Awaited<ReturnType<typeof readArchive>> | null = null;
+    if (Buffer.isBuffer(req.body)) {
+      try {
+        archive = await readArchive(req.body);
+      } catch {
+        throw new HttpError(400, "That file isn't a Culury backup");
+      }
+    }
+    try {
+    const parsed = importSchema.safeParse(archive ? archive.data : req.body);
     if (!parsed.success) throw new HttpError(400, "That file isn't a Culury backup");
 
     // A backup from another server: its BACKUP_KEY can be given for this restore (X-Backup-Key
@@ -73,13 +95,18 @@ export default async function exportRoutes(app: FastifyInstance) {
     }
     const secrets = otherKey ? { ...app.backupSecrets(), backupKey: otherKey } : app.backupSecrets();
 
-    const safety = await writeBackup(db, app.backupDir, app.backupSecrets(), "before-restore");
+    const safety = await writeBackup(db, app.backupDir, app.backupSecrets(), app.photos.dir, "before-restore");
+    let counts;
     try {
-      const counts = await importData(db, parsed.data, secrets);
-      return { ok: true, safetyBackup: safety.name, ...counts };
+      counts = await importData(db, parsed.data, secrets);
     } catch (err) {
       req.log.error(err);
       throw new HttpError(400, `Couldn't restore that file, nothing was changed (${(err as Error).message.split("\n")[0]})`);
+    }
+    const photos = await restorePhotos(archive?.photosDir ?? null, app.photos.dir);
+    return { ok: true, safetyBackup: safety.name, photos, ...counts };
+    } finally {
+      await archive?.cleanup();
     }
   });
 }
