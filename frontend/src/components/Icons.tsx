@@ -1,7 +1,17 @@
 // App icons from Lucide (lucide.dev, open source, ISC license). Each wrapper keeps the app's own
 // name and default size, so screens just use <RecipesIcon /> etc.
 import {
+  ArrowLeft,
   BookOpen,
+  ChefHat,
+  Clock,
+  Copy,
+  ExternalLink,
+  FolderPlus,
+  Pencil,
+  Pin,
+  SlidersHorizontal,
+  Users,
   CalendarDays,
   Check as LucideCheck,
   ChevronDown as LucideChevronDown,
@@ -51,6 +61,20 @@ export const EyeIcon = icon(Eye, "size-5", 1.8);
 export const EyeOffIcon = icon(EyeOff, "size-5", 1.8);
 export const CloseIcon = icon(X, "size-6", 1.8);
 export const SearchIcon = icon(Search, "size-4");
+export const BackIcon = icon(ArrowLeft, "size-5", 1.8);
+export const ChefIcon = icon(ChefHat, "size-8", 1.5);
+export const ClockIcon = icon(Clock, "size-4", 1.8);
+export const CopyIcon = icon(Copy, "size-4", 1.8);
+export const LinkOutIcon = icon(ExternalLink, "size-4", 1.8);
+export const CollectionAddIcon = icon(FolderPlus, "size-4", 1.8);
+export const EditIcon = icon(Pencil, "size-4", 1.8);
+export const ServingsIcon = icon(Users, "size-4", 1.8);
+export const FilterIcon = icon(SlidersHorizontal, "size-4", 1.8);
+
+// Filled when on (pinned)
+export function PinIcon({ filled, className = "size-5" }: P & { filled?: boolean }) {
+  return <Pin className={className} strokeWidth={1.8} fill={filled ? "currentColor" : "none"} aria-hidden />;
+}
 
 // Filled when on (favorites)
 export function StarIcon({ filled, className = "size-6" }: P & { filled?: boolean }) {

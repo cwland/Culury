@@ -9,8 +9,8 @@ Built in steps:
 | Step | What | Status |
 |---|---|---|
 | 1 | Foundation: sign-in (password, passkeys, OAuth), devices, API keys with scopes, AI services with failover, email, logs, backups, themes + dark mode, Docker, CI | **Done** |
-| 2 | Recipes: database, CRUD, tags, collections, favorites, full-text search | Next |
-| 3 | Import: schema.org JSON-LD, AI fallback, background jobs | |
+| 2 | Recipes: database, add/edit, ingredient parsing, tags, categories, collections, favorites, ratings, notes, substitutions, full-text search | **Done** |
+| 3 | Import: schema.org JSON-LD, AI fallback, background jobs, photo uploads | Next |
 | 4 | Recipe pages and Cook Mode (wake lock, steps, timers, scaling, units) | |
 | 5 | Meal planner calendar | |
 | 6 | Grocery lists and pantry, household sync | |
@@ -82,6 +82,16 @@ Interactive docs at **`/api/docs`** (the OpenAPI spec at `/api/docs/json`). Ever
 - `X-API-Key: <key>` (create keys in **Settings → API keys**)
 
 Try a key: `curl -H "X-API-Key: <key>" https://recipes.example.com/api/info`
+
+Send a recipe in (a Recipe push key works). Ingredients and steps can be one block of text or lists:
+
+```
+curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  -d '{"title":"Overnight Oats","ingredients":"1/2 cup oats\n1/2 cup milk","steps":"Stir.\n\nChill overnight.","tags":["breakfast"],"collections":["Make Ahead"]}' \
+  https://recipes.example.com/api/recipes
+```
+
+Main recipe routes: `GET /api/recipes?q=&tag=&category=&collection=&favorite=true&sort=recent|newest|title|rating`, `GET/PATCH/DELETE /api/recipes/:id`, `POST /api/recipes/:id/duplicate`, `PUT /api/recipes/:id/me` (your favorite, pin, rating, notes; signed in only), `POST /api/recipes/:id/substitutions`, and `/api/tags`, `/api/categories`, `/api/collections`.
 
 ### API key access
 

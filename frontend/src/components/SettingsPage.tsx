@@ -1,5 +1,6 @@
 import { FeatureSwitch } from "./FeatureSwitch";
 import ThemePicker from "./ThemePicker";
+import OrganizeSettings from "./OrganizeSettings";
 import { UpdatesSettings } from "./UpdateBar";
 import { useEffect, useState } from "react";
 import DataSettings from "./DataSettings";
@@ -12,6 +13,7 @@ import { ApiKeys, ChangePassword, Devices, Passkeys, SignInHistory } from "./Sec
 
 const TABS = [
   { id: "profile", label: "Profile" },
+  { id: "recipes", label: "Recipes" },
   { id: "security", label: "Security" },
   { id: "api", label: "API keys" },
   { id: "email", label: "Email" },
@@ -66,6 +68,7 @@ export default function SettingsPage() {
             <ThemePicker />
           </>
         )}
+        {tab === "recipes" && <OrganizeSettings />}
         {tab === "security" && (
           <>
             <ChangePassword />

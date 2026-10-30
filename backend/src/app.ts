@@ -22,6 +22,8 @@ import keyRoutes from "./routes/keys.js";
 import exportRoutes from "./routes/export.js";
 import profileRoutes from "./routes/profile.js";
 import settingsRoutes from "./routes/settings.js";
+import recipeRoutes from "./routes/recipes.js";
+import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
 import { AiService, type AiFetch } from "./lib/ai.js";
 import { sessionForToken } from "./lib/sessions.js";
@@ -207,6 +209,8 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(exportRoutes);
   app.register(profileRoutes);
   app.register(settingsRoutes);
+  app.register(recipeRoutes);
+  app.register(organizeRoutes);
 
   return app;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import SettingsPage from "./SettingsPage";
 import ComingSoon from "./ComingSoon";
+import RecipesPage from "./recipes/RecipesPage";
 import AccountMenu from "./AccountMenu";
 import { APP_VERSION, showWhatsNew, versionLabel } from "../version";
 import { isNewer } from "../changelog";
@@ -78,7 +79,7 @@ export default function AppShell() {
       </nav>
 
       <main className="min-w-0 flex-1 pb-16 sm:pb-0">
-        {page === "settings" ? <SettingsPage /> : <ComingSoon page={page} />}
+        {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : <ComingSoon page={page} />}
       </main>
 
       {/* Bottom bar on phones */}

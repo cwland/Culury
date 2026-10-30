@@ -10,7 +10,12 @@ import {
   index,
   uniqueIndex,
   jsonb,
+  primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
+
+// PostgreSQL full-text search document
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -138,4 +143,154 @@ export const appLog = pgTable(
     detail: text("detail"), // the error message, counts, etc.
   },
   (t) => [index("app_log_at_idx").on(t.at)]
+);
+
+// ---------- Recipes ----------
+// Recipes belong to the household (everyone signed in sees them). Favorites, pins, ratings and
+// personal notes are per person (recipe_user). Ingredients and steps are kept in order as JSON.
+
+// One ingredient line. "raw" is what was typed or imported; the rest is parsed from it
+// (lib/ingredients.ts) for scaling, unit conversion and grocery lists. A line with only
+// "section" set is a heading ("For the sauce").
+export interface Ingredient {
+  raw: string;
+  quantity?: number | null; // 1.5
+  quantityMax?: number | null; // "2-3 cloves": 3
+  unit?: string | null; // normalized: "cup", "tbsp", "g"...
+  name?: string; // "flour"
+  note?: string | null; // "sifted"
+  section?: string | null; // a heading instead of an ingredient
+}
+
+// One step. A step with only "section" set is a heading ("Make the dough").
+export interface Step {
+  text: string;
+  section?: string | null;
+}
+
+export const recipes = pgTable(
+  "recipes",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description"),
+    ingredients: jsonb("ingredients").$type<Ingredient[]>().notNull().default([]),
+    steps: jsonb("steps").$type<Step[]>().notNull().default([]),
+    servings: integer("servings"), // how many it makes, for scaling
+    yieldText: text("yield_text"), // as written: "4 servings", "24 cookies"
+    prepMinutes: integer("prep_minutes"),
+    cookMinutes: integer("cook_minutes"),
+    totalMinutes: integer("total_minutes"),
+    sourceUrl: text("source_url"),
+    sourceName: text("source_name"), // "Serious Eats", "Grandma's card"
+    imageUrl: text("image_url"),
+    notes: text("notes"), // the recipe's own notes (everyone sees them)
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Full-text search over title, ingredients, tags, description and notes (kept up to date by lib/recipes.ts)
+    searchVector: tsvector("search_vector"),
+  },
+  (t) => [index("recipes_search_idx").using("gin", t.searchVector), index("recipes_updated_idx").on(t.updatedAt)]
+);
+
+// Free-form labels: "vegetarian", "weeknight", "grill"
+export const tags = pgTable("tags", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(), // stored lowercase
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const recipeTags = pgTable(
+  "recipe_tags",
+  {
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.recipeId, t.tagId] }), index("recipe_tags_tag_idx").on(t.tagId)]
+);
+
+// The household's own list of meal types or courses, in their order: Breakfast, Dinner, Dessert...
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const recipeCategories = pgTable(
+  "recipe_categories",
+  {
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.recipeId, t.categoryId] }), index("recipe_categories_category_idx").on(t.categoryId)]
+);
+
+// Hand-picked lists in your own order: "Quick Meals", "Ninja CREAMi", "Thanksgiving"
+export const collections = pgTable("collections", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const collectionRecipes = pgTable(
+  "collection_recipes",
+  {
+    collectionId: integer("collection_id")
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.collectionId, t.recipeId] }), index("collection_recipes_recipe_idx").on(t.recipeId)]
+);
+
+// Each person's own take on a recipe: favorite, pinned to the top, rating, private notes
+export const recipeUser = pgTable(
+  "recipe_user",
+  {
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    favorite: boolean("favorite").notNull().default(false),
+    pinned: boolean("pinned").notNull().default(false),
+    rating: integer("rating"), // 1-5, null: not rated
+    notes: text("notes"), // only this person sees them
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.recipeId, t.userId] }), index("recipe_user_user_idx").on(t.userId)]
+);
+
+// What was swapped when cooking it ("Greek yogurt instead of sour cream"), newest first
+export const substitutions = pgTable(
+  "substitutions",
+  {
+    id: serial("id").primaryKey(),
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    original: text("original").notNull(), // "sour cream"
+    replacement: text("replacement").notNull(), // "Greek yogurt"
+    note: text("note"), // "a bit tangier, worked fine"
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("substitutions_recipe_idx").on(t.recipeId)]
 );

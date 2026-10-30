@@ -1,0 +1,400 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../../api";
+import { formatMinutes, formatQuantity, listAddress, siteName, unitLabel, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
+import { BackIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
+import { Popup } from "../Popup";
+import { RecipeImage } from "./RecipeList";
+
+const card = "rounded-2xl bg-container p-5 sm:p-6";
+const smallButton = "flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed";
+
+export default function RecipeView({ id }: { id: number }) {
+  const [r, setR] = useState<Recipe | null>(null);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    setR(null);
+    api<Recipe>("GET", `/api/recipes/${id}`)
+      .then(setR)
+      .catch((e) => setError((e as Error).message));
+  }, [id]);
+
+  if (error) return <Shell><p role="alert" className="rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p></Shell>;
+  if (!r) return <Shell />;
+
+  const setMine = async (change: Partial<Mine>) => {
+    setR((x) => (x ? { ...x, me: { ...x.me, ...change } } : x)); // right away; the server confirms
+    try {
+      const me = await api<Mine>("PUT", `/api/recipes/${r.id}/me`, change);
+      setR((x) => (x ? { ...x, me } : x));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const duplicate = async () => {
+    const copy = await api<Recipe>("POST", `/api/recipes/${r.id}/duplicate`);
+    window.location.hash = `#/recipes/${copy.id}/edit`;
+  };
+  const remove = async () => {
+    await api("DELETE", `/api/recipes/${r.id}`);
+    window.location.hash = "#/recipes";
+  };
+
+  const times = [
+    ["Prep", r.prepMinutes],
+    ["Cook", r.cookMinutes],
+    ["Total", r.totalMinutes],
+  ].filter(([, m]) => m) as [string, number][];
+  const source = r.sourceName || siteName(r.sourceUrl);
+
+  return (
+    <Shell>
+      {/* Header: photo, name, the facts, and what you can do with it */}
+      <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <RecipeImage src={r.imageUrl} title={r.title} className="aspect-[4/3] w-full md:aspect-auto md:h-full md:min-h-72" />
+        <div className="flex flex-col p-5 sm:p-7">
+          {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
+          <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
+          {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
+
+          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {times.map(([label, m]) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <ClockIcon className="size-4 text-muted" />
+                <span className="text-subtle">{label}</span> <strong>{formatMinutes(m)}</strong>
+              </span>
+            ))}
+            {(r.servings || r.yieldText) && (
+              <span className="flex items-center gap-1.5">
+                <ServingsIcon className="size-4 text-muted" />
+                <strong>{r.yieldText || `${r.servings} servings`}</strong>
+              </span>
+            )}
+          </div>
+          {source && (
+            <p className="mt-3 text-sm text-subtle">
+              From{" "}
+              {r.sourceUrl ? (
+                <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 font-semibold text-link hover:underline">
+                  {source} <LinkOutIcon className="size-3.5" />
+                </a>
+              ) : (
+                <strong>{source}</strong>
+              )}
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center gap-3">
+            <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
+          </div>
+
+          <div className="mt-auto flex flex-wrap gap-2 pt-5">
+            <button type="button" aria-pressed={r.me.favorite} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${smallButton} ${r.me.favorite ? "border-warning/50 text-warning" : ""}`}>
+              <StarIcon filled={r.me.favorite} className="size-4" /> {r.me.favorite ? "Favorite" : "Add to favorites"}
+            </button>
+            <button type="button" aria-pressed={r.me.pinned} onClick={() => void setMine({ pinned: !r.me.pinned })} className={`${smallButton} ${r.me.pinned ? "border-action/50 text-action" : ""}`}>
+              <PinIcon filled={r.me.pinned} className="size-4" /> {r.me.pinned ? "Pinned" : "Pin to top"}
+            </button>
+            <button type="button" onClick={() => setPicking(true)} className={smallButton}>
+              <CollectionAddIcon /> Collections
+            </button>
+            <a href={`#/recipes/${r.id}/edit`} className={smallButton}>
+              <EditIcon /> Edit
+            </a>
+            <button type="button" onClick={() => void duplicate()} className={smallButton}>
+              <CopyIcon /> Duplicate
+            </button>
+            <button type="button" onClick={() => setConfirmDelete(true)} className={`${smallButton} text-error`}>
+              <Trash /> Delete
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {(r.tags.length > 0 || r.collections.length > 0) && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {r.collections.map((c) => (
+            <a key={c.id} href={`#/recipes?collection=${c.id}`} className="rounded-full bg-brand-subtle px-3 py-1 text-sm font-semibold text-action hover:underline">
+              {c.name}
+            </a>
+          ))}
+          {r.tags.map((t) => (
+            <a key={t} href={`#/recipes?tag=${encodeURIComponent(t)}`} className="rounded-full bg-container px-3 py-1 text-sm text-subtle hover:text-ink">
+              #{t}
+            </a>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <section aria-label="Ingredients" className={`${card} self-start`}>
+          <h2 className="text-xl font-bold">Ingredients</h2>
+          {r.ingredients.length ? (
+            <ul className="mt-3">
+              {r.ingredients.map((i, n) =>
+                i.section ? (
+                  <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
+                    {i.section}
+                  </li>
+                ) : (
+                  <li key={n} className="border-b border-line py-2 last:border-0">
+                    <IngredientLine i={i} />
+                  </li>
+                )
+              )}
+            </ul>
+          ) : (
+            <p className="mt-2 text-subtle">No ingredients yet.</p>
+          )}
+        </section>
+
+        <section aria-label="Steps" className={card}>
+          <h2 className="text-xl font-bold">Steps</h2>
+          {r.steps.length ? <Steps steps={r.steps} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
+        </section>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        {r.notes && (
+          <section aria-label="Recipe notes" className={card}>
+            <h2 className="text-xl font-bold">Notes</h2>
+            <p className="mt-2 whitespace-pre-line">{r.notes}</p>
+          </section>
+        )}
+        <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
+        <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
+      </div>
+
+      {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}
+      {confirmDelete && (
+        <Popup title="Delete this recipe?" onClose={() => setConfirmDelete(false)}>
+          <div className="p-6">
+            <p>
+              <strong>{r.title}</strong> will be deleted for everyone in your household, with its notes, ratings and substitutions. This can't be undone (a backup can bring it back).
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setConfirmDelete(false)} className="px-3 py-2.5 font-semibold text-subtle hover:underline">
+                Cancel
+              </button>
+              <button type="button" onClick={() => void remove()} className="rounded bg-error px-4 py-2.5 font-semibold text-white">
+                Delete recipe
+              </button>
+            </div>
+          </div>
+        </Popup>
+      )}
+    </Shell>
+  );
+}
+
+function Shell({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="mx-auto max-w-[1100px] px-3 pb-16 pt-4 sm:px-6">
+      <a href={listAddress()} className="mb-3 inline-flex items-center gap-1.5 font-semibold text-subtle hover:text-ink">
+        <BackIcon className="size-4" /> Recipes
+      </a>
+      {children}
+    </div>
+  );
+}
+
+// "1½ cups flour, sifted": the amount in bold
+export function IngredientLine({ i }: { i: Ingredient }) {
+  if (!i.quantity && !i.unit) return <span>{i.raw}</span>;
+  const amount = [i.quantity ? formatQuantity(i.quantity) + (i.quantityMax ? `–${formatQuantity(i.quantityMax)}` : "") : "", unitLabel(i.unit, i.quantityMax ?? i.quantity)].filter(Boolean).join(" ");
+  return (
+    <span>
+      <strong className="font-semibold">{amount}</strong> {i.name}
+      {i.note && <span className="text-subtle">, {i.note}</span>}
+    </span>
+  );
+}
+
+function Steps({ steps }: { steps: Recipe["steps"] }) {
+  let n = 0;
+  return (
+    <ol className="mt-3 flex flex-col gap-4">
+      {steps.map((s, i) =>
+        s.section ? (
+          <li key={i} className="mt-2 text-sm font-semibold uppercase tracking-wide text-muted">
+            {s.section}
+          </li>
+        ) : (
+          <li key={i} className="flex gap-3">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-sm font-bold text-action">{++n}</span>
+            <p className="pt-0.5 leading-relaxed">{s.text}</p>
+          </li>
+        )
+      )}
+    </ol>
+  );
+}
+
+function Stars({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const [hover, setHover] = useState(0);
+  const shown = hover || value || 0;
+  return (
+    <div role="radiogroup" aria-label="Your rating" className="flex items-center gap-0.5" onMouseLeave={() => setHover(0)}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          role="radio"
+          aria-checked={value === n}
+          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          onMouseEnter={() => setHover(n)}
+          onClick={() => onChange(value === n ? null : n)}
+          className={`p-0.5 ${n <= shown ? "text-warning" : "text-strong"}`}
+        >
+          <StarIcon filled={n <= shown} className="size-6" />
+        </button>
+      ))}
+      <span className="ml-2 text-sm text-subtle">{value ? "Your rating" : "Rate it"}</span>
+    </div>
+  );
+}
+
+function MyNotes({ value, onSave }: { value: string | null; onSave: (v: string | null) => Promise<void> }) {
+  const [text, setText] = useState(value ?? "");
+  const [saved, setSaved] = useState(false);
+  const dirty = text.trim() !== (value ?? "");
+  const save = async () => {
+    if (!dirty) return;
+    await onSave(text.trim() || null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+  return (
+    <section aria-label="My notes" className={card}>
+      <h2 className="flex items-baseline gap-2 text-xl font-bold">
+        My notes <span className="text-sm font-normal text-muted">only you see these</span>
+      </h2>
+      <textarea
+        aria-label="My notes"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void save()}
+        rows={4}
+        placeholder="What you'd change next time…"
+        className="mt-3 w-full rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action focus:ring-2 focus:ring-action/15"
+      />
+      <p className="h-5 text-sm text-success" role="status">
+        {saved && "Saved"}
+      </p>
+    </section>
+  );
+}
+
+function Substitutions({ recipeId, list, onChange }: { recipeId: number; list: Substitution[]; onChange: (l: Substitution[]) => void }) {
+  const [original, setOriginal] = useState("");
+  const [replacement, setReplacement] = useState("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      const s = await api<Substitution>("POST", `/api/recipes/${recipeId}/substitutions`, { original, replacement, note });
+      onChange([s, ...list]);
+      setOriginal("");
+      setReplacement("");
+      setNote("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const remove = async (id: number) => {
+    await api("DELETE", `/api/substitutions/${id}`);
+    onChange(list.filter((s) => s.id !== id));
+  };
+  const input = "min-w-0 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action";
+  return (
+    <section aria-label="Substitutions" className={card}>
+      <h2 className="text-xl font-bold">Substitutions</h2>
+      <p className="mt-1 text-sm text-subtle">What you swapped when you made it, so you remember next time.</p>
+      <form onSubmit={add} className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
+        <input aria-label="Instead of" placeholder="Instead of (sour cream)" value={original} onChange={(e) => setOriginal(e.target.value)} className={input} />
+        <span className="hidden self-center text-muted sm:block">→</span>
+        <input aria-label="I used" placeholder="I used (Greek yogurt)" value={replacement} onChange={(e) => setReplacement(e.target.value)} className={input} />
+        <input aria-label="How it went" placeholder="How it went (optional)" value={note} onChange={(e) => setNote(e.target.value)} className={`${input} sm:col-span-2`} />
+        <button type="submit" disabled={!original.trim() || !replacement.trim()} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+          Add
+        </button>
+      </form>
+      {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
+      {list.length > 0 && (
+        <ul className="mt-3 divide-y divide-line">
+          {list.map((s) => (
+            <li key={s.id} className="flex items-start gap-3 py-2.5">
+              <span className="min-w-0 flex-1">
+                <span className="text-subtle line-through decoration-muted/60">{s.original}</span> → <strong>{s.replacement}</strong>
+                {s.note && <span className="block text-sm text-subtle">{s.note}</span>}
+                <span className="block text-xs text-muted">{new Date(s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+              </span>
+              <button type="button" aria-label={`Remove ${s.original} → ${s.replacement}`} onClick={() => void remove(s.id)} className="rounded p-1.5 text-muted hover:bg-error-subtle hover:text-error">
+                <Trash />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function CollectionPicker({ recipe, onClose, onChange }: { recipe: Recipe; onClose: () => void; onChange: (c: Recipe["collections"]) => void }) {
+  const [all, setAll] = useState<CollectionInfo[] | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const inIt = new Set(recipe.collections.map((c) => c.id));
+  useEffect(() => {
+    void api<CollectionInfo[]>("GET", "/api/collections").then(setAll);
+  }, []);
+  const toggle = async (c: CollectionInfo) => {
+    if (inIt.has(c.id)) {
+      await api("DELETE", `/api/collections/${c.id}/recipes/${recipe.id}`);
+      onChange(recipe.collections.filter((x) => x.id !== c.id));
+    } else {
+      await api("POST", `/api/collections/${c.id}/recipes`, { recipeId: recipe.id });
+      onChange([...recipe.collections, { id: c.id, name: c.name }]);
+    }
+  };
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      const c = await api<CollectionInfo>("POST", "/api/collections", { name });
+      setAll((a) => [...(a ?? []), c]);
+      setName("");
+      await toggle(c);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <Popup title="Collections" onClose={onClose}>
+      <div className="p-5">
+        {all && all.length === 0 && <p className="text-subtle">No collections yet. Make one below.</p>}
+        <ul className="flex flex-col">
+          {all?.map((c) => (
+            <li key={c.id}>
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-pressed">
+                <input type="checkbox" checked={inIt.has(c.id)} onChange={() => void toggle(c)} className="size-4 accent-action" />
+                <span className="flex-1">{c.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={create} className="mt-3 flex gap-2 border-t border-line pt-4">
+          <input aria-label="New collection" placeholder="New collection" value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action" />
+          <button type="submit" disabled={!name.trim()} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+            Add
+          </button>
+        </form>
+        {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
+      </div>
+    </Popup>
+  );
+}

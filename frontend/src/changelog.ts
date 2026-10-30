@@ -10,6 +10,21 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.2.0",
+    date: "2026-10-30",
+    title: "Recipes",
+    changes: [
+      "Your recipe box: add recipes by typing or pasting them. Ingredients are read into amount, unit and name (1½ cups flour, sifted), with headings like “For the sauce:”.",
+      "Search everything as you type: titles, ingredients, tags, notes and your own notes. Press / to jump to the search box.",
+      "Categories (Breakfast, Dinner, Dessert…), collections in your own order (Quick Meals, Ninja CREAMi…) and tags. Manage them in Settings › Recipes.",
+      "Favorites, pin to top, a 1–5 rating and private notes are yours alone; the recipe's own notes are for everyone.",
+      "Substitution history: note what you swapped (sour cream → Greek yogurt) and how it went.",
+      "Duplicate a recipe to make your own version.",
+      "API: recipes, tags, categories and collections are in /api/docs. A Recipe push key can send recipes in from iOS Shortcuts or a browser extension.",
+      "Recipes are included in backups and restore.",
+    ],
+  },
+  {
     version: "0.1.0",
     date: "2026-10-30",
     title: "First version",

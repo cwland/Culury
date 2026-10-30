@@ -41,3 +41,6 @@ export function useUnsavedGuard(id: string, isDirty: boolean, what: string) {
     };
   }, [id, isDirty, what]);
 }
+
+// Just saved: leaving right away (before the screen re-renders) shouldn't ask
+export const clearUnsaved = (id: string) => void dirty.delete(id);
