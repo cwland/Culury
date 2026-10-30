@@ -33,6 +33,17 @@ export interface StoredService {
   model: string;
   baseUrl: string | null; // local (required) or an override
   apiKeyEnc: string | null;
+  // Model cascading: which jobs this service takes. A cheap, fast model can do the quick jobs
+  // and a stronger one the rest; services that can't see pictures are skipped for photos.
+  quick: boolean; // quick jobs: sorting the grocery list, nutrition, meal ideas
+  photos: boolean; // can read photos (recipe cards, cookbook pages)
+}
+
+// What a request needs: "recipe" (reading a recipe, any service), "quick", or "photo"
+export type AiTask = "recipe" | "quick" | "photo";
+export interface AiImage {
+  mime: string; // image/jpeg ...
+  base64: string;
 }
 
 export interface StoredAi {
@@ -61,7 +72,10 @@ export interface AiConfig {
   baseUrl: string | null;
   apiKey: string | null;
 }
-export type ActiveService = AiConfig & { id: string; name: string };
+export type ActiveService = AiConfig & { id: string; name: string; quick?: boolean; photos?: boolean };
+
+// Most hosted chat models read pictures; a home server depends on the model, so it starts off
+const photosByDefault = (p: AiProvider) => p !== "local";
 
 export const PROVIDER_NAMES: Record<AiProvider, string> = { openai: "OpenAI", anthropic: "Claude", gemini: "Gemini", openrouter: "OpenRouter", local: "Home AI" };
 
@@ -73,6 +87,8 @@ export interface ServiceInput {
   model: string;
   baseUrl: string | null;
   apiKey?: string | null; // undefined = keep the saved one, "" or null = remove it
+  quick?: boolean;
+  photos?: boolean;
 }
 export interface SaveInput {
   enabled?: boolean; // left out: keep the saved choice
@@ -106,7 +122,7 @@ function normalize(v: StoredAi | LegacyAi): StoredAi {
       enabled: v.enabled && !allOff,
       timeoutSec: v.timeoutSec ?? 15,
       askNextOnNoMatch: v.askNextOnNoMatch ?? false,
-      services: v.services.map((sv) => ({ ...sv, enabled: true })),
+      services: v.services.map((sv) => ({ ...sv, enabled: true, quick: sv.quick ?? true, photos: sv.photos ?? photosByDefault(sv.provider) })),
     };
   }
   const l = v as LegacyAi;
@@ -116,7 +132,7 @@ function normalize(v: StoredAi | LegacyAi): StoredAi {
     maxPerRun: l.maxPerRun,
     timeoutSec: 15,
     askNextOnNoMatch: false,
-    services: [{ id: "first", name: PROVIDER_NAMES[l.provider] ?? "AI", enabled: true, provider: l.provider, model: l.model, baseUrl: l.baseUrl, apiKeyEnc: l.apiKeyEnc }],
+    services: [{ id: "first", name: PROVIDER_NAMES[l.provider] ?? "AI", enabled: true, provider: l.provider, model: l.model, baseUrl: l.baseUrl, apiKeyEnc: l.apiKeyEnc, quick: true, photos: photosByDefault(l.provider) }],
   };
 }
 
@@ -145,6 +161,8 @@ export class AiService {
         model: sv.model,
         baseUrl: sv.baseUrl,
         apiKeyEnc,
+        quick: sv.quick ?? prev?.quick ?? true,
+        photos: sv.photos ?? prev?.photos ?? photosByDefault(sv.provider),
       };
     });
     const value: StoredAi = {
@@ -205,14 +223,17 @@ export class AiService {
     };
   }
 
-  // What's in use, or null when AI is off or no service is ready. Services in their order.
-  async active(): Promise<{ mode: StoredAi["mode"]; maxPerRun: number; timeoutSec: number; askNextOnNoMatch: boolean; services: ActiveService[] } | null> {
+  // What's in use, or null when AI is off or no service is ready. Services in their order, only the
+  // ones that take this kind of job (quick jobs fall back to every service if none is marked quick).
+  async active(task: AiTask = "recipe"): Promise<{ mode: StoredAi["mode"]; maxPerRun: number; timeoutSec: number; askNextOnNoMatch: boolean; services: ActiveService[] } | null> {
     const s = await this.stored();
     if (!s) return null;
     if (!(await isOn(this.db, "ai"))) return null; // Settings > AI switched off
-    const services = s.services
+    let services = s.services
       .filter((sv) => sv.model && (sv.provider !== "local" || sv.baseUrl))
-      .map((sv) => ({ id: sv.id, name: sv.name, provider: sv.provider, model: sv.model, baseUrl: sv.baseUrl, apiKey: sv.apiKeyEnc ? decryptSecret(sv.apiKeyEnc, this.secret) : null }));
+      .map((sv) => ({ id: sv.id, name: sv.name, provider: sv.provider, model: sv.model, baseUrl: sv.baseUrl, apiKey: sv.apiKeyEnc ? decryptSecret(sv.apiKeyEnc, this.secret) : null, quick: sv.quick, photos: sv.photos }));
+    if (task === "photo") services = services.filter((sv) => sv.photos);
+    if (task === "quick" && services.some((sv) => sv.quick)) services = services.filter((sv) => sv.quick);
     if (!services.length) return null;
     return { mode: s.mode, maxPerRun: s.maxPerRun, timeoutSec: s.timeoutSec, askNextOnNoMatch: s.askNextOnNoMatch, services };
   }
@@ -221,11 +242,11 @@ export class AiService {
    * Try the services in order until one answers. A service that can't be reached, times out, or
    * returns an error is skipped. Throws only when every one failed.
    */
-  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number) {
+  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = []) {
     const failures: string[] = [];
     for (const [index, sv] of services.entries()) {
       try {
-        const text = await this.chat(sv, system, user, maxTokens, timeoutMs);
+        const text = await this.chat(sv, system, user, maxTokens, timeoutMs, images);
         return { text, service: sv, index, failures };
       } catch (e) {
         if (!(e instanceof AiError) && !(e instanceof HttpError)) throw e;
@@ -295,20 +316,26 @@ export class AiService {
   }
 
   // Send one prompt, get the reply text. Asks for JSON where the provider supports it.
-  async chat(c: AiConfig, system: string, user: string, maxTokens = 2000, timeoutMs = 60000): Promise<string> {
+  async chat(c: AiConfig, system: string, user: string, maxTokens = 2000, timeoutMs = 60000, images: AiImage[] = []): Promise<string> {
     if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
     if (!c.model) throw new HttpError(400, "Choose a model first");
     const base = this.base(c);
     const headers = this.authHeaders(c);
 
     if (c.provider === "anthropic") {
-      const r = await this.request(`${base}/messages`, headers, { model: c.model, max_tokens: maxTokens, temperature: 0, system, messages: [{ role: "user", content: user }] }, "POST", timeoutMs);
+      const r = await this.request(`${base}/messages`, headers, {
+        model: c.model,
+        max_tokens: maxTokens,
+        temperature: 0,
+        system,
+        messages: [{ role: "user", content: images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.base64 } })), { type: "text", text: user }] : user }],
+      }, "POST", timeoutMs);
       return (r.content ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join("");
     }
     if (c.provider === "gemini") {
       const r = await this.request(`${base}/models/${encodeURIComponent(c.model.replace(/^models\//, ""))}:generateContent`, headers, {
         systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [{ text: user }] }],
+        contents: [{ role: "user", parts: [...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.base64 } })), { text: user }] }],
         generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
       }, "POST", timeoutMs);
       return (r.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
@@ -320,10 +347,26 @@ export class AiService {
       max_tokens: maxTokens,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "user", content: images.length ? [{ type: "text", text: user }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] : user },
       ],
     }, "POST", timeoutMs);
     return r.choices?.[0]?.message?.content ?? "";
+  }
+
+  // One job for AI: the right services for it, failover, and the reply read as JSON. Throws AiError
+  // when AI is off (or no service takes this job) or no answer could be read.
+  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string } = {}) {
+    const active = await this.active(task);
+    if (!active) throw new AiError(opts.off ?? (task === "photo" ? "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service." : "This needs AI. Turn it on in Settings › AI."));
+    const { text, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, task === "quick" ? 30 : 60) * 1000, opts.images);
+    const json = parseJsonReply(text);
+    if (json === null || typeof json !== "object") throw new AiError(`${service.name}'s answer couldn't be read. Try again, or try another AI service.`);
+    return { json: json as Record<string, unknown>, service };
+  }
+
+  // For the app: is AI there, and can it read photos? (no settings or keys)
+  async status() {
+    return { ready: !!(await this.active()), photos: !!(await this.active("photo")) };
   }
 
   // Model names the provider offers (for the picker)

@@ -7,6 +7,8 @@ import { ChevronLeft, ChevronRight, ClockIcon, PlusIcon, SearchIcon } from "../I
 import { Popup } from "../Popup";
 import { RecipeImage } from "../recipes/RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
+import IdeasDialog from "./IdeasDialog";
+import { useAiStatus } from "../../ai";
 import { useLive } from "../../live";
 
 // The meal plan: a week of days and meal slots. Drag recipes in from the list on the right (or use +),
@@ -32,6 +34,8 @@ export default function PlannerPage() {
   const [dragging, setDragging] = useState<{ title: string; imageUrl: string | null } | null>(null);
   const [menu, setMenu] = useState(false);
   const [shopping, setShopping] = useState(false);
+  const [ideas, setIdeas] = useState(false);
+  const ai = useAiStatus();
 
   useEffect(() => {
     void api<PlannerSettings>("GET", "/api/plan/settings").then((s) => {
@@ -113,6 +117,11 @@ export default function PlannerPage() {
               </button>
               {menu && (
                 <div role="menu" className="absolute right-0 z-30 mt-1 w-60 overflow-hidden rounded-xl bg-container py-1 shadow-[0_8px_28px_rgba(0,0,0,0.16)]" onMouseLeave={() => setMenu(false)}>
+                  {ai.ready && (
+                    <button role="menuitem" type="button" className="block w-full px-4 py-2.5 text-left hover:bg-pressed" onClick={() => (setMenu(false), setIdeas(true))}>
+                      Meal ideas
+                    </button>
+                  )}
                   <button role="menuitem" type="button" className="block w-full px-4 py-2.5 text-left hover:bg-pressed" onClick={() => (setMenu(false), setShopping(true))}>
                     Add this week to the grocery list
                   </button>
@@ -206,6 +215,19 @@ export default function PlannerPage() {
       <DragOverlay dropAnimation={null}>{dragging && <div className="w-48 rotate-2 rounded-xl bg-container p-2 text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.25)]">{dragging.title}</div>}</DragOverlay>
 
       {adding && <AddDialog settings={settings} at={adding} onClose={() => setAdding(null)} onAdded={() => (setAdding(null), load())} />}
+      {ideas && start && settings && (
+        <IdeasDialog
+          onClose={() => setIdeas(false)}
+          onPlan={(i) => {
+            // the first open dinner this week, from today on
+            const slot = settings.slots.find((x) => x.id === "dinner")?.id ?? settings.slots[settings.slots.length - 1].id;
+            const from = today() > start ? today() : start;
+            const day = days.find((d) => d >= from && !entries.some((e) => e.date === d && e.slot === slot)) ?? days.find((d) => d >= from) ?? start;
+            setIdeas(false);
+            void run(() => api("POST", "/api/plan", { date: day, slot, ...(i.recipeId ? { recipeId: i.recipeId } : { title: i.title }) }));
+          }}
+        />
+      )}
       {shopping && start && <AddToListDialog title={weekLabel(start)} source={{ from: start, to: addDays(start, 6) }} onClose={() => setShopping(false)} />}
       {open && <EntryDialog e={open} settings={settings} onClose={() => setOpen(null)} onChanged={() => (setOpen(null), load())} />}
     </DndContext>

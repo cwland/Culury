@@ -6,6 +6,7 @@ import { groceryItems, groceryLists, mealPlan, pantryItems, recipes, type ItemSo
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam, idList, isoDate } from "../lib/validation.js";
 import { parseIngredient } from "../lib/ingredients.js";
+import { learnedAisles, rememberAisle, sortAislesSoon } from "../lib/aiHelpers.js";
 import { AISLE_IDS, AISLES, addable, convertTo, guessAisle, itemKey, round, sameItem, splitLine, tidy } from "../lib/grocery.js";
 import { userOf } from "./recipes.js";
 
@@ -56,6 +57,7 @@ const mergeSources = (a: ItemSource[], b: ItemSource[] = []) => [...a, ...b.filt
 // Add lines to a list: the same thing (not yet checked off) gets the amounts added together
 export async function addToList(tx: Tx, listId: number, lines: Line[], by: number | null) {
   const open = await tx.select().from(groceryItems).where(and(eq(groceryItems.listId, listId), eq(groceryItems.checked, false)));
+  const learned = await learnedAisles(tx as unknown as Db, lines.map((l) => l.name));
   let [{ n: next }] = await tx.select({ n: sql<number>`coalesce(max(${groceryItems.position}), -1) + 1` }).from(groceryItems).where(eq(groceryItems.listId, listId));
   next = Number(next);
   const result = { added: 0, merged: 0 };
@@ -72,7 +74,7 @@ export async function addToList(tx: Tx, listId: number, lines: Line[], by: numbe
     } else {
       const [row] = await tx
         .insert(groceryItems)
-        .values({ listId, name: l.name, quantity: l.quantity, unit: l.unit, note: l.note ?? null, sources: l.sources ?? [], aisle: guessAisle(l.name), position: next++, addedBy: by })
+        .values({ listId, name: l.name, quantity: l.quantity, unit: l.unit, note: l.note ?? null, sources: l.sources ?? [], aisle: learned.get(itemKey(l.name)) ?? guessAisle(l.name), aisleBy: learned.has(itemKey(l.name)) ? "ai" : "words", position: next++, addedBy: by })
         .returning();
       open.push(row);
       result.added++;
@@ -84,6 +86,7 @@ export async function addToList(tx: Tx, listId: number, lines: Line[], by: numbe
 // Pantry: add, or top up what's there
 export async function addToPantry(tx: Tx, lines: (Line & { staple?: boolean; expiresOn?: string | null })[]) {
   const have = await tx.select().from(pantryItems);
+  const learned = await learnedAisles(tx as unknown as Db, lines.map((l) => l.name));
   let added = 0;
   for (const l of lines) {
     const same = have.find((p) => itemKey(p.name) === itemKey(l.name));
@@ -91,7 +94,7 @@ export async function addToPantry(tx: Tx, lines: (Line & { staple?: boolean; exp
       const quantity = same.quantity !== null && l.quantity !== null && addable(same.unit, l.unit) ? round(same.quantity + convertTo(l.quantity, l.unit, same.unit)) : (same.quantity ?? l.quantity);
       await tx.update(pantryItems).set({ quantity, unit: same.quantity === null ? l.unit : same.unit, staple: l.staple ?? same.staple, expiresOn: l.expiresOn ?? same.expiresOn, updatedAt: new Date() }).where(eq(pantryItems.id, same.id));
     } else {
-      const [row] = await tx.insert(pantryItems).values({ name: l.name, quantity: l.quantity, unit: l.unit, note: l.note ?? null, aisle: guessAisle(l.name), staple: l.staple ?? false, expiresOn: l.expiresOn ?? null }).returning();
+      const [row] = await tx.insert(pantryItems).values({ name: l.name, quantity: l.quantity, unit: l.unit, note: l.note ?? null, aisle: learned.get(itemKey(l.name)) ?? guessAisle(l.name), staple: l.staple ?? false, expiresOn: l.expiresOn ?? null }).returning();
       have.push(row);
       added++;
     }
@@ -103,7 +106,19 @@ const aisleOrder = sql`array_position(array[${sql.join(AISLE_IDS.map((a) => sql`
 
 export default async function groceryRoutes(app: FastifyInstance) {
   const { db } = app;
-  const changed = (req: FastifyRequest, topic: "grocery" | "pantry", id?: number) => app.events.emit({ topic, id, by: userOf(req) });
+  const changed = (req: FastifyRequest, topic: "grocery" | "pantry", id?: number) => {
+    app.events.emit({ topic, id, by: userOf(req) });
+    void sortUnknown();
+  };
+  // Anything the word list couldn't place goes to AI to sort (when AI is on)
+  const sortUnknown = async () => {
+    try {
+      const [g] = await db.select({ id: groceryItems.id }).from(groceryItems).where(and(eq(groceryItems.aisle, "other"), eq(groceryItems.aisleBy, "words"))).limit(1);
+      if (g && (await app.ai.active("quick"))) await sortAislesSoon(db, app.jobs);
+    } catch {
+      // sorting is a nicety
+    }
+  };
 
   const listOr404 = async (id: number) => {
     const [l] = await db.select().from(groceryLists).where(eq(groceryLists.id, id));
@@ -207,6 +222,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
       .where(eq(groceryItems.id, id))
       .returning();
     if (!row) throw notFound("Item");
+    if (body.aisle) await rememberAisle(db, row.name, body.aisle, "you");
     changed(req, "grocery", row.listId);
     return row;
   });
@@ -270,7 +286,10 @@ export default async function groceryRoutes(app: FastifyInstance) {
         lines.push({ key: itemKey(name), name, quantity: q, unit: ing.unit ?? null, note: null, sources: [source], pantry: p ? { id: p.id, name: p.name, staple: p.staple, quantity: p.quantity, unit: p.unit } : null });
       }
     }
-    return { recipes: found.length, lines: lines.map((l) => ({ ...l, ...(l.quantity !== null ? tidy(l.quantity, l.unit) : {}), aisle: guessAisle(l.name) })) };
+    return { recipes: found.length, lines: await (async () => {
+        const learned = await learnedAisles(db, lines.map((l) => l.name));
+        return lines.map((l) => ({ ...l, ...(l.quantity !== null ? tidy(l.quantity, l.unit) : {}), aisle: learned.get(l.key) ?? guessAisle(l.name) }));
+      })() };
   });
 
   // ---------- pantry ----------
@@ -307,6 +326,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
       .where(eq(pantryItems.id, id))
       .returning();
     if (!row) throw notFound("Pantry item");
+    if (body.aisle) await rememberAisle(db, row.name, body.aisle, "you");
     changed(req, "pantry");
     return row;
   });

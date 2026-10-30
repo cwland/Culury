@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { AiService } from "./ai.js";
-import { AiError, parseJsonReply } from "./ai.js";
+import { AiError, parseJsonReply, type AiImage } from "./ai.js";
+import type { Nutrition } from "../db/schema.js";
 
 // Turning a web page or pasted text into a recipe:
 //  1. schema.org Recipe data (JSON-LD), which most recipe sites include for search engines
@@ -22,6 +23,34 @@ export interface ImportedRecipe {
   sourceName?: string | null;
   tags?: string[];
   categories?: string[]; // as the site calls them (matched to yours later)
+  nutrition?: Nutrition | null;
+}
+
+// schema.org NutritionInformation ("240 calories", "9 g", "300 mg") -> numbers per serving
+export function nutritionOf(n: unknown, servings: number | null | undefined): Nutrition | null {
+  if (!n || typeof n !== "object") return null;
+  const o = n as Record<string, unknown>;
+  const num = (v: unknown, mg = false) => {
+    const m = plain(Array.isArray(v) ? v[0] : v).replace(",", ".").match(/(\d+(?:\.\d+)?)\s*(mg|g|kcal|cal)?/i);
+    if (!m) return null;
+    let x = Number(m[1]);
+    if (mg && m[2]?.toLowerCase() === "g") x *= 1000;
+    if (!mg && m[2]?.toLowerCase() === "mg") x /= 1000;
+    return Math.round(x * 10) / 10;
+  };
+  const out: Nutrition = {
+    calories: num(o.calories),
+    fat: num(o.fatContent),
+    saturatedFat: num(o.saturatedFatContent),
+    carbs: num(o.carbohydrateContent),
+    fiber: num(o.fiberContent),
+    sugar: num(o.sugarContent),
+    protein: num(o.proteinContent),
+    sodium: num(o.sodiumContent, true),
+    source: "site",
+    servings: servings ?? null,
+  };
+  return out.calories === null && out.protein === null && out.carbs === null && out.fat === null ? null : out;
 }
 
 // ---------- small readers ----------
@@ -157,6 +186,7 @@ export function recipeFromJsonLd(html: string, pageUrl: string): ImportedRecipe 
       imageUrl: imageOf(r.image, pageUrl),
       tags: [...new Set([...words(r.keywords), ...words(r.recipeCuisine)])].slice(0, 12),
       categories: words(r.recipeCategory),
+      nutrition: nutritionOf(r.nutrition, y.servings),
     };
   }
   return null;
@@ -207,7 +237,24 @@ export async function recipeWithAi(ai: AiService, text: string, hint?: string): 
   const { text: reply } = await ai.chatWithFailover(active.services, SYSTEM, `${hint ? `${hint}\n\n` : ""}${input}`, 4000, Math.max(active.timeoutSec, 60) * 1000);
   const r = parseJsonReply(reply) as Record<string, unknown> | null;
   if (!r || typeof r !== "object") throw new AiError("The AI's answer couldn't be read. Try again, or try another AI service.");
-  if (r.isRecipe === false) throw new AiError("No recipe was found there.");
+  return aiRecipe(r);
+}
+
+// ---------- photos: recipe cards, cookbook pages, screenshots ----------
+
+const PHOTO_SYSTEM = `${SYSTEM}
+The recipe is in the photos (a handwritten or printed recipe card, a cookbook page, a screenshot). The photos may be several pages of one recipe, in order. Read handwriting carefully; keep the writer's amounts and wording, and fix only obvious spelling. Add "dishPhoto": the number (1, 2...) of a photo that shows the finished food, or null if none does.`;
+
+export async function recipeFromPhotos(ai: AiService, images: AiImage[]): Promise<ImportedRecipe & { dishPhoto: number | null }> {
+  const { json } = await ai.ask("photo", PHOTO_SYSTEM, `Read the recipe in ${images.length === 1 ? "this photo" : `these ${images.length} photos`}.`, { maxTokens: 4000, images });
+  const recipe = aiRecipe(json, "No recipe was found in the photo. Try a sharper, closer photo with good light.");
+  const n = typeof json.dishPhoto === "number" && json.dishPhoto >= 1 && json.dishPhoto <= images.length ? json.dishPhoto : null;
+  return { ...recipe, dishPhoto: n };
+}
+
+// The AI's JSON -> a recipe (or why not)
+function aiRecipe(r: Record<string, unknown>, none = "No recipe was found there."): ImportedRecipe {
+  if (r.isRecipe === false) throw new AiError(none);
   const title = plain(r.title);
   const ingredients = [r.ingredients].flat().map(plain).filter(Boolean);
   if (!title || !ingredients.length) throw new AiError("The AI couldn't find a recipe with ingredients there.");

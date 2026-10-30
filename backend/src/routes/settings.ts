@@ -90,6 +90,8 @@ export default async function settingsRoutes(app: FastifyInstance) {
       model: z.string().trim().max(200).default(""),
       baseUrl: optionalText(500),
       apiKey: z.string().trim().max(500).nullable().optional(), // undefined = keep saved, "" = remove
+      quick: z.boolean().optional(),
+      photos: z.boolean().optional(),
     })
     .superRefine((v, ctx) => {
       if (v.baseUrl && !/^https?:\/\/[^\s/]+/.test(v.baseUrl)) ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Address should start with http:// or https://" });

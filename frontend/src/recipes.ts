@@ -57,6 +57,28 @@ export interface Recipe {
   collections: Named[];
   me: Mine;
   substitutions: Substitution[];
+  nutrition: Nutrition | null;
+}
+
+// Per serving: grams, calories in kcal, sodium in mg
+export interface Nutrition {
+  calories: number | null;
+  fat: number | null;
+  saturatedFat: number | null;
+  carbs: number | null;
+  fiber: number | null;
+  sugar: number | null;
+  protein: number | null;
+  sodium: number | null;
+  source: "site" | "ai" | "you";
+  servings?: number | null;
+  note?: string | null;
+}
+// A points-style estimate (like the ones diet programs use) from calories, saturated fat, sugar and
+// protein. Approximate, not any program's official number.
+export function pointsEstimate(n: Nutrition): number | null {
+  if (n.calories === null) return null;
+  return Math.max(0, Math.round(n.calories * 0.0305 + (n.saturatedFat ?? 0) * 0.275 + (n.sugar ?? 0) * 0.12 - (n.protein ?? 0) * 0.098));
 }
 
 export interface RecipeSummary {

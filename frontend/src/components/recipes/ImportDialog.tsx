@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api";
+import { uploadFiles, useAiStatus } from "../../ai";
 import { Popup } from "../Popup";
 
 export interface ImportJob {
   id: number;
-  kind: "import-url" | "import-text";
+  kind: "import-url" | "import-text" | "import-photo";
   status: "queued" | "running" | "done" | "failed";
   source: string;
-  result: { recipeId?: number; title?: string; duplicateOf?: number; how?: "schema.org" | "ai" | "text"; warnings?: string[] } | null;
+  result: { recipeId?: number; title?: string; duplicateOf?: number; how?: "schema.org" | "ai" | "text" | "photo"; warnings?: string[] } | null;
   error: string | null;
   createdAt: string;
 }
@@ -19,7 +20,9 @@ export const firstLink = (s: string) => s.match(/https?:\/\/[^\s"'<>]+/)?.[0] ??
 // and opens the recipe when it's in.
 export default function ImportDialog({ initial, onClose }: { initial?: string; onClose: () => void }) {
   const startLink = initial ? firstLink(initial) : null;
-  const [tab, setTab] = useState<"link" | "text">(initial && !startLink ? "text" : "link");
+  const [tab, setTab] = useState<"link" | "text" | "photo">(initial && !startLink ? "text" : "link");
+  const ai = useAiStatus();
+  const [files, setFiles] = useState<File[]>([]);
   const [url, setUrl] = useState(startLink ?? "");
   const [text, setText] = useState(initial && !startLink ? initial : "");
   const [job, setJob] = useState<ImportJob | null>(null);
@@ -53,9 +56,16 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
       setError((e as Error).message);
     }
   };
-  const submit = (e?: FormEvent) => {
+  const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    void start(tab === "link" ? { url: url.trim() } : { text });
+    if (tab !== "photo") return void start(tab === "link" ? { url: url.trim() } : { text });
+    setError("");
+    setJob(null);
+    try {
+      setJob(await uploadFiles<ImportJob>("/api/recipes/import/photos", files));
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
   // Shared from another app: start right away
   useEffect(() => {
@@ -78,10 +88,32 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
           <button type="button" role="tab" aria-selected={tab === "text"} onClick={() => setTab("text")} className={tabClass(tab === "text")}>
             Paste the recipe
           </button>
+          {ai.photos && (
+            <button type="button" role="tab" aria-selected={tab === "photo"} onClick={() => setTab("photo")} className={tabClass(tab === "photo")}>
+              From a photo
+            </button>
+          )}
         </div>
 
         <form onSubmit={submit} className="mt-5">
-          {tab === "link" ? (
+          {tab === "photo" ? (
+            <>
+              <p className="text-sm font-semibold text-subtle">A recipe card, a cookbook page or a screenshot (up to 4 photos of one recipe, in order)</p>
+              <label className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-strong bg-page px-4 py-8 text-center hover:border-action">
+                <span className="font-semibold">{files.length ? `${files.length} photo${files.length === 1 ? "" : "s"} chosen` : "Take a photo or choose some"}</span>
+                <span className="text-sm text-subtle">{files.length ? files.map((f) => f.name).join(", ") : "Handwriting is fine. Good light and a straight-on shot read best."}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  aria-label="Recipe photos"
+                  onChange={(e) => setFiles([...(e.target.files ?? [])].slice(0, 4))}
+                />
+              </label>
+              <p className="mt-2 text-sm text-subtle">Read by your AI service. If one of the photos shows the finished dish, it becomes the recipe's picture.</p>
+            </>
+          ) : tab === "link" ? (
             <>
               <label htmlFor="import-url" className="text-sm font-semibold text-subtle">
                 Recipe page, blog post or video
@@ -123,7 +155,7 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={busy || (tab === "link" ? !url.trim() : text.trim().length < 20)} className="rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
+            <button type="submit" disabled={busy || (tab === "link" ? !url.trim() : tab === "photo" ? !files.length : text.trim().length < 20)} className="rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
               {busy ? "Importing…" : "Import"}
             </button>
             <a href="#/recipes/new" onClick={onClose} className="px-2 py-2.5 font-semibold text-subtle hover:underline">
@@ -169,7 +201,7 @@ function Status({ job, error, onRetry, onForce, onClose }: { job: ImportJob | nu
     return (
       <p role="status" className="mt-4 flex items-center gap-3 rounded-lg bg-pressed px-4 py-3">
         <span className="size-4 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden />
-        {job.kind === "import-url" ? "Reading the page…" : "Reading the recipe…"} This can take a little while when AI is used.
+        {job.kind === "import-url" ? "Reading the page…" : job.kind === "import-photo" ? "Reading the photo…" : "Reading the recipe…"} This can take a little while when AI is used.
       </p>
     );
   if (job.status === "done" && job.result?.duplicateOf)

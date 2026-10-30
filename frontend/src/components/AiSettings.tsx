@@ -1,3 +1,4 @@
+import { forgetAiStatus } from "../ai";
 import { useEffect, useState, type FormEvent } from "react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -39,6 +40,8 @@ interface SavedService {
   baseUrl: string | null;
   apiKey: string | null;
   apiKeyUnreadable: boolean;
+  quick: boolean;
+  photos: boolean;
 }
 interface Saved {
   enabled: boolean;
@@ -60,6 +63,8 @@ interface Draft {
   baseUrl: string;
   apiKey: string;
   unreadable: boolean;
+  quick: boolean;
+  photos: boolean;
   models: string[];
   status: { ok: boolean; text: string } | null;
   busy: "" | "test" | "models";
@@ -84,6 +89,8 @@ const toDraft = (s: SavedService): Draft => ({
   baseUrl: s.baseUrl ?? "",
   apiKey: s.apiKey ?? "",
   unreadable: s.apiKeyUnreadable,
+  quick: s.quick ?? true,
+  photos: s.photos ?? s.provider !== "local",
   models: [],
   status: null,
   busy: "",
@@ -97,13 +104,15 @@ const blank = (provider: Provider = "local"): Draft => ({
   baseUrl: "",
   apiKey: "",
   unreadable: false,
+  quick: true,
+  photos: provider !== "local",
   models: [],
   status: null,
   busy: "",
 });
 
 // The fields one service needs, to save, test or list models
-const serviceBody = (d: Draft) => ({ id: d.id, name: d.name.trim(), enabled: true, provider: d.provider, model: d.model.trim(), baseUrl: d.baseUrl.trim() || null, apiKey: d.apiKey.trim() });
+const serviceBody = (d: Draft) => ({ id: d.id, name: d.name.trim(), enabled: true, provider: d.provider, model: d.model.trim(), baseUrl: d.baseUrl.trim() || null, apiKey: d.apiKey.trim(), quick: d.quick, photos: d.photos });
 
 function ServiceCard({ d, index, count, saving, dirty, failed, onSave, onChange, onRemove, onMove }: { d: Draft; index: number; count: number; saving: boolean; dirty: boolean; failed: boolean; onSave: (skipCheck?: boolean) => void; onChange: (c: Partial<Draft>) => void; onRemove: () => void; onMove: (to: number) => void }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: d.key });
@@ -260,6 +269,24 @@ function ServiceCard({ d, index, count, saving, dirty, failed, onSave, onChange,
           </datalist>
         </label>
 
+        {/* Model cascading: a cheap, fast model for the small jobs, a stronger one for the rest */}
+        <fieldset className="flex flex-col gap-2 text-sm">
+          <legend className="mb-1 font-medium text-subtle">Use it for</legend>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={d.quick} onChange={(e) => onChange({ quick: e.target.checked })} className="mt-0.5 size-4 accent-action" />
+            <span>
+              Quick jobs <span className="text-subtle">(sorting the grocery list, nutrition, meal ideas). Untick on a big, expensive model if a cheaper one is set up.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={d.photos} onChange={(e) => onChange({ photos: e.target.checked })} className="mt-0.5 size-4 accent-action" />
+            <span>
+              Can read photos <span className="text-subtle">(recipe cards and cookbook pages). Tick only if this model takes pictures (most hosted ones do; for home models, ones like llava or qwen-vl).</span>
+            </span>
+          </label>
+          <span className="text-xs text-muted">Reading recipes from web pages and text uses every service, in order.</span>
+        </fieldset>
+
         <div className="flex flex-wrap items-center gap-3">
           {/* Checks this service, then saves it (only enabled once something on it changed) */}
           <button type="button" onClick={() => onSave()} disabled={!dirty || !!d.busy || saving} className={primaryButton + " !py-2"}>
@@ -331,7 +358,7 @@ export default function AiSettings() {
   const cardDirty = (d: Draft) => {
     const sv = d.id ? savedById.get(d.id) : undefined;
     if (!sv) return !!saved?.services.length || !!(d.model.trim() || d.baseUrl.trim() || d.apiKey.trim()) || d.provider !== "local"; // new (a first, untouched card isn't)
-    return d.name.trim() !== sv.name || d.provider !== sv.provider || d.model.trim() !== sv.model || (d.baseUrl.trim() || null) !== (sv.baseUrl ?? null) || d.apiKey.trim() !== (sv.apiKey ?? "");
+    return d.name.trim() !== sv.name || d.provider !== sv.provider || d.model.trim() !== sv.model || (d.baseUrl.trim() || null) !== (sv.baseUrl ?? null) || d.apiKey.trim() !== (sv.apiKey ?? "") || d.quick !== sv.quick || d.photos !== sv.photos;
   };
   const savedIds = (saved?.services ?? []).map((sv) => sv.id);
   const currentIds = services.filter((d) => d.id).map((d) => d.id!);
@@ -370,7 +397,8 @@ export default function AiSettings() {
           return;
         }
       }
-      const keep = (saved?.services ?? []).map((sv) => (sv.id === d.id ? serviceBody(d) : { id: sv.id, name: sv.name, enabled: true, provider: sv.provider, model: sv.model, baseUrl: sv.baseUrl }));
+      const keep = (saved?.services ?? []).map((sv) => (sv.id === d.id ? serviceBody(d) : { id: sv.id, name: sv.name, enabled: true, provider: sv.provider, model: sv.model, baseUrl: sv.baseUrl, quick: sv.quick, photos: sv.photos }));
+      forgetAiStatus();
       const r = await api<{ settings: Saved }>("PUT", "/api/settings/ai", {
         maxPerRun: saved?.maxPerRun ?? 50,
         timeoutSec: saved?.timeoutSec ?? 15,
@@ -408,6 +436,7 @@ export default function AiSettings() {
           return;
         }
       }
+      forgetAiStatus();
       const r = await api<{ settings: Saved }>("PUT", "/api/settings/ai", {
         maxPerRun: Number(maxPerRun) || 50,
         timeoutSec: Number(timeoutSec) || 15,
@@ -425,6 +454,7 @@ export default function AiSettings() {
 
   const remove = () => {
     setBusy("remove");
+    forgetAiStatus();
     api("DELETE", "/api/settings/ai")
       .then(() => {
         apply(null);

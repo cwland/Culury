@@ -172,6 +172,21 @@ export interface Step {
   section?: string | null;
 }
 
+// Per serving. "site": from the recipe's page; "ai": estimated by AI; "you": typed in.
+export interface Nutrition {
+  calories: number | null;
+  fat: number | null; // grams
+  saturatedFat: number | null;
+  carbs: number | null;
+  fiber: number | null;
+  sugar: number | null;
+  protein: number | null;
+  sodium: number | null; // milligrams
+  source: "site" | "ai" | "you";
+  servings?: number | null; // the servings it was worked out for
+  note?: string | null;
+}
+
 export const recipes = pgTable(
   "recipes",
   {
@@ -189,6 +204,7 @@ export const recipes = pgTable(
     sourceName: text("source_name"), // "Serious Eats", "Grandma's card"
     imageUrl: text("image_url"),
     notes: text("notes"), // the recipe's own notes (everyone sees them)
+    nutrition: jsonb("nutrition").$type<Nutrition>(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -306,8 +322,9 @@ export interface JobResult {
   recipeId?: number;
   title?: string;
   duplicateOf?: number; // already in your recipes (import again with force to keep both)
-  how?: "schema.org" | "ai" | "text"; // how the recipe was read
+  how?: "schema.org" | "ai" | "text" | "photo"; // how the recipe was read
   warnings?: string[];
+  sorted?: number; // sort-aisles: items given an aisle
 }
 
 export const jobs = pgTable(
@@ -385,6 +402,14 @@ export const groceryItems = pgTable(
   },
   (t) => [index("grocery_items_list_idx").on(t.listId, t.checked)]
 );
+
+// Where things go in the store, as you (or AI) chose: used for the same item next time
+export const aisleChoices = pgTable("aisle_choices", {
+  key: text("key").primaryKey(), // itemKey(name): "onion", "olive oil"
+  aisle: text("aisle").notNull(),
+  by: text("by").$type<"ai" | "you">().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // What's at home. Staples (salt, oil...) are things you always have: never added to a list.
 export const pantryItems = pgTable("pantry_items", {

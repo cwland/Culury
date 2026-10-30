@@ -4,7 +4,7 @@ import { categories, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { fetchUrl, type FetchOptions } from "./fetchPage.js";
-import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromText, recipeWithAi, type ImportedRecipe } from "./importRecipe.js";
+import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromPhotos, recipeFromText, recipeWithAi, type ImportedRecipe } from "./importRecipe.js";
 import type { JobQueue, JobRow } from "./jobs.js";
 import type { Photos } from "./photos.js";
 import { createRecipe, saveRecipe } from "./recipes.js";
@@ -56,6 +56,7 @@ async function store(d: Deps, r: ImportedRecipe, job: JobRow, how: JobResult["ho
     imageUrl,
     tags: (r.tags ?? []).map((t) => t.slice(0, 60)).slice(0, 12),
     categories: matchCategories(r.categories ?? [], mine),
+    nutrition: r.nutrition ?? null,
   });
   const recipeId = await saveRecipe(d.db, null, input, job.createdBy);
   return { recipeId, title: input.title, how, ...(warnings.length ? { warnings } : {}) };
@@ -115,11 +116,30 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
   });
 }
 
+// Photos of a recipe card or cookbook page, read by an AI service that can see pictures
+export function registerPhotoImport(queue: JobQueue, d: Deps) {
+  queue.handle("import-photo", async (job) => {
+    const { files } = job.payload as { files: string[] };
+    try {
+      const buffers = await Promise.all(files.map((f) => d.photos.readIncoming(f)));
+      const r = await recipeFromPhotos(d.ai, buffers.map((b) => ({ mime: "image/jpeg", base64: b.toString("base64") })));
+      const imageUrl = r.dishPhoto ? await d.photos.save(buffers[r.dishPhoto - 1]) : null;
+      const result = await store(d, { ...r, imageUrl, sourceName: r.sourceName ?? null }, job, "photo");
+      await d.photos.removeIncoming(files);
+      await logEvent(d.db, { category: "import", level: "info", source: "Photo", event: `Read "${result.title}" from ${files.length === 1 ? "a photo" : `${files.length} photos`}` });
+      return result;
+    } catch (e) {
+      await logEvent(d.db, { category: "import", level: "warning", source: "Photo", event: "Couldn't read a recipe from a photo", detail: (e as Error).message });
+      throw e;
+    }
+  });
+}
+
 export const jobView = (j: JobRow) => ({
   id: j.id,
   kind: j.kind,
   status: j.status,
-  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : "Pasted text",
+  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : j.kind === "import-photo" ? (((j.payload as { files?: string[] }).files?.length ?? 1) > 1 ? "Photos" : "Photo") : "Pasted text",
   result: j.result ?? null,
   error: j.error,
   createdAt: j.createdAt,

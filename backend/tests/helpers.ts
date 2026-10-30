@@ -133,7 +133,7 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
       clock.date = null;
       web.pages = {};
       web.calls.length = 0;
-      for (const f of fs.readdirSync(photoDir)) fs.rmSync(path.join(photoDir, f), { force: true });
+      for (const f of fs.readdirSync(photoDir)) fs.rmSync(path.join(photoDir, f), { force: true, recursive: true });
       sent.length = 0;
       failNext.value = "";
       ai.calls.length = 0;
@@ -142,7 +142,7 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
       github.calls.length = 0;
       github.down = false;
       github.respond = () => ({ status: 404, json: { message: "Not Found" } });
-      await db.execute(sql`truncate users, password_resets, app_settings, api_keys, sessions, login_events, app_log, passkeys, recipes, tags, categories, collections, substitutions, jobs, meal_plan, grocery_lists, pantry_items restart identity cascade`);
+      await db.execute(sql`truncate users, password_resets, app_settings, api_keys, sessions, login_events, app_log, passkeys, recipes, tags, categories, collections, substitutions, jobs, meal_plan, grocery_lists, pantry_items, aisle_choices restart identity cascade`);
       await db.execute(sql`insert into grocery_lists (name) values ('Groceries')`);
       await db.execute(sql`insert into categories (name, sort_order) values ('Breakfast', 0), ('Lunch', 1), ('Dinner', 2), ('Side', 3), ('Snack', 4), ('Dessert', 5), ('Drink', 6)`);
       resetSessionTouches();

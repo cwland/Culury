@@ -5,6 +5,8 @@ import { AISLE_NAMES, AISLE_ORDER, formatMinutes, itemAmount, type PantryItem } 
 import { PlusIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
 import { RecipeImage } from "../recipes/RecipeList";
+import IdeasDialog from "../plan/IdeasDialog";
+import { useAiStatus } from "../../ai";
 
 interface Cookable {
   id: number;
@@ -27,6 +29,8 @@ export default function PantryPage() {
   const [staple, setStaple] = useState(false);
   const [editing, setEditing] = useState<PantryItem | null>(null);
   const [error, setError] = useState("");
+  const [ideas, setIdeas] = useState(false);
+  const ai = useAiStatus();
 
   const load = useCallback(async () => {
     try {
@@ -110,6 +114,11 @@ export default function PantryPage() {
         <aside aria-label="Cook with what you have" className="self-start rounded-2xl bg-container p-5 lg:sticky lg:top-4">
           <h2 className="text-lg font-bold">Cook with what you have</h2>
           <p className="mt-1 text-sm text-subtle">Your recipes, by how much of them is in the pantry.</p>
+          {ai.ready && (
+            <button type="button" onClick={() => setIdeas(true)} className="mt-3 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed">
+              Get meal ideas with AI
+            </button>
+          )}
           {cookable.length === 0 ? (
             <p className="mt-4 text-sm text-muted">{items?.length ? "No recipe is half covered yet. Add more of what you have." : "Add what you have to see what you can make."}</p>
           ) : (
@@ -135,6 +144,7 @@ export default function PantryPage() {
           )}
         </aside>
       </div>
+      {ideas && <IdeasDialog onClose={() => setIdeas(false)} />}
       {editing && <EditPantry i={editing} onClose={() => setEditing(null)} onDone={() => (setEditing(null), void load())} />}
     </div>
   );

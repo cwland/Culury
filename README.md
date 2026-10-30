@@ -14,7 +14,7 @@ Built in steps:
 | 4 | Cook Mode: wake lock, step by step, ingredient checklist, tap-to-start timers, servings scaling, metric/US units | **Done** |
 | 5 | Meal planner (drag and drop week, custom meal slots) and household members (owner / member) | **Done** |
 | 6 | Grocery lists and pantry, household sync | **Done** |
-| 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas | |
+| 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas, model cascading | **Done** |
 | 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups | |
 
 The version is in `backend/package.json` and `frontend/package.json` (keep them the same); "What's new" notes are in `frontend/src/changelog.ts`.
@@ -139,6 +139,16 @@ No key can ever see or change settings, other keys, sign-in details, or restore 
 - **Pantry** (#/pantry): what you have, with use-by dates and staples (salt, oil, spices). **Cook with what you have** lists recipes you can mostly make from it.
 - Changes show up live on every signed-in device in the household (grocery list, pantry and meal plan).
 - Home Assistant: make an API key with **Grocery list write** access and `POST /api/grocery/items` with `{"text": "milk"}` (header `x-api-key`). It goes on the first list.
+
+## AI
+
+Turn it on in **Settings › AI** and add one or more services (OpenAI, Claude, Gemini, OpenRouter, or a home server like Ollama). They're tried in order: if one is down, the next answers.
+
+- **Use it for**: tick **Quick jobs** on a cheap, fast model and untick it on an expensive one, and the quick jobs (aisle sorting, nutrition, meal ideas) go to the cheap one. Tick **Can read photos** on services whose model takes pictures. Reading recipes from pages and text uses every service, in order.
+- **Recipes from photos**: Add recipe › From a photo. `POST /api/recipes/import/photos` (multipart, field `photo`, up to 4) works with a Recipe push API key too.
+- **Nutrition**: per serving, from the recipe's site, estimated by AI (`POST /api/recipes/:id/nutrition`), or typed in (`PUT`). The points figure is an approximation from calories, saturated fat, sugar and protein, not any diet program's official number.
+- **Meal ideas**: Meal plan › Week ▾ › Meal ideas, or on the Pantry page (`POST /api/ai/ideas`).
+- **Aisles**: items the word list can't place are sorted by AI once and remembered.
 
 ## Accounts and passwords
 

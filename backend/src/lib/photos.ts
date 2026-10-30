@@ -47,12 +47,42 @@ export class Photos {
     if (name) await fs.unlink(path.join(this.dir, name)).catch(() => {});
   }
 
+  // Photos sent to be read by AI (recipe cards): kept as JPEG until the import is done
+  private incoming() {
+    return path.join(this.dir, "incoming");
+  }
+  async saveIncoming(input: Buffer): Promise<string> {
+    let out: Buffer;
+    try {
+      out = await sharp(input, { failOn: "none" }).rotate().resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+    } catch {
+      throw new HttpError(400, "That file isn't a photo Culury can read (try a JPEG or PNG)");
+    }
+    await fs.mkdir(this.incoming(), { recursive: true });
+    const name = `${randomUUID()}.jpg`;
+    await fs.writeFile(path.join(this.incoming(), name), out);
+    return name;
+  }
+  async readIncoming(name: string): Promise<Buffer> {
+    if (!/^[0-9a-f-]{36}\.jpg$/.test(name)) throw new Error("Bad photo name");
+    return fs.readFile(path.join(this.incoming(), name)).catch(() => {
+      throw new Error("The photo is no longer here (photos waiting to be read are kept for 2 days). Add it again.");
+    });
+  }
+  async removeIncoming(names: string[]) {
+    for (const n of names) if (/^[0-9a-f-]{36}\.jpg$/.test(n)) await fs.unlink(path.join(this.incoming(), n)).catch(() => {});
+  }
+
   path(name: string) {
     return PHOTO_NAME.test(name) ? path.join(this.dir, name) : null;
   }
 
   // Photos no recipe uses any more (uploaded but never saved, or replaced), a day old or more
   async sweep(db: Db) {
+    for (const n of await fs.readdir(this.incoming()).catch(() => [] as string[])) {
+      const st = await fs.stat(path.join(this.incoming(), n)).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > 2 * 24 * 3600 * 1000) await fs.unlink(path.join(this.incoming(), n)).catch(() => {});
+    }
     let names: string[];
     try {
       names = (await fs.readdir(this.dir)).filter((n) => PHOTO_NAME.test(n));

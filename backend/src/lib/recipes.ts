@@ -53,6 +53,24 @@ const stepList = z.union([
 const names = z.array(z.string().trim().min(1).max(60)).max(50);
 const refs = z.array(z.union([z.number().int().positive(), z.string().trim().min(1).max(100)])).max(50);
 
+// Nutrition per serving (grams; sodium in milligrams)
+const amount = z.coerce.number().min(0).max(100000).nullable().default(null);
+export const nutritionInput = z
+  .object({
+    calories: amount,
+    fat: amount,
+    saturatedFat: amount,
+    carbs: amount,
+    fiber: amount,
+    sugar: amount,
+    protein: amount,
+    sodium: amount,
+    source: z.enum(["site", "ai", "you"]).default("you"),
+    servings: z.number().int().min(1).max(1000).nullable().optional(),
+    note: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+
 export const recipeFields = {
   title: z.string().trim().min(1, "Give the recipe a name").max(300),
   description: text(5000),
@@ -67,6 +85,7 @@ export const recipeFields = {
   sourceName: text(200),
   imageUrl: link,
   notes: text(20000),
+  nutrition: nutritionInput.nullable().optional(),
   tags: names.optional(),
   categories: refs.optional(),
   collections: refs.optional(),
@@ -187,6 +206,7 @@ export async function saveRecipe(db: Db, id: number | null, input: RecipeInput, 
       ...(input.sourceName !== undefined && { sourceName: input.sourceName }),
       ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
       ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.nutrition !== undefined && { nutrition: input.nutrition }),
       ...times(input, current),
     };
     let recipeId: number;

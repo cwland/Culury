@@ -31,7 +31,9 @@ import eventRoutes, { EventBus } from "./lib/events.js";
 import multipart from "@fastify/multipart";
 import { JobQueue } from "./lib/jobs.js";
 import { Photos } from "./lib/photos.js";
-import { registerImportJobs } from "./lib/importJobs.js";
+import { registerImportJobs, registerPhotoImport } from "./lib/importJobs.js";
+import { registerAisleSorting } from "./lib/aiHelpers.js";
+import aiRoutes from "./routes/ai.js";
 import type { FetchImpl, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
@@ -136,7 +138,10 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("photos", new Photos(photoDir));
   app.decorate("events", new EventBus());
   app.decorate("jobs", new JobQueue(db));
-  registerImportJobs(app.jobs, { db, ai: app.ai, photos: app.photos, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } });
+  const jobDeps = { db, ai: app.ai, photos: app.photos, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
+  registerImportJobs(app.jobs, jobDeps);
+  registerPhotoImport(app.jobs, jobDeps);
+  registerAisleSorting(app.jobs, { db, ai: app.ai, events: app.events });
   app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
   securityHeaders(app);
@@ -242,6 +247,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(settingsRoutes);
   app.register(recipeRoutes);
   app.register(importRoutes);
+  app.register(aiRoutes);
   app.register(householdRoutes);
   app.register(planRoutes);
   app.register(groceryRoutes);

@@ -5,6 +5,7 @@ import { BackIcon, ChefIcon, GroceryIcon, ClockIcon, CollectionAddIcon, CopyIcon
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
+import { NutritionCard } from "./NutritionCard";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
 import { StepText } from "./StepText";
 import { ingredientLine, recipeUnits, type Units } from "../../cooking";
@@ -193,6 +194,7 @@ export default function RecipeView({ id }: { id: number }) {
         )}
         <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
         <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
+        <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} onChange={(nutrition) => setR({ ...r, nutrition })} />
       </div>
 
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : {}) }] }} onClose={() => setShopping(false)} />}

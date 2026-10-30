@@ -22,7 +22,7 @@ const NEVER = ["/api/settings", "/api/keys", "/api/auth", "/api/profile", "/api/
 const ADMIN_ONLY = ["/api/logs", "/api/backups", "/api/export", "/api/updates"];
 
 // recipe_push: the routes that send recipes in (route patterns as Fastify matches them)
-const RECIPE_PUSH = new Set(["POST /api/recipes", "POST /api/recipes/import", "GET /api/imports/:id"]);
+const RECIPE_PUSH = new Set(["POST /api/recipes", "POST /api/recipes/import", "POST /api/recipes/import/photos", "GET /api/imports/:id"]);
 // grocery_write: every route under here
 const GROCERY = "/api/grocery";
 

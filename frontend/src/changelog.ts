@@ -10,6 +10,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.7.0",
+    date: "2026-10-30",
+    title: "More AI: photos, nutrition and meal ideas",
+    changes: [
+      "Add a recipe › From a photo: take a picture of a recipe card (handwriting is fine), a cookbook page or a screenshot, up to 4 photos of one recipe. If a photo shows the finished dish, it becomes the recipe's picture.",
+      "Nutrition facts on every recipe, per serving with % daily values: read from the recipe's site when it has them, estimated by AI, or typed in. Includes a points-style estimate.",
+      "Meal ideas (Meal plan › Week ▾, and the Pantry): AI suggests meals from what's in your pantry, your own recipes and what you haven't had lately. Put one on the plan with a tap.",
+      "Grocery items the app can't place (gochujang, furikake…) are sorted into an aisle by AI, and remembered. Move an item to another aisle yourself and that's remembered too.",
+      "Settings › AI: choose which service does what. Mark a cheap, fast model for quick jobs (sorting, nutrition, ideas) and the ones that can read photos.",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-10-30",
     title: "Grocery list and pantry",

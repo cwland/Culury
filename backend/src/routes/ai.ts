@@ -1,0 +1,80 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { recipes } from "../db/schema.js";
+import { AiError } from "../lib/ai.js";
+import { estimateNutrition, mealIdeas } from "../lib/aiHelpers.js";
+import { HttpError, notFound } from "../lib/errors.js";
+import { idParam } from "../lib/validation.js";
+import { nutritionInput } from "../lib/recipes.js";
+import { jobView } from "../lib/importJobs.js";
+import { userOf } from "./recipes.js";
+
+// AI for everyone in the household (the settings themselves are the owner's, under /api/settings/ai)
+export default async function aiRoutes(app: FastifyInstance) {
+  const { db, ai, photos, jobs: queue } = app;
+  const asHttp = async <T>(fn: () => Promise<T>) => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof AiError) throw new HttpError(e.message.includes("Settings › AI") ? 409 : 502, e.message);
+      throw e;
+    }
+  };
+
+  // Is AI there, and can it read photos? (the app shows AI buttons only when it is)
+  app.get("/api/ai/status", async () => ai.status());
+
+  // ---------- nutrition ----------
+  const recipeOf = async (id: number) => {
+    const [r] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (!r) throw notFound("Recipe");
+    return r;
+  };
+  // Estimate with AI (replaces what's there)
+  app.post("/api/recipes/:id/nutrition", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const r = await recipeOf(id);
+    const nutrition = await asHttp(() => estimateNutrition(ai, r));
+    await db.update(recipes).set({ nutrition }).where(eq(recipes.id, id));
+    return nutrition;
+  });
+  // Type it in (from the package or another app), or clear it with null
+  app.put("/api/recipes/:id/nutrition", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const r = await recipeOf(id);
+    const nutrition = req.body === null ? null : nutritionInput.parse(req.body);
+    await db.update(recipes).set({ nutrition: nutrition && { ...nutrition, servings: nutrition.servings ?? r.servings } }).where(eq(recipes.id, id));
+    return nutrition;
+  });
+
+  // ---------- meal ideas ----------
+  app.post("/api/ai/ideas", async (req) => {
+    const { ask } = z.object({ ask: z.string().trim().max(300).optional() }).strict().parse(req.body ?? {});
+    const d = app.now();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { ideas: await asHttp(() => mealIdeas(db, ai, { ask, today })) };
+  });
+
+  // ---------- recipes from photos ----------
+  // Up to 4 photos of one recipe (a card front and back, two cookbook pages), read in the background
+  app.post("/api/recipes/import/photos", async (req, reply) => {
+    if (!(await ai.active("photo"))) throw new HttpError(409, "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service.");
+    const files: string[] = [];
+    try {
+      for await (const part of req.files({ limits: { files: 4, fileSize: 25 * 1024 * 1024 } })) {
+        const buf = await part.toBuffer().catch(() => {
+          throw new HttpError(413, "That photo is too large (25 MB at most)");
+        });
+        files.push(await photos.saveIncoming(buf));
+      }
+    } catch (e) {
+      await photos.removeIncoming(files);
+      if ((e as { code?: string }).code === "FST_FILES_LIMIT") throw new HttpError(400, "Up to 4 photos of one recipe at a time");
+      throw e;
+    }
+    if (!files.length) throw new HttpError(400, "Choose a photo of the recipe");
+    const job = await queue.enqueue("import-photo", { files }, userOf(req));
+    return reply.status(202).send(jobView(job));
+  });
+}

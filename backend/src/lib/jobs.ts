@@ -28,6 +28,12 @@ export class JobQueue {
     return row;
   }
 
+  // Is a job of this kind waiting to run?
+  async pending(kind: string) {
+    const [row] = await this.db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.kind, kind), eq(jobs.status, "queued"))).limit(1);
+    return !!row;
+  }
+
   async get(id: number) {
     const [row] = await this.db.select().from(jobs).where(eq(jobs.id, id));
     return row ?? null;
