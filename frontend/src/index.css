@@ -1,0 +1,63 @@
+@import "tailwindcss";
+@import "@fontsource/figtree/300.css";
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/figtree/700.css";
+
+/* Color tokens: the default theme (Fresh, light). Themes and dark mode (src/themes.ts) replace them at runtime. */
+@theme {
+  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+
+  --color-page: #f5f7f6;
+  --color-container: #ffffff;
+  --color-line: #e4e9e6;
+  --color-strong: #cfd8d3;
+  --color-brand: #20b35b;
+  --color-brand-subtle: #e3f6ea;
+  --color-success: #1f9d55;
+  --color-success-subtle: #dcf5e5;
+  --color-error: #d1433b;
+  --color-error-subtle: #fde2df;
+  --color-warning: #f2a20c;
+  --color-pressed: #eaf5ee;
+  --color-active: #d5efdf;
+  --color-primary: #1e2b33;
+  --color-primary-pressed: #121b21;
+  --color-action: #138a45;
+  --color-link: #11853f;
+  --color-ink: #1a2329;
+  --color-subtle: #46545c;
+  --color-muted: #66747b;
+  --color-inactive: #8f9ca2;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth color change when switching themes or light/dark */
+@media (prefers-reduced-motion: no-preference) {
+  body, section, nav, main { transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
+}
+
+/* Scrolls sideways (on narrow screens) without showing a scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

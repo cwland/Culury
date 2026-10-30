@@ -1,0 +1,85 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { BACKUP_NAME, listBackups, pruneBackups, writeBackup } from "../lib/backup.js";
+import { buildExport, importData, importSchema } from "../lib/dataExport.js";
+import { checkBackupKey, type SettingsSection } from "../lib/settingsBackup.js";
+import { HttpError, notFound } from "../lib/errors.js";
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+function requireLogin(req: FastifyRequest) {
+  if (req.auth?.method !== "token") throw new HttpError(403, "Log in to do this");
+}
+
+export default async function exportRoutes(app: FastifyInstance) {
+  const { db } = app;
+
+  // ---------- downloads ----------
+
+  app.get("/api/export", async (_req, reply) => {
+    const data = await buildExport(db, app.backupSecrets());
+    return reply.header("Content-Disposition", `attachment; filename="culury-${today()}.json"`).send(data);
+  });
+
+  // ---------- backups ----------
+
+  app.get("/api/backups", async () => ({
+    dir: app.backupDir,
+    keep: app.backupKeep,
+    // Saved keys and passwords go into backups (encrypted) only when BACKUP_KEY is set
+    secretsIncluded: !!app.backupKey.key,
+    backupKeyProblem: app.backupKey.problem,
+    backups: await listBackups(app.backupDir),
+  }));
+
+  app.post("/api/backups", async (_req, reply) => {
+    const created = await writeBackup(db, app.backupDir, app.backupSecrets());
+    await pruneBackups(app.backupDir, app.backupKeep);
+    return reply.status(201).send(created);
+  });
+
+  app.get("/api/backups/:name", async (req, reply) => {
+    const { name } = z.object({ name: z.string() }).parse(req.params);
+    if (!BACKUP_NAME.test(name)) throw notFound("Backup"); // also blocks ../ paths
+    try {
+      const data = await fs.readFile(path.join(app.backupDir, name));
+      return reply.type("application/json").header("Content-Disposition", `attachment; filename="${name}"`).send(data);
+    } catch {
+      throw notFound("Backup");
+    }
+  });
+
+  // ---------- restore ----------
+  // Replaces all recipe data with an export/backup file. Must be logged in (not an API key)
+  // and pass ?confirm=replace. A safety backup is written first.
+  app.post("/api/import", { bodyLimit: 100 * 1024 * 1024 }, async (req) => {
+    requireLogin(req);
+    const { confirm } = z.object({ confirm: z.string().optional() }).parse(req.query);
+    if (confirm !== "replace") throw new HttpError(400, "Add ?confirm=replace to restore (this replaces all recipe data)");
+
+    const parsed = importSchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(400, "That file isn't a Culury backup");
+
+    // A backup from another server: its BACKUP_KEY can be given for this restore (X-Backup-Key
+    // header, so it never lands in a URL or log). Checked before anything changes.
+    const given = req.headers["x-backup-key"];
+    const otherKey = typeof given === "string" && given.trim() ? given.trim() : null;
+    if (otherKey) {
+      if (parsed.data.settings?.secrets !== "encrypted") throw new HttpError(400, "This backup has no encrypted keys or passwords, so no backup key is needed. Leave the key blank.");
+      const { total, readable } = checkBackupKey(parsed.data.settings as SettingsSection, otherKey);
+      if (total && !readable) throw new HttpError(400, "That backup key doesn't match this file. Nothing was changed. Check the key and try again.");
+    }
+    const secrets = otherKey ? { ...app.backupSecrets(), backupKey: otherKey } : app.backupSecrets();
+
+    const safety = await writeBackup(db, app.backupDir, app.backupSecrets(), "before-restore");
+    try {
+      const counts = await importData(db, parsed.data, secrets);
+      return { ok: true, safetyBackup: safety.name, ...counts };
+    } catch (err) {
+      req.log.error(err);
+      throw new HttpError(400, `Couldn't restore that file, nothing was changed (${(err as Error).message.split("\n")[0]})`);
+    }
+  });
+}

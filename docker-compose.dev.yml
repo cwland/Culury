@@ -1,0 +1,18 @@
+# Development on the Mac: just PostgreSQL in Docker; run the app with `npm run dev`.
+#   docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: culury
+      POSTGRES_PASSWORD: culury
+      POSTGRES_DB: culury
+    ports:
+      - "5432:5432"
+    volumes:
+      - culury-dev-db:/var/lib/postgresql/data
+      - ./scripts/dev-test-db.sql:/docker-entrypoint-initdb.d/test-db.sql:ro
+
+volumes:
+  culury-dev-db:
