@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import SettingsPage from "./SettingsPage";
 import ComingSoon from "./ComingSoon";
+import TimerTray from "./TimerTray";
 import RecipesPage from "./recipes/RecipesPage";
 import AccountMenu from "./AccountMenu";
 import { APP_VERSION, showWhatsNew, versionLabel } from "../version";
@@ -98,6 +99,7 @@ export default function AppShell() {
         ))}
         <AccountMenu variant="bar" />
       </nav>
+      <TimerTray />
       {news && <WhatsNew since={sinceVersion} all={news === "all"} onClose={closeNews} />}
     </div>
   );

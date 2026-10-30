@@ -1,0 +1,197 @@
+// Cooking helpers: scaling amounts, metric <-> US units, timers and temperatures in step text.
+// Pure functions (tested in cooking.test.ts).
+import { formatQuantity, unitLabel, type Ingredient } from "./recipes";
+
+export type Units = "original" | "metric" | "us";
+
+export interface Amount {
+  quantity: number | null;
+  quantityMax: number | null;
+  unit: string | null;
+}
+
+// ---------- scaling ----------
+
+export function scale(i: Ingredient, factor: number): Amount {
+  const q = i.quantity ?? null;
+  return { quantity: q === null ? null : q * factor, quantityMax: i.quantityMax ? i.quantityMax * factor : null, unit: i.unit ?? null };
+}
+
+// ---------- units ----------
+
+// How much of a base unit each unit is: ml for volume, g for weight
+const VOLUME: Record<string, number> = { tsp: 4.929, tbsp: 14.787, "fl oz": 29.574, cup: 236.588, pt: 473.176, qt: 946.353, gal: 3785.41, ml: 1, cl: 10, dl: 100, l: 1000 };
+const WEIGHT: Record<string, number> = { oz: 28.3495, lb: 453.592, g: 1, kg: 1000, mg: 0.001 };
+const US_VOLUME = new Set(["cup", "fl oz", "pt", "qt", "gal"]);
+const METRIC_VOLUME = new Set(["ml", "cl", "dl", "l"]);
+const US_WEIGHT = new Set(["oz", "lb"]);
+const METRIC_WEIGHT = new Set(["g", "kg", "mg"]);
+
+// Round metric amounts the way a measuring jug (10 ml marks) or kitchen scale (to the gram) reads
+function roundMetric(n: number, step100: number) {
+  if (n >= 100) return Math.round(n / step100) * step100;
+  if (n >= 20) return Math.round(n / 5) * 5;
+  return Math.round(n);
+}
+// To the nearest 1/8, or 1/4 above 2 (cups and pounds you can actually measure)
+const roundUs = (n: number) => (n >= 2 ? Math.round(n * 4) / 4 : Math.max(Math.round(n * 8) / 8, 0.125));
+
+function toMetric(value: number, unit: string): { value: number; unit: string } | null {
+  if (US_VOLUME.has(unit)) {
+    const ml = value * VOLUME[unit];
+    return ml >= 1000 ? { value: Math.round((ml / 1000) * 100) / 100, unit: "l" } : { value: roundMetric(ml, 10), unit: "ml" };
+  }
+  if (US_WEIGHT.has(unit)) {
+    const g = value * WEIGHT[unit];
+    return g >= 1000 ? { value: Math.round((g / 1000) * 100) / 100, unit: "kg" } : { value: roundMetric(g, 5), unit: "g" };
+  }
+  if (unit === "inch") return { value: Math.round(value * 2.54 * 2) / 2, unit: "cm" };
+  return null; // tsp, tbsp and counts are the same everywhere
+}
+
+function toUs(value: number, unit: string): { value: number; unit: string } | null {
+  if (METRIC_VOLUME.has(unit)) {
+    const ml = value * VOLUME[unit];
+    if (ml >= 946) return { value: roundUs(ml / VOLUME.qt), unit: "qt" };
+    if (ml >= 59) return { value: roundUs(ml / VOLUME.cup), unit: "cup" };
+    if (ml >= 14) return { value: roundUs(ml / VOLUME.tbsp), unit: "tbsp" };
+    return { value: roundUs(ml / VOLUME.tsp), unit: "tsp" };
+  }
+  if (METRIC_WEIGHT.has(unit)) {
+    const g = value * WEIGHT[unit];
+    if (g >= 440) return { value: roundUs(g / WEIGHT.lb), unit: "lb" }; // (close enough to a pound to say so)
+    return { value: g >= 28 ? Math.round((g / WEIGHT.oz) * 2) / 2 : roundUs(g / WEIGHT.oz), unit: "oz" };
+  }
+  if (unit === "cm") return { value: roundUs(value / 2.54), unit: "inch" };
+  return null;
+}
+
+export function convert(a: Amount, to: Units): Amount {
+  if (to === "original" || !a.unit || a.quantity === null) return a;
+  const fn = to === "metric" ? toMetric : toUs;
+  const q = fn(a.quantity, a.unit);
+  if (!q) return a;
+  const max = a.quantityMax ? fn(a.quantityMax, a.unit) : null;
+  return { quantity: q.value, quantityMax: max && max.unit === q.unit ? max.value : null, unit: q.unit };
+}
+
+// Which way a recipe leans, to offer the other: "metric" if most measured amounts are metric
+export function recipeUnits(list: Ingredient[]): "metric" | "us" | null {
+  let metric = 0;
+  let us = 0;
+  for (const i of list) {
+    if (!i.unit) continue;
+    if (METRIC_VOLUME.has(i.unit) || METRIC_WEIGHT.has(i.unit)) metric++;
+    if (US_VOLUME.has(i.unit) || US_WEIGHT.has(i.unit)) us++;
+  }
+  if (!metric && !us) return null;
+  return metric > us ? "metric" : "us";
+}
+
+// "1½–2 cups"
+export function formatAmount(a: Amount): string {
+  if (a.quantity === null) return a.unit ?? "";
+  const q = formatQuantity(a.quantity) + (a.quantityMax ? `–${formatQuantity(a.quantityMax)}` : "");
+  return [q, unitLabel(a.unit, a.quantityMax ?? a.quantity)].filter(Boolean).join(" ");
+}
+
+// The line as it should read at this scale and in these units ("" amount: show the line as written)
+export function ingredientLine(i: Ingredient, factor: number, units: Units) {
+  if (i.section) return { amount: "", name: i.section, note: null, plain: true };
+  if (i.quantity == null && !i.unit) return { amount: "", name: i.raw, note: null, plain: true };
+  return { amount: formatAmount(convert(scale(i, factor), units)), name: i.name ?? i.raw, note: i.note ?? null, plain: false };
+}
+
+// ---------- temperatures in steps ----------
+
+// "350°F" / "180 C" / "400 degrees F" -> the other scale (to the nearest 5), shown after it
+export function convertTemperatures(text: string, units: Units): string {
+  if (units === "original") return text;
+  // (without ° or "degrees", only oven-size numbers: "200 C", never "2 C")
+  return text.replace(/(\d{2,3})\s*(°|º|degrees?\s*)?\s*([FC])\b/g, (m, n: string, mark: string | undefined, scaleLetter: string) => {
+    const v = Number(n);
+    if (!mark && v < 100) return m;
+    const isF = scaleLetter.toUpperCase() === "F";
+    if (units === "metric" && isF) return `${Math.round((((v - 32) * 5) / 9) / 5) * 5}°C`;
+    if (units === "us" && !isF) return `${Math.round(((v * 9) / 5 + 32) / 5) * 5}°F`;
+    return m;
+  });
+}
+
+// ---------- timers in steps ----------
+
+export interface FoundTimer {
+  start: number; // where it is in the text
+  end: number;
+  label: string; // "15 min", "6–8 min", "1 hr 30 min"
+  seconds: number; // the timer is set to the shorter time in a range: check early
+}
+
+const WORD_NUMBERS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, "forty-five": 45, forty: 40, sixty: 60, ninety: 90, half: 0.5 };
+const FRACTION_CHARS: Record<string, number> = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3 };
+const NUM = String.raw`(?:\d+(?:[.,]\d+)?\s*[½¼¾⅓⅔]?|[½¼¾⅓⅔]|\d+\s+\d\/\d|\d\/\d|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty-five|forty|sixty|ninety)`;
+const UNIT = String.raw`(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b`;
+const ONE = String.raw`(${NUM})(?:\s*(?:-|–|—|to|or)\s*(${NUM}))?\s*(?:and a half\s+)?${UNIT}(?:\s+and a half)?`;
+const TIMER = new RegExp(String.raw`\b${ONE}(?:\s*(?:and\s+)?(${NUM})\s*(minutes?|mins?|m)\b)?`, "gi");
+
+function num(s: string): number | null {
+  const t = s.trim().toLowerCase().replace(",", ".");
+  if (t in WORD_NUMBERS) return WORD_NUMBERS[t];
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/^(\d+)\s+(\d)\/(\d)$/))) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+  if ((m = t.match(/^(\d)\/(\d)$/))) return Number(m[1]) / Number(m[2]);
+  if ((m = t.match(/^(\d+(?:\.\d+)?)?\s*([½¼¾⅓⅔])$/))) return Number(m[1] ?? 0) + FRACTION_CHARS[m[2]];
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+const secondsPer = (u: string) => (/^h/i.test(u) ? 3600 : /^m/i.test(u) ? 60 : 1);
+
+export function formatDuration(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h) return `${h} hr${m ? ` ${m} min` : ""}`;
+  if (m) return `${m} min${s ? ` ${s} sec` : ""}`;
+  return `${s} sec`;
+}
+
+export function findTimers(text: string): FoundTimer[] {
+  const out: FoundTimer[] = [];
+  for (const m of text.matchAll(TIMER)) {
+    const [whole, a, b, unit, extraNum, extraUnit] = m;
+    // single letters (h, m, s) only right after a digit ("10m"), never "a m" in a sentence
+    if (/^[hms]$/i.test(unit) && !/\d\s*[hms]$/i.test(whole.replace(/\s+and.*$/, "").trim())) continue;
+    const half = /and a half/i.test(whole) ? 0.5 : 0;
+    const lo = num(a);
+    if (lo === null) continue;
+    const hi = b ? num(b) : null;
+    const per = secondsPer(unit);
+    const extra = extraNum ? (num(extraNum) ?? 0) * secondsPer(extraUnit) : 0;
+    const seconds = Math.round((lo + half) * per + extra);
+    if (seconds < 5 || seconds > 48 * 3600) continue;
+    const label = hi && hi > lo ? `${formatDuration(Math.round(lo * per))}`.replace(/ (hr|min|sec)$/, "") + `–${formatDuration(Math.round((hi + half) * per))}` : formatDuration(seconds);
+    out.push({ start: m.index!, end: m.index! + whole.length, label, seconds });
+  }
+  return out;
+}
+
+// ---------- which ingredients a step uses ----------
+
+const STOP = new Set(["of", "and", "or", "the", "a", "an", "fresh", "large", "small", "medium", "chopped", "diced", "minced", "ground", "to", "taste", "for", "with", "into", "plus", "more"]);
+const stem = (w: string) => w.replace(/(?:es|s)$/i, "");
+// The words that name an ingredient: "San Marzano tomatoes" -> ["marzano", "tomato"] (skips filler words)
+export function keyWords(name: string) {
+  return name
+    .toLowerCase()
+    .split(/[^a-zÀ-ɏ]+/)
+    .filter((w) => w.length > 2 && !STOP.has(w))
+    .map(stem);
+}
+export function stepUses(step: string, ingredient: Ingredient): boolean {
+  if (ingredient.section) return false;
+  const words = keyWords(ingredient.name ?? ingredient.raw);
+  if (!words.length) return false;
+  const inStep = new Set(keyWords(step));
+  // the last word is usually the thing itself ("olive oil" -> oil, "kidney beans" -> bean)
+  return inStep.has(words[words.length - 1]);
+}

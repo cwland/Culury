@@ -1,9 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
-import { formatMinutes, formatQuantity, listAddress, siteName, unitLabel, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
+import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
+import { BackIcon, ChefIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
+import { ScaleControls, useCookPrefs } from "./ScaleControls";
+import { StepText } from "./StepText";
+import { ingredientLine, recipeUnits, type Units } from "../../cooking";
 
 const card = "rounded-2xl bg-container p-5 sm:p-6";
 const smallButton = "flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed";
@@ -13,6 +16,7 @@ export default function RecipeView({ id }: { id: number }) {
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
+  const prefs = useCookPrefs(id);
 
   useEffect(() => {
     setR(null);
@@ -98,6 +102,11 @@ export default function RecipeView({ id }: { id: number }) {
           </div>
 
           <div className="mt-auto flex flex-wrap gap-2 pt-5">
+            {r.steps.length > 0 && (
+              <a href={`#/recipes/${r.id}/cook`} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+                <ChefIcon className="size-4" /> Start cooking
+              </a>
+            )}
             <button type="button" aria-pressed={r.me.favorite} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${smallButton} ${r.me.favorite ? "border-warning/50 text-warning" : ""}`}>
               <StarIcon filled={r.me.favorite} className="size-4" /> {r.me.favorite ? "Favorite" : "Add to favorites"}
             </button>
@@ -138,6 +147,11 @@ export default function RecipeView({ id }: { id: number }) {
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <section aria-label="Ingredients" className={`${card} self-start`}>
           <h2 className="text-xl font-bold">Ingredients</h2>
+          {r.ingredients.some((i) => i.quantity || i.unit) && (
+            <div className="mt-3">
+              <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
+            </div>
+          )}
           {r.ingredients.length ? (
             <ul className="mt-3">
               {r.ingredients.map((i, n) =>
@@ -147,7 +161,7 @@ export default function RecipeView({ id }: { id: number }) {
                   </li>
                 ) : (
                   <li key={n} className="border-b border-line py-2 last:border-0">
-                    <IngredientLine i={i} />
+                    <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
                   </li>
                 )
               )}
@@ -159,7 +173,7 @@ export default function RecipeView({ id }: { id: number }) {
 
         <section aria-label="Steps" className={card}>
           <h2 className="text-xl font-bold">Steps</h2>
-          {r.steps.length ? <Steps steps={r.steps} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
+          {r.steps.length ? <Steps steps={r.steps} units={prefs.units} recipe={r} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
         </section>
       </div>
 
@@ -242,34 +256,39 @@ function Shell({ children }: { children?: React.ReactNode }) {
   );
 }
 
-// "1½ cups flour, sifted": the amount in bold
-export function IngredientLine({ i }: { i: Ingredient }) {
-  if (!i.quantity && !i.unit) return <span>{i.raw}</span>;
-  const amount = [i.quantity ? formatQuantity(i.quantity) + (i.quantityMax ? `–${formatQuantity(i.quantityMax)}` : "") : "", unitLabel(i.unit, i.quantityMax ?? i.quantity)].filter(Boolean).join(" ");
+// "1½ cups flour, sifted": the amount in bold, at this scale and in these units
+export function IngredientLine({ i, factor = 1, units = "original" }: { i: Ingredient; factor?: number; units?: Units }) {
+  const line = ingredientLine(i, factor, units);
+  if (line.plain) return <span>{line.name}</span>;
   return (
     <span>
-      <strong className="font-semibold">{amount}</strong> {i.name}
-      {i.note && <span className="text-subtle">, {i.note}</span>}
+      <strong className="font-semibold">{line.amount}</strong> {line.name}
+      {line.note && <span className="text-subtle">, {line.note}</span>}
     </span>
   );
 }
 
-function Steps({ steps }: { steps: Recipe["steps"] }) {
+function Steps({ steps, units, recipe }: { steps: Recipe["steps"]; units: Units; recipe: Recipe }) {
   let n = 0;
   return (
     <ol className="mt-3 flex flex-col gap-4">
-      {steps.map((s, i) =>
-        s.section ? (
-          <li key={i} className="mt-2 text-sm font-semibold uppercase tracking-wide text-muted">
-            {s.section}
-          </li>
-        ) : (
+      {steps.map((s, i) => {
+        if (s.section)
+          return (
+            <li key={i} className="mt-2 text-sm font-semibold uppercase tracking-wide text-muted">
+              {s.section}
+            </li>
+          );
+        const num = ++n;
+        return (
           <li key={i} className="flex gap-3">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-sm font-bold text-action">{++n}</span>
-            <p className="pt-0.5 leading-relaxed">{s.text}</p>
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-sm font-bold text-action">{num}</span>
+            <p className="pt-0.5 leading-relaxed">
+              <StepText text={s.text} units={units} recipe={recipe} stepNumber={num} />
+            </p>
           </li>
-        )
-      )}
+        );
+      })}
     </ol>
   );
 }

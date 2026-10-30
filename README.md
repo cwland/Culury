@@ -11,8 +11,8 @@ Built in steps:
 | 1 | Foundation: sign-in (password, passkeys, OAuth), devices, API keys with scopes, AI services with failover, email, logs, backups, themes + dark mode, Docker, CI | **Done** |
 | 2 | Recipes: database, add/edit, ingredient parsing, tags, categories, collections, favorites, ratings, notes, substitutions, full-text search | **Done** |
 | 3 | Import: schema.org JSON-LD, AI fallback, pasted text, background jobs, photo uploads, Android share | **Done** |
-| 4 | Cook Mode (wake lock, steps, timers, scaling, units) | Next |
-| 5 | Meal planner calendar | |
+| 4 | Cook Mode: wake lock, step by step, ingredient checklist, tap-to-start timers, servings scaling, metric/US units | **Done** |
+| 5 | Meal planner calendar | Next |
 | 6 | Grocery lists and pantry, household sync | |
 | 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas | |
 | 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups | |
@@ -56,7 +56,7 @@ npm run dev
 
 No Docker on the Mac? `brew install postgresql@16 && brew services start postgresql@16`, then `createdb culury && createdb culury_test` and use your Mac username in `DATABASE_URL`.
 
-**Tests:** `npm test` (uses `TEST_DATABASE_URL` and wipes it each run).
+**Tests:** `npm test` runs the API tests (they use `TEST_DATABASE_URL` and wipe it each run) and the web app tests.
 
 **Changing the database:** edit `backend/src/db/schema.ts`, then `cd backend && npm run db:generate`. The migration in `backend/drizzle/` runs the next time the API starts.
 
@@ -146,6 +146,13 @@ A passkey belongs to the address it was added on, and browsers only offer them o
 4. Optional: **OAuth only** hides the password form.
 
 **Locked out?** `docker compose exec culury npm run auth:reset`, or set `EMERGENCY_DISABLE_OAUTH=true` in `.env` and restart.
+
+## Cooking
+
+- **Start cooking** on a recipe opens Cook Mode: one step at a time (Next / Back, swipe, or the arrow keys), with the ingredients as a checklist and the ones the step uses lit up.
+- The screen is kept awake with the Wake Lock API, which browsers only allow on `https://` addresses (and localhost). Over plain `http://` on your LAN it shows "Screen may sleep".
+- Times in steps become timer buttons. Timers live in your browser, keep running across pages and reloads, and ring with a chime, a buzz on phones, and a notification if you allow them.
+- Servings and units (as written, metric, US) are remembered per recipe in your browser. Teaspoons and tablespoons stay as they are; cups, ounces and pounds convert (rounded the way a jug or kitchen scale reads), and oven temperatures in steps switch between °F and °C.
 
 ## Importing recipes
 

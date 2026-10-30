@@ -118,15 +118,15 @@ export function formatQuantity(n: number) {
 export const ingredientsText = (list: Ingredient[]) => list.map((i) => (i.section ? `${i.section}:` : i.raw)).join("\n");
 export const stepsText = (list: Step[]) => list.map((s) => (s.section ? `# ${s.section}` : s.text)).join("\n\n");
 
-// Recipes page addresses: #/recipes, #/recipes?tag=x, #/recipes/12, #/recipes/12/edit, #/recipes/new
-export type RecipeRoute = { view: "away" } | { view: "list"; params: URLSearchParams } | { view: "recipe"; id: number } | { view: "edit"; id: number } | { view: "new" };
+// Recipes page addresses: #/recipes, #/recipes?tag=x, #/recipes/12, #/recipes/12/edit, #/recipes/12/cook, #/recipes/new
+export type RecipeRoute = { view: "away" } | { view: "list"; params: URLSearchParams } | { view: "recipe"; id: number } | { view: "edit"; id: number } | { view: "cook"; id: number } | { view: "new" };
 export function recipeRoute(): RecipeRoute {
   const [path, query] = window.location.hash.replace(/^#\/?/, "").split("?");
   const parts = path.split("/").filter(Boolean); // ["recipes", "12", "edit"]
   if (parts[0] !== "recipes") return { view: "away" }; // leaving for another section
   if (parts[1] === "new") return { view: "new" };
   const id = Number(parts[1]);
-  if (id > 0) return parts[2] === "edit" ? { view: "edit", id } : { view: "recipe", id };
+  if (id > 0) return parts[2] === "edit" ? { view: "edit", id } : parts[2] === "cook" ? { view: "cook", id } : { view: "recipe", id };
   return { view: "list", params: new URLSearchParams(query ?? "") };
 }
 

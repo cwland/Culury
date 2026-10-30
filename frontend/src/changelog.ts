@@ -10,6 +10,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.4.0",
+    date: "2026-10-30",
+    title: "Cook Mode",
+    changes: [
+      "Start cooking from any recipe: one big step at a time, with Back and Next (or swipe, or the arrow keys).",
+      "The screen stays on while you cook (on https:// addresses).",
+      "Ingredients are a checklist beside the steps (a drawer on phones), and the ones each step uses light up.",
+      "Times in steps are buttons: tap “simmer for 15 minutes” to start a timer. Timers keep running when you leave Cook Mode or reload, and chime, buzz and notify you when they're done.",
+      "Change the servings (or ½×, 2×, 3×) and every amount follows, on the recipe page and in Cook Mode.",
+      "Show amounts as written, in metric or in US units. Oven temperatures in the steps switch too (350°F → 175°C).",
+      "Cook Mode remembers where you were for a few hours.",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-10-30",
     title: "Import",

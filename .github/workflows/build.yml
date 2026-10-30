@@ -40,10 +40,11 @@ jobs:
           npm ci
           npm run typecheck
           npm test
-      - name: "Web app: install and build"
+      - name: "Web app: install, test, build"
         working-directory: frontend
         run: |
           npm ci
+          npm test
           npm run build
 
   docker:

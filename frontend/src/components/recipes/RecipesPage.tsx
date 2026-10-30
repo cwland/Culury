@@ -3,6 +3,7 @@ import { recipeRoute, type RecipeRoute } from "../../recipes";
 import RecipeList from "./RecipeList";
 import RecipeView from "./RecipeView";
 import RecipeEditor from "./RecipeEditor";
+import CookMode from "./CookMode";
 
 // #/recipes (the list), #/recipes/12 (a recipe), #/recipes/12/edit, #/recipes/new
 export default function RecipesPage() {
@@ -20,6 +21,7 @@ export default function RecipesPage() {
   if (route.view === "away") return null;
   if (route.view === "recipe") return <RecipeView key={route.id} id={route.id} />;
   if (route.view === "edit") return <RecipeEditor key={`edit-${route.id}`} id={route.id} />;
+  if (route.view === "cook") return <CookMode key={`cook-${route.id}`} id={route.id} />;
   if (route.view === "new") return <RecipeEditor key="new" />;
   return <RecipeList params={route.params} />;
 }
