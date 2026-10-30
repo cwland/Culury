@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import type { PlannerSettings } from "../plan";
 import { api } from "../api";
 import type { CollectionInfo, TagInfo } from "../recipes";
 import { ChevronDown, ChevronUp, Trash } from "./Icons";
@@ -9,6 +10,7 @@ import { Card } from "./settingsUi";
 export default function OrganizeSettings() {
   return (
     <>
+      <MealSlots />
       <NamedList
         title="Categories"
         description="Meal types or courses, in the order you like. Each recipe can be in several."
@@ -116,6 +118,72 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
           </button>
         </form>
       )}
+      {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
+    </Card>
+  );
+}
+
+// The meal plan's rows (Breakfast, Lunch, Dinner, Snack) and the first day of the week
+function MealSlots() {
+  const [s, setS] = useState<PlannerSettings | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => void api<PlannerSettings>("GET", "/api/plan/settings").then(setS), []);
+  const save = async (change: Partial<PlannerSettings>) => {
+    setError("");
+    try {
+      setS(await api<PlannerSettings>("PUT", "/api/plan/settings", change));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  if (!s) return null;
+  const move = (i: number, to: number) => {
+    if (to < 0 || to >= s.slots.length) return;
+    const next = [...s.slots];
+    const [x] = next.splice(i, 1);
+    next.splice(to, 0, x);
+    void save({ slots: next });
+  };
+  return (
+    <Card title="Meal plan" description="The meals on the plan, in order, and the day your week starts.">
+      <ul className="divide-y divide-line">
+        {s.slots.map((slot, i) => (
+          <li key={slot.id} className="flex items-center gap-2 py-2">
+            <span className="flex flex-col">
+              <button type="button" aria-label={`Move ${slot.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="text-muted hover:text-ink disabled:opacity-30">
+                <ChevronUp />
+              </button>
+              <button type="button" aria-label={`Move ${slot.name} down`} disabled={i === s.slots.length - 1} onClick={() => move(i, i + 1)} className="text-muted hover:text-ink disabled:opacity-30">
+                <ChevronDown />
+              </button>
+            </span>
+            <InlineText value={slot.name} ariaLabel={`Rename ${slot.name}`} onSave={(v) => void save({ slots: s.slots.map((x) => (x.id === slot.id ? { ...x, name: v } : x)) })} className="w-full flex-1 font-medium" />
+            <button type="button" aria-label={`Remove ${slot.name}`} disabled={s.slots.length === 1} onClick={() => void save({ slots: s.slots.filter((x) => x.id !== slot.id) })} className="rounded px-2 py-1.5 text-muted hover:bg-error-subtle hover:text-error disabled:opacity-30">
+              <Trash />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) void save({ slots: [...s.slots, { id: "", name: name.trim() }] }).then(() => setName(""));
+        }}
+        className="mt-3 flex gap-2"
+      >
+        <input aria-label="New meal" placeholder="New meal (Brunch, Dessert…)" value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded border border-muted/50 bg-container px-3 py-2 outline-none focus:border-action" />
+        <button type="submit" disabled={!name.trim()} className="rounded bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+          Add
+        </button>
+      </form>
+      <label className="mt-4 flex items-center gap-3 text-sm font-semibold text-subtle">
+        Weeks start on
+        <select value={s.weekStart} onChange={(e) => void save({ weekStart: Number(e.target.value) as 0 | 1 })} className="rounded border border-line bg-container px-2 py-1.5">
+          <option value={1}>Monday</option>
+          <option value={0}>Sunday</option>
+        </select>
+      </label>
       {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
     </Card>
   );

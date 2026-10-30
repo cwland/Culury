@@ -22,6 +22,20 @@
       "when": 1793371460733,
       "tag": "0002_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793378181408,
+      "tag": "0003_household",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793378547504,
+      "tag": "0004_meal_plan",
+      "breakpoints": true
     }
   ]
 }

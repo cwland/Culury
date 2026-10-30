@@ -45,7 +45,7 @@ describe("email settings saved in the app", () => {
   it("app settings win over .env, including for reset links", async () => {
     await t.api("PUT", "/api/settings/email", gmail);
     t.setToken("");
-    await t.api("POST", "/api/auth/forgot", {});
+    await t.api("POST", "/api/auth/forgot", { who: "cory" });
     expect(t.sent[0].config).toMatchObject({ host: "smtp.gmail.com", username: "cory@gmail.com", password: "app-password-123" });
     expect(t.sent[0].from).toBe('"Culury" <cory@gmail.com>');
     expect(t.sent[0].text).toContain("https://recipes.example.com/#/reset?token=");

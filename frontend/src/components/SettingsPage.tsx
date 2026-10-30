@@ -10,16 +10,20 @@ import ProfileSettings from "./ProfileSettings";
 import LogsSettings from "./LogsSettings";
 import SignInSettings from "./SignInSettings";
 import { ApiKeys, ChangePassword, Devices, Passkeys, SignInHistory } from "./SecuritySettings";
+import HouseholdSettings from "./HouseholdSettings";
+import { useSession } from "../session";
 
+// owner: only the household owner sees it (server settings)
 const TABS = [
   { id: "profile", label: "Profile" },
   { id: "recipes", label: "Recipes" },
+  { id: "household", label: "Household" },
   { id: "security", label: "Security" },
-  { id: "api", label: "API keys" },
-  { id: "email", label: "Email" },
-  { id: "ai", label: "AI" },
-  { id: "data", label: "Data" },
-  { id: "logs", label: "Logs" },
+  { id: "api", label: "API keys", owner: true },
+  { id: "email", label: "Email", owner: true },
+  { id: "ai", label: "AI", owner: true },
+  { id: "data", label: "Data", owner: true },
+  { id: "logs", label: "Logs", owner: true },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -31,7 +35,10 @@ const tabFromHash = (): Tab => {
 };
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>(tabFromHash);
+  const [hashTab, setTab] = useState<Tab>(tabFromHash);
+  const owner = useSession().user.role !== "member";
+  const tabs = TABS.filter((t) => owner || !("owner" in t));
+  const tab = tabs.some((t) => t.id === hashTab) ? hashTab : "profile";
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -45,7 +52,7 @@ export default function SettingsPage() {
 
       <nav aria-label="Settings sections" className="no-scrollbar -mx-3 mt-3 overflow-x-auto border-b border-line px-3 sm:mx-0 sm:px-0">
         <div role="tablist" className="flex min-w-max gap-1">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <a
               key={t.id}
               role="tab"
@@ -69,11 +76,12 @@ export default function SettingsPage() {
           </>
         )}
         {tab === "recipes" && <OrganizeSettings />}
+        {tab === "household" && <HouseholdSettings />}
         {tab === "security" && (
           <>
             <ChangePassword />
             <Passkeys />
-            <SignInSettings />
+            {owner && <SignInSettings />}
             <Devices />
             <SignInHistory />
           </>

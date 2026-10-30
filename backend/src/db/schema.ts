@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
   jsonb,
+  date,
   primaryKey,
   customType,
 } from "drizzle-orm/pg-core";
@@ -20,6 +21,8 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  // owner: runs the server (settings, API keys, backups, members); member: everything else
+  role: text("role").$type<"owner" | "member">().notNull().default("member"),
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name"),
   email: text("email"), // used for password resets (and later, notifications)
@@ -322,4 +325,24 @@ export const jobs = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [index("jobs_status_idx").on(t.status, t.id)]
+);
+
+// ---------- Meal plan ----------
+// One row per planned dish: a recipe, or just a note ("Leftovers", "Eat out"). The slot is one of
+// the household's meal slots (Settings › Recipes › Meal plan; Breakfast, Lunch, Dinner, Snack).
+export const mealPlan = pgTable(
+  "meal_plan",
+  {
+    id: serial("id").primaryKey(),
+    date: date("date", { mode: "string" }).notNull(), // YYYY-MM-DD
+    slot: text("slot").notNull(), // a slot id: breakfast, lunch, dinner, snack, or one you added
+    position: integer("position").notNull().default(0), // order within the day's slot
+    recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }),
+    title: text("title").notNull(), // the recipe's name when planned (kept if it's deleted), or the note
+    servings: integer("servings"), // how many to make (null: as the recipe says)
+    note: text("note"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("meal_plan_date_idx").on(t.date, t.slot, t.position), index("meal_plan_recipe_idx").on(t.recipeId)]
 );

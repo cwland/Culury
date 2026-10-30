@@ -1,8 +1,7 @@
-import { GroceryIcon, PantryIcon, PlannerIcon } from "./Icons";
+import { GroceryIcon, PantryIcon } from "./Icons";
 
 // Placeholder pages until each section is built (the plan is in README.md)
 const PAGES = {
-  plan: { title: "Meal plan", icon: PlannerIcon, text: "Drag recipes onto breakfast, lunch, dinner and snacks for the week.", next: "Coming after recipe import and Cook Mode." },
   grocery: { title: "Grocery", icon: GroceryIcon, text: "Shopping lists sorted by aisle, shared with your household as you shop.", next: "Coming after the meal plan." },
   pantry: { title: "Pantry", icon: PantryIcon, text: "What you have at home, so lists skip it and you can cook with what's there.", next: "Coming with the grocery list." },
 } as const;

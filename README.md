@@ -12,7 +12,7 @@ Built in steps:
 | 2 | Recipes: database, add/edit, ingredient parsing, tags, categories, collections, favorites, ratings, notes, substitutions, full-text search | **Done** |
 | 3 | Import: schema.org JSON-LD, AI fallback, pasted text, background jobs, photo uploads, Android share | **Done** |
 | 4 | Cook Mode: wake lock, step by step, ingredient checklist, tap-to-start timers, servings scaling, metric/US units | **Done** |
-| 5 | Meal planner calendar | Next |
+| 5 | Meal planner (drag and drop week, custom meal slots) and household members (owner / member) | **Done** |
 | 6 | Grocery lists and pantry, household sync | |
 | 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas | |
 | 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups | |
@@ -124,13 +124,20 @@ No key can ever see or change settings, other keys, sign-in details, or restore 
 - Logins are bearer tokens (not cookies), so cross-site request forgery doesn't apply; the API is same-origin only (no CORS).
 - Saved secrets (AI keys, email password, OAuth client secret) are encrypted with a key derived from `JWT_SECRET`.
 
+## Household
+
+- The first account is the household **owner**. Add the people you live with in **Settings › Household**: give them a password, or email an invite (needs email set up) so they choose their own.
+- Everyone shares recipes, the meal plan, grocery lists and the pantry. Favorites, pins, ratings, private notes, theme and sign-in are each person's own.
+- Owners (there can be several) manage server settings: Email, AI, API keys, Data (backups), Logs, OAuth sign-in, and the household. Members don't see those tabs, and the API refuses them.
+- Locked out? `docker compose exec culury npm run reset-password -- <username>` (without a username it resets the owner).
+
 ## Accounts and passwords
 
 - **Account menu** (your initials, bottom left; "Account" on phones): Profile & security, Sign out, Sign out everywhere.
 - **Settings → Security**: change password (signs out every other device), passkeys, OAuth sign-in, signed-in devices (sign out any one), sign-in history.
 - **Email** in **Settings → Email**: pick a provider (Gmail, Outlook, iCloud, Fastmail, or custom) and **Send test email**. `SMTP_*` / `MAIL_FROM` / `APP_URL` in `.env` are a fallback.
 - **Forgot password?** shows on the sign-in page when email is set up. Reset links work once, for 1 hour.
-- **Locked out without email?** On the server: `docker compose exec culury npm run reset-password` (Mac: `cd backend && npm run reset-password`).
+- **Locked out without email?** On the server: `docker compose exec culury npm run reset-password -- <username>` (Mac: `cd backend && npm run reset-password -- <username>`).
 
 ### Passkeys
 

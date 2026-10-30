@@ -88,7 +88,7 @@ describe("password reset by email", () => {
     await t.api("PATCH", "/api/profile", { email: "cory@example.com" });
     const oldToken = t.getToken();
     t.setToken("");
-    expect((await t.api("POST", "/api/auth/forgot", {})).status).toBe(200);
+    expect((await t.api("POST", "/api/auth/forgot", { who: "cory" })).status).toBe(200);
     expect(t.sent).toHaveLength(1);
     expect(t.sent[0].to).toBe("cory@example.com");
     expect(t.sent[0].text).toContain("http://recipes.test/#/reset?token=");
@@ -110,15 +110,15 @@ describe("password reset by email", () => {
   it("only the newest link works, and expired links fail", async () => {
     await t.api("PATCH", "/api/profile", { email: "cory@example.com" });
     t.setToken("");
-    await t.api("POST", "/api/auth/forgot", {});
+    await t.api("POST", "/api/auth/forgot", { who: "cory" });
     const firstToken = linkToken(t.sent[0].text)!;
     // second request within a minute is rate-limited
-    expect((await t.api("POST", "/api/auth/forgot", {})).status).toBe(429);
+    expect((await t.api("POST", "/api/auth/forgot", { who: "cory" })).status).toBe(429);
 
     // Simulate time passing for the rate limit by making a new link directly through the API after reset of limits
     const { resetLoginLockouts } = await import("../src/routes/auth.js");
     resetLoginLockouts();
-    await t.api("POST", "/api/auth/forgot", {});
+    await t.api("POST", "/api/auth/forgot", { who: "cory" });
     expect((await t.api("POST", "/api/auth/reset", { token: firstToken, newPassword: "brandnew789" })).status).toBe(400);
 
     // Expire the newest link
@@ -131,7 +131,7 @@ describe("password reset by email", () => {
   it("doesn't send anything (but answers the same) when there's no email on file", async () => {
     await t.db.execute(sql`update users set email = null`);
     t.setToken("");
-    const res = await t.api("POST", "/api/auth/forgot", {});
+    const res = await t.api("POST", "/api/auth/forgot", { who: "cory" });
     expect(res.status).toBe(200);
     expect(t.sent).toHaveLength(0);
   });
@@ -155,7 +155,7 @@ describe("without email", () => {
       await noMail.api("PATCH", "/api/profile", { email: "cory@example.com" });
       expect((await noMail.api("GET", "/api/auth/status")).body).toMatchObject({ emailEnabled: false, resetAvailable: false });
       noMail.setToken("");
-      const res = await noMail.api("POST", "/api/auth/forgot", {});
+      const res = await noMail.api("POST", "/api/auth/forgot", { who: "cory" });
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("reset-password");
     } finally {

@@ -46,7 +46,8 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ForgotPassword({ onBack }: { onBack: () => void }) {
+function ForgotPassword({ onBack, initial }: { onBack: () => void; initial: string }) {
+  const [who, setWho] = useState(initial);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,7 +56,7 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
     setBusy(true);
     setError("");
     try {
-      await api("POST", "/api/auth/forgot", {});
+      await api("POST", "/api/auth/forgot", { who });
       setSent(true);
     } catch (e) {
       setError((e as Error).message);
@@ -69,13 +70,17 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
       <h1 className="text-lg font-semibold">Reset your password</h1>
       {sent ? (
         <p role="status" className="mt-3 rounded bg-success-subtle px-3 py-2 text-success">
-          Check your email. If there's an address on the account, a reset link is on its way. It works for 1 hour.
+          Check your email. If that account has an address, a reset link is on its way. It works for 1 hour.
         </p>
       ) : (
         <>
           <p className="mt-2 text-subtle">We'll email a reset link to the address on your account.</p>
+          <label className="mt-4 block text-sm font-medium text-subtle">
+            Username or email
+            <input aria-label="Username or email" value={who} onChange={(e) => setWho(e.target.value)} autoFocus className={input} />
+          </label>
           {error && <p role="alert" className="mt-3 rounded bg-error-subtle px-3 py-2 text-sm text-error">{error}</p>}
-          <button onClick={send} disabled={busy} className="mt-5 w-full rounded bg-primary py-3 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
+          <button onClick={send} disabled={busy || !who.trim()} className="mt-5 w-full rounded bg-primary py-3 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
             {busy ? "Sending…" : "Email me a reset link"}
           </button>
         </>
@@ -166,7 +171,7 @@ export default function AuthScreen({ mode, resetAvailable, oauth = null, passwor
   if (forgot) {
     return (
       <AuthFrame>
-        <ForgotPassword onBack={() => setForgot(false)} />
+        <ForgotPassword initial={username} onBack={() => setForgot(false)} />
       </AuthFrame>
     );
   }

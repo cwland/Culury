@@ -29,8 +29,14 @@ function ask(question: string, hidden = false): Promise<string> {
 const { db, pool } = createDb(process.env.DATABASE_URL!);
 try {
   await runMigrations(db);
-  const [user] = await db.select().from(users).limit(1);
-  if (!user) {
+  // Which account: `npm run reset-password -- <username>` (or USERNAME=...); the owner by default
+  const who = (process.argv[2] ?? process.env.USERNAME_TO_RESET ?? "").trim().toLowerCase();
+  const all = await db.select().from(users).orderBy(users.id);
+  const user = who ? all.find((u) => u.username.toLowerCase() === who || u.email?.toLowerCase() === who) : all.find((u) => u.role === "owner") ?? all[0];
+  if (who && !user) {
+    console.log(`No account "${who}". Accounts: ${all.map((u) => u.username).join(", ")}`);
+    process.exitCode = 1;
+  } else if (!user) {
     console.log("No account yet. Open the app to create one.");
   } else {
     console.log(`Resetting the password for "${user.username}".`);

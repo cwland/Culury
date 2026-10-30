@@ -1,6 +1,6 @@
 {
   "name": "culury",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "setup": "npm install && npm install --prefix backend && npm install --prefix frontend",

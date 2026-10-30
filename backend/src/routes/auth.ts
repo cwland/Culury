@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { checkPassword, generateResetToken, hashApiKey, hashPassword } from "../lib/auth.js";
 import { describeDevice, logSignIn, pruneLoginLog, renewSession, revokeAll, startSession } from "../lib/sessions.js";
 import { loginEvents, passwordResets, sessions, users } from "../db/schema.js";
@@ -46,6 +46,7 @@ export const publicUser = (u: typeof users.$inferSelect) => ({
   seenVersion: u.seenVersion,
   theme: u.theme,
   colorMode: u.colorMode,
+  role: u.role,
 });
 
 export default async function authRoutes(app: FastifyInstance) {
@@ -55,12 +56,13 @@ export default async function authRoutes(app: FastifyInstance) {
   const emailEnabled = () => app.mail.canSendLinks();
 
   app.get("/api/auth/status", async () => {
-    const [user] = await db.select({ email: users.email }).from(users).limit(1);
+    const [user] = await db.select({ email: users.email }).from(users).where(isNotNull(users.email)).limit(1);
+    const [anyone] = await db.select({ id: users.id }).from(users).limit(1);
     const enabled = await emailEnabled();
     const oauth = await getOAuth(db);
     const passwords = passwordsAllowed(oauth);
     return {
-      setupRequired: !user,
+      setupRequired: !anyone,
       emailEnabled: enabled,
       resetAvailable: passwords && enabled && !!user?.email,
       // The sign-in screen: a "Sign in with {label}" button, and the password form unless OAuth only
@@ -74,13 +76,13 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!passwordsAllowed(await getOAuth(db))) throw new HttpError(403, "Password sign-in is turned off. Use the OAuth button or a passkey.");
   };
 
-  // First run only: create the single account (an email is required: password resets and notifications)
+  // First run only: create the household owner's account (an email is required: password resets and notifications)
   app.post("/api/auth/setup", async (req) => {
     const body = credentials.extend({ email: z.string({ error: "Enter your email address" }).trim().email("That doesn't look like an email address").max(200) }).parse(req.body);
     if ((await userCount()) > 0) throw new HttpError(409, "Account already set up");
     const [user] = await db
       .insert(users)
-      .values({ username: body.username, email: body.email, passwordHash: await hashPassword(body.password) })
+      .values({ username: body.username, email: body.email, passwordHash: await hashPassword(body.password), role: "owner" })
       .returning();
     const { token, session } = await startSession(db, app.jwtSecret, req, user, "account set up", app.now());
     await logSignIn(db, req, { username: user.username, success: true, reason: "Account set up", sessionId: session.id });
@@ -209,7 +211,10 @@ export default async function authRoutes(app: FastifyInstance) {
     if (req.auth?.method !== "token") throw new HttpError(403, "Log in to do this");
     // The last 60 days (older ones are deleted)
     await pruneLoginLog(db);
-    const rows = await db.select().from(loginEvents).orderBy(desc(loginEvents.at), desc(loginEvents.id)).limit(5000);
+    // The owner sees every sign-in (and attempt); a member sees their own
+    const [me] = await db.select({ username: users.username, email: users.email }).from(users).where(eq(users.id, req.auth.userId));
+    const mine = req.auth.role === "owner" ? undefined : or(sql`lower(${loginEvents.username}) = ${me.username.toLowerCase()}`, me.email ? sql`lower(${loginEvents.username}) = ${me.email.toLowerCase()}` : undefined, inArray(loginEvents.sessionId, db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, req.auth.userId))));
+    const rows = await db.select().from(loginEvents).where(mine).orderBy(desc(loginEvents.at), desc(loginEvents.id)).limit(5000);
     return rows.map((e) => ({ ...e, device: describeDevice(e.userAgent) }));
   });
 
@@ -225,7 +230,9 @@ export default async function authRoutes(app: FastifyInstance) {
       throw new HttpError(429, "A reset email was sent recently. Check your inbox, or try again in a few minutes.");
     }
 
-    const [user] = await db.select().from(users).limit(1);
+    // Whose password: the username or email typed on the sign-in page
+    const { who } = z.object({ who: z.string().trim().min(1, "Enter your username or email").max(320) }).parse(req.body ?? {});
+    const [user] = await db.select().from(users).where(or(sql`lower(${users.username}) = ${who.toLowerCase()}`, sql`lower(${users.email}) = ${who.toLowerCase()}`));
     if (user?.email) {
       resetSends.push(now);
       // Only the newest link works

@@ -10,6 +10,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.5.0",
+    date: "2026-10-30",
+    title: "Meal plan and household",
+    changes: [
+      "Meal plan: a week of breakfasts, lunches, dinners and snacks. Drag recipes onto days from the list beside it, drag dishes between days, or tap + to add a recipe or a note (Leftovers, Eat out).",
+      "Tap a planned dish to open it, start cooking, change its servings or note, or move it. Copy last week into this one, or clear a week.",
+      "Choose your meals (add Brunch, rename Snack…) and whether weeks start on Monday or Sunday in Settings › Recipes.",
+      "Household: add the people you live with in Settings › Household, with a password or an emailed invite. Everyone shares the recipes and the plan; favorites, ratings, notes and sign-in are each person's own.",
+      "The owner looks after the server (email, AI, API keys, backups, logs) and the household; members don't see those settings.",
+      "Forgot password? now asks for your username or email, so it works for everyone in the household.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-10-30",
     title: "Cook Mode",

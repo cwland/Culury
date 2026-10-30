@@ -24,6 +24,8 @@ import profileRoutes from "./routes/profile.js";
 import settingsRoutes from "./routes/settings.js";
 import recipeRoutes from "./routes/recipes.js";
 import importRoutes from "./routes/imports.js";
+import householdRoutes from "./routes/household.js";
+import planRoutes from "./routes/plan.js";
 import multipart from "@fastify/multipart";
 import { JobQueue } from "./lib/jobs.js";
 import { Photos } from "./lib/photos.js";
@@ -55,7 +57,7 @@ declare module "fastify" {
     photos: Photos;
   }
   interface FastifyRequest {
-    auth?: { method: "token"; userId: number; sessionId: number } | { method: "apiKey"; keyId: number };
+    auth?: { method: "token"; userId: number; sessionId: number; role: "owner" | "member" } | { method: "apiKey"; keyId: number };
   }
 }
 
@@ -84,6 +86,13 @@ export interface AppOptions {
 export const defaultDataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data");
 // Backups go in <data>/backups unless BACKUP_DIR says otherwise
 export const defaultBackupDir = path.join(process.env.DATA_DIR || defaultDataDir, "backups");
+
+// Only the owner (not other household members) can use these
+const OWNER_ONLY = ["/api/settings/email", "/api/settings/ai", "/api/settings/features", "/api/settings/oauth", "/api/keys", "/api/logs", "/api/backups", "/api/export", "/api/import", "/api/updates/check", "/api/updates/settings", "/api/household/members"];
+export function ownerOnly(method: string, path: string) {
+  if (path === "/api/household/members" && method === "GET") return false; // everyone can see who's in the household
+  return OWNER_ONLY.some((p) => path === p || path.startsWith(p + "/"));
+}
 
 // Routes anyone can call without logging in
 const PUBLIC_ROUTES = new Set([
@@ -150,11 +159,13 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
       const claims = verifyToken(header.slice(7), jwtSecret);
       if (claims) {
         // Tokens issued before the last "sign out everywhere" / password change no longer work
-        const [user] = await db.select({ tv: users.tokenVersion }).from(users).where(eq(users.id, claims.userId));
+        const [user] = await db.select({ tv: users.tokenVersion, role: users.role }).from(users).where(eq(users.id, claims.userId));
         // ...and its device hasn't been signed out
         const session = user && user.tv === claims.tokenVersion ? await sessionForToken(db, req, header.slice(7), claims, app.now()) : null;
         if (session) {
-          req.auth = { method: "token", userId: claims.userId, sessionId: session.id };
+          req.auth = { method: "token", userId: claims.userId, sessionId: session.id, role: user.role };
+          // Server settings, API keys, backups and members are the owner's
+          if (user.role !== "owner" && ownerOnly(req.method, req.routeOptions.url ?? req.url.split("?")[0])) throw new HttpError(403, "Only the household owner can do this");
           return;
         }
       }
@@ -227,6 +238,8 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(settingsRoutes);
   app.register(recipeRoutes);
   app.register(importRoutes);
+  app.register(householdRoutes);
+  app.register(planRoutes);
   app.register(organizeRoutes);
 
   return app;

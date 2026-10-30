@@ -83,7 +83,7 @@ describe("OAuth sign-in", () => {
     const pw = await req("POST", "/api/auth/login", { username: "cory", password: "password123" }, null);
     expect(pw.statusCode).toBe(403);
     expect(pw.json().error).toMatch(/Password sign-in is turned off/);
-    expect((await req("POST", "/api/auth/forgot", {}, null)).statusCode).toBe(403);
+    expect((await req("POST", "/api/auth/forgot", { who: "cory" }, null)).statusCode).toBe(403);
     expect((await req("POST", "/api/auth/passkey/login/options", {}, null)).statusCode).toBe(200); // passkeys stay
     expect((await oauth({ sub: "ak-1" })).params.get("ticket")).toBeTruthy();
     expect((await t.api("POST", "/api/auth/oauth/unlink")).body.error).toMatch(/Switch to Passwords & OAuth/);

@@ -21,7 +21,7 @@ describe("security", () => {
     expect(tries).toEqual([401, 401, 401, 429]);
     expect((await t.api("POST", "/api/auth/login", { username: "nobody", password: "x" })).body.error).toMatch(/Too many tries/);
     // Other routes keep their own count
-    expect((await t.api("POST", "/api/auth/forgot", { username: "cory" })).status).not.toBe(429);
+    expect((await t.api("POST", "/api/auth/forgot", { who: "cory" })).status).not.toBe(429);
   });
 
   it("blocks an address guessing API keys", async () => {

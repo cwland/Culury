@@ -8,6 +8,7 @@ export interface User {
   seenVersion?: string | null; // the version whose "What's new" was dismissed
   theme?: string | null; // Settings › Profile › Appearance (null: the default)
   colorMode?: string | null; // light, dark or system (null: system)
+  role?: "owner" | "member"; // the owner runs the server (settings, keys, backups, members)
 }
 
 export interface Session {

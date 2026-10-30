@@ -3,6 +3,7 @@ import SettingsPage from "./SettingsPage";
 import ComingSoon from "./ComingSoon";
 import TimerTray from "./TimerTray";
 import RecipesPage from "./recipes/RecipesPage";
+import PlannerPage from "./plan/PlannerPage";
 import AccountMenu from "./AccountMenu";
 import { APP_VERSION, showWhatsNew, versionLabel } from "../version";
 import { isNewer } from "../changelog";
@@ -21,7 +22,7 @@ const PAGES: { id: Page; label: string; icon: JSX.Element }[] = [
   { id: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 const pageFromHash = (): Page => {
-  const h = window.location.hash.replace("#/", "").split("/")[0];
+  const h = window.location.hash.replace("#/", "").split(/[/?]/)[0]; // "plan?week=…" -> "plan"
   return PAGES.find((p) => p.id === h)?.id ?? "recipes";
 };
 
@@ -80,7 +81,7 @@ export default function AppShell() {
       </nav>
 
       <main className="min-w-0 flex-1 pb-16 sm:pb-0">
-        {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : <ComingSoon page={page} />}
+        {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : page === "plan" ? <PlannerPage /> : <ComingSoon page={page} />}
       </main>
 
       {/* Bottom bar on phones */}
