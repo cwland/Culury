@@ -182,7 +182,8 @@ export interface Nutrition {
   saturatedFat: number | null;
   carbs: number | null;
   fiber: number | null;
-  sugar: number | null;
+  sugar: number | null; // total sugars
+  addedSugar?: number | null; // part of sugar (older recipes don't have it)
   protein: number | null;
   sodium: number | null; // milligrams
   source: "site" | "ai" | "you";

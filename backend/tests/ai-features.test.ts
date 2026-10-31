@@ -106,6 +106,19 @@ describe("nutrition", () => {
     await t.app.inject({ method: "PUT", url: `/api/recipes/${r.id}/nutrition`, payload: "null", headers: { authorization: `Bearer ${t.getToken()}`, "content-type": "application/json" } });
     expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition).toBeNull();
   });
+
+  it("added sugars: asked of the AI, kept from its answer, and can be typed in", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Cookies", servings: 12, ingredients: "1 cup sugar\n2 cups flour" })).body;
+    await twoServices();
+    t.ai.respond = () => reply({ calories: 180, sugar: 14, addedSugar: 12, note: "" });
+    expect((await t.api("POST", `/api/recipes/${r.id}/nutrition`)).body).toMatchObject({ sugar: 14, addedSugar: 12 });
+    expect(t.ai.calls[0].body.messages[0].content).toContain("addedSugar");
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 170, sugar: 13, addedSugar: 11 });
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition).toMatchObject({ sugar: 13, addedSugar: 11, source: "you" });
+    // left out: unknown
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 170 });
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition.addedSugar).toBeNull();
+  });
 });
 
 describe("grocery aisles", () => {

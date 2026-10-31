@@ -19,7 +19,7 @@ const full = {
   stepChanges: ["Added how long to cook the chicken and the safe temperature."],
   ingredients: ["1 lb chicken", "1 onion", "1 tsp salt"],
   ingredientChanges: ["Added salt: step 1 seasons the chicken."],
-  nutrition: { calories: 320, fat: 9, saturatedFat: 2, carbs: 6, fiber: 1, sugar: 2, protein: 48, sodium: 600, note: "Assumed chicken breast." },
+  nutrition: { calories: 320, fat: 9, saturatedFat: 2, carbs: 6, fiber: 1, sugar: 2, addedSugar: 1, protein: 48, sodium: 600, note: "Assumed chicken breast." },
   nutritionChanges: ["Estimated from the ingredients."],
   categories: ["Dinner", "Soup"],
   tags: ["spicy", "chicken"],
@@ -38,11 +38,12 @@ describe("asking AI to check a recipe", () => {
     expect(e.steps.changes.length).toBeGreaterThan(0);
     expect(e.ingredients).toMatchObject({ suggested: full.ingredients, changed: true, changes: full.ingredientChanges });
     expect(e.nutrition.changed).toBe(true);
-    expect(e.nutrition.suggested).toMatchObject({ calories: 320, protein: 48, source: "ai", servings: 4 });
+    expect(e.nutrition.suggested).toMatchObject({ calories: 320, protein: 48, addedSugar: 1, source: "ai", servings: 4 });
     expect(e.organize).toMatchObject({ tags: ["spicy", "chicken"], changed: true });
     // what the AI was told
     const sent = t.ai.calls[0].body.messages[1].content as string;
     for (const bit of ["Chili", "1 lb chicken", "Cook the chicken.", "Dinner", "spicy", "Breakfast"]) expect(sent).toContain(bit);
+    expect(t.ai.calls[0].body.messages[0].content).toContain('"addedSugar"');
     // nothing saved
     const after = (await t.api("GET", `/api/recipes/${r.id}`)).body;
     expect(after.steps).toEqual([{ text: "Cook the chicken." }]);

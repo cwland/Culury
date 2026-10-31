@@ -7,7 +7,8 @@ import { apiKeys, appSettings } from "../db/schema.js";
 //  - ai:      AI is never used
 //  - apiKeys: every request with an API key is refused
 //  - aiEnhance: no "Check this recipe with AI?" and no AI check (only matters while AI is on)
-export const FEATURES = ["ai", "apiKeys", "aiEnhance"] as const;
+//  - autoNutrition: nutrition isn't worked out by itself after imports and ingredient changes
+export const FEATURES = ["ai", "apiKeys", "aiEnhance", "autoNutrition"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type Features = Record<Feature, boolean>;
 
@@ -16,7 +17,7 @@ async function defaults(db: Db): Promise<Features> {
   const rows = await db.select({ key: appSettings.key }).from(appSettings);
   const has = new Set(rows.map((r) => r.key));
   const [{ n }] = await db.select({ n: count() }).from(apiKeys);
-  return { ai: has.has("ai"), apiKeys: n > 0, aiEnhance: has.has("ai") };
+  return { ai: has.has("ai"), apiKeys: n > 0, aiEnhance: has.has("ai"), autoNutrition: has.has("ai") };
 }
 
 async function saved(db: Db): Promise<Partial<Features>> {

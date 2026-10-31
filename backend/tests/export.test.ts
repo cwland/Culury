@@ -66,7 +66,7 @@ describe("restore", () => {
     const res = await t.api("POST", "/api/import?confirm=replace", exported);
     expect(res.status).toBe(200);
     expect(res.body.safetyBackup).toMatch(/before-restore\.tar\.gz$/);
-    expect((await t.api("GET", "/api/settings/features")).body).toEqual({ apiKeys: true, ai: false, aiEnhance: false });
+    expect((await t.api("GET", "/api/settings/features")).body).toEqual({ apiKeys: true, ai: false, aiEnhance: false, autoNutrition: false });
     expect((await t.api("GET", "/api/auth/me")).body.user.username).toBe("cory");
   });
 

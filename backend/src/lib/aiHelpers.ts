@@ -17,8 +17,8 @@ const num = (v: unknown, max = 100000) => {
 // ---------- nutrition ----------
 
 const NUTRITION_SYSTEM = `You estimate nutrition for recipes. Reply with JSON only:
-{"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "protein": 0, "sodium": 0, "note": ""}
-Values are for ONE serving: grams, except calories (kcal) and sodium (mg). Use typical values from standard food tables (USDA) for the ingredients and amounts given, divided by the number of servings. If an amount is missing, assume a typical amount. "note": one short sentence on what you assumed, or "".`;
+{"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0, "note": ""}
+Values are for ONE serving: grams, except calories (kcal) and sodium (mg). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like (not fruit or milk). Use typical values from standard food tables (USDA) for the ingredients and amounts given, divided by the number of servings. If an amount is missing, assume a typical amount. "note": one short sentence on what you assumed, or "".`;
 
 export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
@@ -33,6 +33,7 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
     carbs: num(json.carbs),
     fiber: num(json.fiber),
     sugar: num(json.sugar),
+    addedSugar: num(json.addedSugar),
     protein: num(json.protein),
     sodium: num(json.sodium),
     source: "ai",

@@ -66,6 +66,7 @@ export const nutritionInput = z
     carbs: amount,
     fiber: amount,
     sugar: amount,
+    addedSugar: amount,
     protein: amount,
     sodium: amount,
     source: z.enum(["site", "ai", "you"]).default("you"),
