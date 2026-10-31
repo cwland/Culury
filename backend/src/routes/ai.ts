@@ -8,6 +8,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { nutritionInput } from "../lib/recipes.js";
 import { jobView } from "../lib/importJobs.js";
+import { suggestEnhancements } from "../lib/enhance.js";
 import { userOf } from "./recipes.js";
 
 // AI for everyone in the household (the settings themselves are the owner's, under /api/settings/ai)
@@ -46,6 +47,13 @@ export default async function aiRoutes(app: FastifyInstance) {
     const nutrition = req.body === null ? null : nutritionInput.parse(req.body);
     await db.update(recipes).set({ nutrition: nutrition && { ...nutrition, servings: nutrition.servings ?? r.servings } }).where(eq(recipes.id, id));
     return nutrition;
+  });
+
+  // ---------- AI Enhance ----------
+  // What the AI would change (saves nothing; the wizard applies the sections you keep)
+  app.post("/api/recipes/:id/enhance", async (req) => {
+    const { id } = idParam.parse(req.params);
+    return asHttp(() => suggestEnhancements(db, ai, id));
   });
 
   // ---------- meal ideas ----------
