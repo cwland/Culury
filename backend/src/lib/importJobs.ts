@@ -1,4 +1,4 @@
-import { asc, ilike, sql } from "drizzle-orm";
+import { asc, eq, ilike, sql } from "drizzle-orm";
 import { readRecipeFile } from "./fileImport.js";
 import type { Db } from "../db/index.js";
 import { categories, recipeUser, recipes, type JobResult } from "../db/schema.js";
@@ -70,6 +70,13 @@ async function store(d: Deps, r: ImportedRecipe & { notes?: string | null }, job
   return { recipeId, title: input.title, how, ...(warnings.length ? { warnings } : {}) };
 }
 
+// Already saved from this page: skipped, and noted in Settings › Logs › Imports
+async function alreadySaved(d: Deps, url: string, recipeId: number): Promise<JobResult> {
+  const [r] = await d.db.select({ title: recipes.title }).from(recipes).where(eq(recipes.id, recipeId));
+  await logEvent(d.db, { category: "import", level: "info", source: url.slice(0, 200), event: `Already saved: "${r?.title ?? "a recipe"}"` });
+  return { duplicateOf: recipeId };
+}
+
 export function registerImportJobs(queue: JobQueue, d: Deps) {
   // A link: schema.org data on the page, or AI on the page's text (or a video's description)
   queue.handle("import-url", async (job) => {
@@ -77,7 +84,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
     try {
       if (!force) {
         const dup = await findDuplicate(d.db, url);
-        if (dup) return { duplicateOf: dup };
+        if (dup) return alreadySaved(d, url, dup);
       }
       const page = await fetchUrl(url, d.fetchOptions);
       if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
@@ -86,7 +93,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
       const sourceUrl = info.canonical && new URL(info.canonical).hostname === new URL(page.url).hostname ? info.canonical : page.url;
       if (!force && sourceUrl !== url) {
         const dup = await findDuplicate(d.db, sourceUrl);
-        if (dup) return { duplicateOf: dup };
+        if (dup) return alreadySaved(d, url, dup);
       }
       const found = recipeFromJsonLd(html, page.url);
       let r: ImportedRecipe;

@@ -39,12 +39,7 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
   const [text, setText] = useState(initial && !startLink ? initial : "");
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState("");
-  const [recent, setRecent] = useState<ImportJob[]>([]);
   const started = useRef(false);
-
-  useEffect(() => {
-    void api<ImportJob[]>("GET", "/api/imports?limit=6").then(setRecent).catch(() => {});
-  }, []);
 
   // Follow the import until it's done
   useEffect(() => {
@@ -202,30 +197,6 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
         </form>
 
         <Status job={job} error={error} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} />
-
-        {recent.length > 0 && (
-          <section className="mt-6 border-t border-line pt-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Recent imports</h3>
-            <ul className="mt-2 flex flex-col gap-1 text-sm">
-              {recent.map((j) => (
-                <li key={j.id} className="flex items-center gap-2">
-                  <span className={`size-2 shrink-0 rounded-full ${j.status === "done" ? "bg-success" : j.status === "failed" ? "bg-error" : "bg-warning"}`} aria-label={j.status} />
-                  {j.result?.recipeId ? (
-                    <a href={`#/recipes/${j.result.recipeId}`} onClick={onClose} className="truncate font-medium text-link hover:underline">
-                      {j.result.title}
-                    </a>
-                  ) : (
-                    <span className="truncate text-subtle" title={j.error ?? ""}>
-                      {j.source}
-                      {j.status === "failed" && " (didn't import)"}
-                      {j.result?.duplicateOf && " (already saved)"}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
     </Popup>
   );

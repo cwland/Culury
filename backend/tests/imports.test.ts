@@ -52,6 +52,7 @@ describe("importing a link", () => {
     expect(first.error).toBeNull();
     const again = await importUrl("https://www.seriouseats.com/texas-chili/#comments");
     expect(again.result).toEqual({ duplicateOf: first.result.recipeId });
+    expect((await t.api("GET", "/api/logs?category=import")).body[0]).toMatchObject({ level: "info", event: 'Already saved: "Texas Chili"', source: "https://www.seriouseats.com/texas-chili/#comments" });
     const retry = await t.api("POST", `/api/imports/${again.id}/retry`, { force: true });
     await t.app.jobs.drain();
     expect((await t.api("GET", `/api/imports/${retry.body.id}`)).body.result.recipeId).toBeGreaterThan(first.result.recipeId);

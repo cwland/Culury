@@ -32,3 +32,14 @@ describe("importing a file from another app", () => {
     expect(onClose).not.toHaveBeenCalled(); // stays open to show the summary
   });
 });
+
+describe("no recent imports list (they're in Settings › Logs)", () => {
+  it("doesn't list or even load recent imports", async () => {
+    const server = fakeServer({ "GET /api/imports": () => [{ id: 1, status: "done", source: "https://example.test/chili", result: { recipeId: 3, title: "Chili" }, error: null }], "GET /api/ai/status": () => ({ ready: true, photos: true, enhance: true }) });
+    render(<ImportDialog onClose={() => {}} />);
+    await screen.findByRole("button", { name: "Import" });
+    expect(screen.queryByText("Recent imports")).toBeNull();
+    expect(server.sent.filter((s) => s.path.startsWith("/api/imports"))).toHaveLength(0);
+  });
+});
+
