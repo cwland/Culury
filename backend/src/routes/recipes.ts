@@ -6,6 +6,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { createRecipe, listQuery, listRecipes, loadRecipe, saveRecipe, updateRecipe } from "../lib/recipes.js";
 import { ingredientsChanged, ingredientsUpdated, recipeAdded } from "../lib/nutrition.js";
+import { changedParts, describeParts, ensureVersions, firstVersion, newVersion, syncActive, versionData } from "../lib/versions.js";
 
 // Who's asking: a signed-in person, or null for an API key (keys belong to the household, not a person)
 export const userOf = (req: FastifyRequest) => (req.auth?.method === "token" ? req.auth.userId : null);
@@ -14,6 +15,8 @@ function requireUser(req: FastifyRequest) {
   if (!id) throw new HttpError(403, "Sign in to do this (favorites, ratings and notes are per person)");
   return id;
 }
+
+const editVersion = z.object({ version: z.enum(["new", "current"]).optional() }).passthrough();
 
 export default async function recipeRoutes(app: FastifyInstance) {
   const { db } = app;
@@ -30,6 +33,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
   app.post("/api/recipes", async (req, reply) => {
     const body = createRecipe.parse(req.body);
     const id = await saveRecipe(db, null, body, userOf(req));
+    await firstVersion(db, id, "created", userOf(req));
     await recipeAdded(app, id, { offered: userOf(req) !== null }); // (an API key never sees the AI check offer)
     return reply.status(201).send(await loadRecipe(db, id, userOf(req)));
   });
@@ -37,11 +41,18 @@ export default async function recipeRoutes(app: FastifyInstance) {
   // Change any of its fields (tags, categories and collections, when given, replace the old ones)
   app.patch("/api/recipes/:id", async (req) => {
     const { id } = idParam.parse(req.params);
-    const body = updateRecipe.parse(req.body);
-    const [before] = await db.select({ imageUrl: recipes.imageUrl, ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+    // version: "new" saves the change as a new version; "current" (or left out) changes the active one
+    const { version = "current", ...fields } = editVersion.parse(req.body ?? {});
+    const body = updateRecipe.parse(fields);
+    const [before] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (before) await ensureVersions(db, id);
     await saveRecipe(db, id, body, userOf(req));
-    if (before && body.ingredients !== undefined) {
-      const [after] = await db.select({ ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+    const [after] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (before && after) {
+      const parts = changedParts(versionData(before), versionData(after));
+      // (nutrition alone never makes a version; tags, categories and the photo aren't in versions)
+      if (version === "new" && parts.some((p) => p !== "nutrition")) await newVersion(db, id, "edit", `Changed ${describeParts(parts)}`, userOf(req));
+      else await syncActive(db, id);
       if (ingredientsChanged(before.ingredients, after.ingredients)) await ingredientsUpdated(app, id);
     }
     await db.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id)); // edited by hand: "Undo AI changes" would wipe the edit

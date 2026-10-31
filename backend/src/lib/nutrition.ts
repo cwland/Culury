@@ -7,6 +7,7 @@ import { logEvent } from "./appLog.js";
 import type { EventBus } from "./events.js";
 import { isOn } from "./features.js";
 import type { JobQueue } from "./jobs.js";
+import { syncActive } from "./versions.js";
 
 // Keeping nutrition in step with the ingredients (the "Auto nutrition" switch).
 
@@ -45,6 +46,7 @@ export async function ingredientsUpdated(d: Deps, recipeId: number) {
   if (r.nutrition?.source !== "you" && hasIngredients(r.ingredients) && (await autoOn(d.db))) return nutritionSoon(d, recipeId);
   if (r.nutrition && !r.nutrition.outdated) {
     await d.db.update(recipes).set({ nutrition: { ...r.nutrition, outdated: true } }).where(eq(recipes.id, recipeId));
+    await syncActive(d.db, recipeId);
   }
 }
 
@@ -90,6 +92,7 @@ export function registerNutritionJob(queue: JobQueue, d: { db: Db; ai: AiService
     try {
       const nutrition = await estimateNutrition(d.ai, r);
       await d.db.update(recipes).set({ nutrition }).where(eq(recipes.id, recipeId));
+      await syncActive(d.db, recipeId); // into the version it was worked out for (the active one)
     } catch (e) {
       await logEvent(d.db, { category: "ai", level: "error", source: "Auto nutrition", event: `Nutrition couldn't be worked out for ${r.title}`, detail: (e as Error).message });
       throw e;

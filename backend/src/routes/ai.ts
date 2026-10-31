@@ -12,6 +12,7 @@ import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements, und
 import { loadRecipe } from "../lib/recipes.js";
 import { userOf } from "./recipes.js";
 import { afterAiCheck, nutritionWanted } from "../lib/nutrition.js";
+import { changedParts, describeParts, ensureVersions, newVersion, syncActive, versionData } from "../lib/versions.js";
 
 // AI for everyone in the household (the settings themselves are the owner's, under /api/settings/ai)
 export default async function aiRoutes(app: FastifyInstance) {
@@ -40,6 +41,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     const r = await recipeOf(id);
     const nutrition = await asHttp(() => estimateNutrition(ai, r));
     await db.update(recipes).set({ nutrition }).where(eq(recipes.id, id));
+    await syncActive(db, id); // nutrition goes into the active version
     return nutrition;
   });
   // Type it in (from the package or another app), or clear it with null
@@ -48,6 +50,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     const r = await recipeOf(id);
     const nutrition = req.body === null ? null : nutritionInput.parse(req.body);
     await db.update(recipes).set({ nutrition: nutrition && { ...nutrition, servings: nutrition.servings ?? r.servings } }).where(eq(recipes.id, id));
+    await syncActive(db, id);
     return nutrition;
   });
 
@@ -83,9 +86,17 @@ export default async function aiRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const body = applyInput.parse(req.body ?? {});
     await requireEnhance(db, ai);
-    const [before] = await db.select({ ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+    const [before] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (before) await ensureVersions(db, id);
     await applyEnhancements(db, id, body, userOf(req));
-    if (before) await afterAiCheck(app, id, before.ingredients, body.nutrition !== undefined);
+    const [after] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (before && after) {
+      // New steps or ingredients: a new version. Only nutrition, categories or tags: the active one.
+      const parts = changedParts(versionData(before), versionData(after));
+      if (parts.includes("steps") || parts.includes("ingredients")) await newVersion(db, id, "ai", `AI check: changed ${describeParts(parts)}`, userOf(req));
+      else await syncActive(db, id);
+      await afterAiCheck(app, id, before.ingredients, body.nutrition !== undefined);
+    }
     return loadRecipe(db, id, userOf(req));
   });
   // "Not now" on the AI check offer: nutrition it would have estimated is worked out now (Auto nutrition)
@@ -101,6 +112,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const [before] = await db.select({ ingredients: recipes.ingredients, nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
     await undoEnhancements(db, id);
+    await syncActive(db, id);
     const [after] = await db.select({ nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
     if (before && after) await afterAiCheck(app, id, before.ingredients, JSON.stringify(before.nutrition) !== JSON.stringify(after.nutrition));
     return loadRecipe(db, id, userOf(req));
