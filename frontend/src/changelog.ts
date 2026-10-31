@@ -10,6 +10,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.9.1",
+    date: "2026-10-31",
+    title: "AI check: fuller steps and live progress",
+    changes: [
+      "AI check now expands brief steps into full instructions: grouped under headings (Prep, Sear, Sauce…), each with a bold label and the how and why: heat level, times, doneness cues. Detailed recipes still only get gaps filled. Unsafe doneness temperatures are raised to the USDA minimum, and it says so.",
+      "While the AI works you see what's happening: which AI service it's asking (with a timer), a switch to your backup service if one doesn't answer, and what it found in each part.",
+      "Steps that start with a short label (“Pat dry: …”) show the label in bold on the recipe and in Cook Mode.",
+      "Adding a home AI that thinks before answering (like qwen3-vl) no longer fails its test with an empty answer.",
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-10-31",
     title: "AI Enhance and Paprika import",

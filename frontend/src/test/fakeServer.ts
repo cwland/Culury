@@ -7,6 +7,7 @@ export interface Sent {
   method: string;
   path: string;
   body: any;
+  headers: Record<string, string>;
 }
 type Handler = (body: any, path: string) => { status?: number; json?: unknown } | unknown;
 
@@ -17,13 +18,14 @@ export function fakeServer(routes: Record<string, Handler>) {
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     const method = (init?.method ?? "GET").toUpperCase();
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
-    sent.push({ method, path, body });
+    sent.push({ method, path, body, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
     const key = Object.keys(routes).find((k) => {
       const [m, pattern] = k.split(" ");
       return m === method && new RegExp(`^${pattern.replace(/:\w+/g, "[^/?]+")}(\\?.*)?$`).test(path);
     });
     if (!key) return new Response(JSON.stringify({ error: `No fake for ${method} ${path}` }), { status: 404 });
     const out = (await routes[key](body, path)) as { status?: number; json?: unknown };
+    if (out instanceof Response) return out; // a handler can answer with its own Response (a stream)
     // { status: 201, json: … } sets the HTTP status; anything else is the JSON itself (a job has its own "status")
     const isWrapped = !!out && typeof out === "object" && typeof out.status === "number" && Object.keys(out).every((k) => k === "status" || k === "json");
     const status = isWrapped ? (out.status ?? 200) : 200;
@@ -64,5 +66,18 @@ export function recipeJson(over: Record<string, unknown> = {}) {
     me: { favorite: false, pinned: false, rating: null, notes: null },
     substitutions: [],
     ...over,
+  };
+}
+
+// A reply that arrives in pieces (application/x-ndjson, one JSON object per line). push() sends a
+// line now; end() closes it. Hand `response` back from a fakeServer handler.
+export function ndjsonStream() {
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({ start: (c) => void (ctrl = c) });
+  return {
+    response: new Response(body, { status: 200, headers: { "content-type": "application/x-ndjson" } }),
+    push: (o: object) => ctrl.enqueue(enc.encode(JSON.stringify(o) + "\n")),
+    end: () => ctrl.close(),
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EnhanceWizard from "./EnhanceWizard";
-import { fakeServer, recipeJson } from "../../test/fakeServer";
+import { fakeServer, ndjsonStream, recipeJson } from "../../test/fakeServer";
 import type { Recipe } from "../../recipes";
 
 const recipe = recipeJson() as unknown as Recipe;
@@ -93,5 +93,50 @@ describe("AI Enhance wizard", () => {
     await u.click(screen.getByRole("button", { name: "Apply selected" }));
     expect(await screen.findByText("Recipe not found")).toBeInTheDocument();
     expect(onApplied).not.toHaveBeenCalled();
+  });
+});
+
+describe("AI check progress and fuller instructions", () => {
+  it("shows what the AI is doing as it happens, then the suggestions", async () => {
+    const live = ndjsonStream();
+    const { server } = open({ "POST /api/recipes/7/enhance": () => live.response });
+    live.push({ type: "step", text: "Reading “Weeknight Chili”: 2 ingredients, 2 steps" });
+    live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true });
+    const log = await screen.findByRole("log", { name: "AI check progress" });
+    await within(log).findByText("Asking Home AI (qwen3-vl:32b)…");
+    expect(within(log).getByText("Reading “Weeknight Chili”: 2 ingredients, 2 steps")).toBeInTheDocument();
+    expect(within(log).getByText("0:00")).toBeInTheDocument(); // the timer on the line still going
+    expect(screen.getByText(/The AI was asked to/)).toBeInTheDocument();
+    expect(server.sent.find((s) => s.path === "/api/recipes/7/enhance")!.headers.accept).toMatch(/application\/x-ndjson/);
+    live.push({ type: "step", text: "Answer received from Home AI" });
+    live.push({ type: "step", text: "Instructions: 1 step filled in or fixed" });
+    live.push({ type: "result", enhancement: suggestion() });
+    live.end();
+    expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    // the list stays, so you can see what it did
+    const done = within(screen.getByRole("log", { name: "AI check progress" }));
+    expect(done.getByText("Instructions: 1 step filled in or fixed")).toBeInTheDocument();
+    expect(done.getByText("Asked Home AI (qwen3-vl:32b)")).toBeInTheDocument(); // finished: past tense, with how long it took
+    expect(done.getByText(/^took \d+:\d\d$/)).toBeInTheDocument();
+    expect(screen.queryByText(/The AI was asked to/)).toBeNull();
+  });
+
+  it("says when brief steps were expanded, with each step's label in bold", async () => {
+    const steps = ["# Prep and Season", "Pat dry: Pat the chops dry so they sear well.", "# Sear", "Brown: Sear 3–5 minutes per side."];
+    open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: steps, changes: ["Expanded the steps."], changed: true, mode: "expanded" } }) });
+    const sec = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    expect(within(sec).getByText("Expanded")).toBeInTheDocument();
+    expect(within(sec).getByText("Prep and Season")).toBeInTheDocument();
+    expect(within(sec).getByText("Pat dry:").tagName).toBe("STRONG");
+  });
+
+  it("a failure in the middle shows the reason; a refusal (AI Enhance off) has no Try again", async () => {
+    const live = ndjsonStream();
+    open({ "POST /api/recipes/7/enhance": () => live.response });
+    live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true });
+    live.push({ type: "error", status: 409, error: "AI Enhance is turned off. Turn it on in Settings › AI." });
+    live.end();
+    expect(await screen.findByText(/AI Enhance is turned off/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 });

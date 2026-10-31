@@ -1,7 +1,95 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api } from "../../api";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { api, ApiError, getToken } from "../../api";
 import { Popup } from "../Popup";
-import type { Enhancement, Nutrition, Recipe } from "../../recipes";
+import { Check } from "../Icons";
+import { stepLabel, type Enhancement, type Nutrition, type Recipe } from "../../recipes";
+
+// One line of the progress list from the server
+type Progress = { text: string; waiting?: boolean; at: number };
+
+// Ask for the check with progress: the server sends one JSON object per line as it works
+// ({"type":"step",...}, then {"type":"result",...} or {"type":"error",...}). A plain JSON reply works too.
+async function checkRecipe(id: number, onStep: (p: { text: string; waiting?: boolean }) => void): Promise<Enhancement> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`/api/recipes/${id}/enhance`, { method: "POST", headers: { accept: "application/x-ndjson, application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+  } catch {
+    throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? `The AI check failed (${res.status})`);
+  }
+  if (!(res.headers.get("content-type") ?? "").includes("ndjson")) return (await res.json()) as Enhancement;
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      const o = JSON.parse(line);
+      if (o.type === "step") onStep({ text: o.text, waiting: o.waiting });
+      else if (o.type === "result") return o.enhancement as Enhancement;
+      else if (o.type === "error") throw new ApiError(o.status ?? 500, o.error ?? "The AI check failed");
+    }
+    if (done) throw new ApiError(0, "The connection closed before the AI finished. Try again.");
+  }
+}
+
+// What the AI was asked to look for (shown in turn while it works; these are its instructions, not progress)
+const ASKED = [
+  "look for missing times, temperatures and doneness cues",
+  "expand brief steps into full instructions",
+  "check that the steps use every ingredient",
+  "find ingredients the steps use but the list leaves out",
+  "check doneness temperatures are food-safe",
+  "estimate nutrition per serving",
+  "match your categories and suggest tags",
+];
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+function ProgressList({ lines, working }: { lines: Progress[]; working: boolean }) {
+  const [now, setNow] = useState(Date.now());
+  const [tip, setTip] = useState(0);
+  useEffect(() => {
+    if (!working) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    const r = setInterval(() => setTip((i) => (i + 1) % ASKED.length), 3500);
+    return () => (clearInterval(t), clearInterval(r));
+  }, [working]);
+  return (
+    <div className="rounded-xl bg-page p-4">
+      <ul role="log" aria-label="AI check progress" className="space-y-1.5 text-sm">
+        {lines.map((l, i) => {
+          const active = working && i === lines.length - 1;
+          const next = lines[i + 1];
+          // a finished wait: "Asked Home AI (qwen3-vl:32b)", took 0:42
+          const text = !active && l.waiting ? l.text.replace(/^Asking (.*)…$/, "Asked $1") : l.text;
+          return (
+            <li key={i} className="flex items-start gap-2">
+              {active ? <span className="mt-1 size-3 shrink-0 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden /> : <Check className="mt-0.5 size-4 shrink-0 text-action" />}
+              <span className={active ? "font-semibold" : "text-subtle"}>{text}</span>
+              {active && l.waiting && <span className="ml-auto tabular-nums text-muted">{clock(Math.max(0, Math.floor((now - l.at) / 1000)))}</span>}
+              {!active && l.waiting && next && <span className="ml-auto tabular-nums text-muted">took {clock(Math.max(0, Math.round((next.at - l.at) / 1000)))}</span>}
+            </li>
+          );
+        })}
+        {working && !lines.length && <li className="text-subtle">Starting the check…</li>}
+      </ul>
+      {working && (
+        <p className="mt-3 border-t border-line pt-3 text-sm text-muted">
+          The AI was asked to {ASKED[tip]}. A full check usually takes 10 seconds to a couple of minutes on a home AI.
+        </p>
+      )}
+    </div>
+  );
+}
 
 type Key = "steps" | "ingredients" | "nutrition" | "organize";
 
@@ -12,7 +100,17 @@ const ingredientLines = (r: Recipe) => r.ingredients.map((i) => (i.section ? `# 
 // One line of a list; "# Heading" lines show as headings. Lines that aren't in the original are marked.
 function Line({ text, marked }: { text: string; marked?: boolean }) {
   const heading = text.match(/^#\s+(.+)$/)?.[1];
-  const body = heading ? <strong>{heading}</strong> : text;
+  const label = heading ? null : stepLabel(text);
+  const body = heading ? (
+    <strong>{heading}</strong>
+  ) : label ? (
+    <>
+      <strong>{label[0]}</strong>
+      {label[1]}
+    </>
+  ) : (
+    text
+  );
   return <li className="py-0.5">{marked ? <mark className="rounded bg-action/15 px-0.5 text-ink">{body}</mark> : body}</li>;
 }
 function Lines({ lines, against }: { lines: string[]; against?: string[] }) {
@@ -70,11 +168,14 @@ function Chips({ items, mark, strike, isNew }: { items: string[]; mark?: Set<str
 }
 
 // One section: Original on the left, AI suggestion on the right (stacked on a phone)
-function Part({ title, changed, changes, use, onUse, original, suggested }: { title: string; changed: boolean; changes: string[]; use: boolean; onUse: (v: boolean) => void; original: ReactNode; suggested: ReactNode }) {
+function Part({ title, badge, changed, changes, use, onUse, original, suggested }: { title: string; badge?: string; changed: boolean; changes: string[]; use: boolean; onUse: (v: boolean) => void; original: ReactNode; suggested: ReactNode }) {
   return (
     <section aria-label={title} className="rounded-xl border border-line p-4">
       <div className="flex items-center justify-between gap-4">
-        <h3 className="text-lg font-semibold">{title}</h3>
+        <h3 className="flex items-center gap-2 text-lg font-semibold">
+          {title}
+          {changed && badge && <span className="rounded-full bg-brand-subtle px-2 py-0.5 text-xs font-semibold text-action">{badge}</span>}
+        </h3>
         {changed ? (
           <label className="flex cursor-pointer items-center gap-2 font-medium">
             <input type="checkbox" checked={use} onChange={(e) => onUse(e.target.checked)} className="size-5 accent-[var(--color-action)]" />
@@ -121,15 +222,25 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   const [busy, setBusy] = useState(false);
   const [use, setUse] = useState<Record<Key, boolean>>({ steps: false, ingredients: false, nutrition: false, organize: false });
 
+  const [lines, setLines] = useState<Progress[]>([]);
+  const [errorStatus, setErrorStatus] = useState(0);
+  const run = useRef(0);
   const check = useCallback(() => {
+    const mine = ++run.current; // a newer Try again wins over an older answer
     setError("");
     setE(null);
-    api<Enhancement>("POST", `/api/recipes/${recipe.id}/enhance`)
+    setLines([]);
+    checkRecipe(recipe.id, (p) => mine === run.current && setLines((ls) => [...ls, { ...p, at: Date.now() }]))
       .then((r) => {
+        if (mine !== run.current) return;
         setE(r);
         setUse({ steps: r.steps.changed, ingredients: r.ingredients.changed, nutrition: r.nutrition.changed, organize: r.organize.changed });
       })
-      .catch((err) => setError((err as Error).message));
+      .catch((err) => {
+        if (mine !== run.current) return;
+        setErrorStatus((err as ApiError).status ?? 0);
+        setError((err as Error).message);
+      });
   }, [recipe.id]);
   useEffect(check, [check]);
 
@@ -159,17 +270,16 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   return (
     <Popup title="AI check" onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
-        {!e && !error && (
-          <p role="status" className="py-10 text-center text-subtle">
-            Checking the recipe… This usually takes 10 to 30 seconds.
-          </p>
-        )}
+        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} />}
         {error && (
           <div role="alert" className="rounded-xl bg-error-subtle p-4">
             <p>{error}</p>
-            <button type="button" onClick={check} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
-              Try again
-            </button>
+            {/* AI Enhance or AI turned off, or the recipe is gone: asking again won't help */}
+            {errorStatus !== 409 && errorStatus !== 404 && (
+              <button type="button" onClick={check} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
+                Try again
+              </button>
+            )}
           </div>
         )}
         {e && (
@@ -177,6 +287,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
             {!anyChange && <p className="rounded-xl bg-page p-4">The AI didn't find anything to change. The recipe looks good as it is.</p>}
             <Part
               title="Instructions"
+              badge={e.steps.mode === "expanded" ? "Expanded" : e.steps.mode === "filled" ? "Filled gaps" : undefined}
               {...e.steps}
               use={use.steps}
               onUse={(v) => setUse({ ...use, steps: v })}

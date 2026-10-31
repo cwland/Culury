@@ -52,9 +52,25 @@ export default async function aiRoutes(app: FastifyInstance) {
 
   // ---------- AI Enhance ----------
   // What the AI would change (saves nothing; the wizard applies the sections you keep)
-  app.post("/api/recipes/:id/enhance", async (req) => {
+  // With "Accept: application/x-ndjson" it sends progress as it goes, one JSON object per line:
+  // {"type":"step","text":"Asking Home AI (qwen3-vl:32b)…","waiting":true} … then
+  // {"type":"result","enhancement":{…}} or {"type":"error","status":502,"error":"…"}
+  app.post("/api/recipes/:id/enhance", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    return asHttp(() => suggestEnhancements(db, ai, id));
+    if (!String(req.headers.accept ?? "").includes("application/x-ndjson")) return asHttp(() => suggestEnhancements(db, ai, id));
+    reply.hijack();
+    const out = reply.raw;
+    out.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-cache", "x-accel-buffering": "no" });
+    const send = (o: object) => out.write(JSON.stringify(o) + "\n");
+    try {
+      const enhancement = await asHttp(() => suggestEnhancements(db, ai, id, (s) => send({ type: "step", ...s })));
+      send({ type: "result", enhancement });
+    } catch (e) {
+      const status = (e as { statusCode?: number }).statusCode ?? 500;
+      if (status >= 500 && !(e instanceof HttpError)) req.log.error(e);
+      send({ type: "error", status, error: status === 500 && !(e instanceof HttpError) ? "Something went wrong. Try again." : (e as Error).message });
+    }
+    out.end();
   });
   // Save the sections kept in the wizard (the recipe as it was is kept for undo)
   app.post("/api/recipes/:id/enhance/apply", async (req) => {

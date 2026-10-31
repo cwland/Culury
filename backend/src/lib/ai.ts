@@ -108,6 +108,9 @@ export type AiFetch = (url: string, init: { method: string; headers: Record<stri
 
 export class AiError extends Error {}
 
+// What's happening during a request, for screens that show progress (AI Enhance)
+export type AiProgress = { kind: "asking"; service: string; model: string } | { kind: "failover"; from: string; to: string; reason: string };
+
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -242,9 +245,10 @@ export class AiService {
    * Try the services in order until one answers. A service that can't be reached, times out, or
    * returns an error is skipped. Throws only when every one failed.
    */
-  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = []) {
+  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = [], onProgress?: (p: AiProgress) => void) {
     const failures: string[] = [];
     for (const [index, sv] of services.entries()) {
+      onProgress?.({ kind: "asking", service: sv.name, model: sv.model });
       try {
         const { text, stop } = await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images);
         return { text, stop, service: sv, index, failures };
@@ -252,6 +256,7 @@ export class AiService {
         if (!(e instanceof AiError) && !(e instanceof HttpError)) throw e;
         failures.push(`${sv.name}: ${(e as Error).message}`);
         const next = services[index + 1];
+        if (next) onProgress?.({ kind: "failover", from: sv.name, to: next.name, reason: (e as Error).message });
         await logEvent(this.db, {
           category: "ai",
           level: next ? "warning" : "error",
@@ -360,10 +365,10 @@ export class AiService {
 
   // One job for AI: the right services for it, failover, and the reply read as JSON. Throws AiError
   // when AI is off (or no service takes this job) or no answer could be read.
-  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string } = {}) {
+  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string; minWaitSec?: number; onProgress?: (p: AiProgress) => void } = {}) {
     const active = await this.active(task);
     if (!active) throw new AiError(opts.off ?? (task === "photo" ? "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service." : "This needs AI. Turn it on in Settings › AI."));
-    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, task === "quick" ? 30 : 60) * 1000, opts.images);
+    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000, opts.images, opts.onProgress);
     const json = parseJsonReply(text);
     if (json === null || typeof json !== "object") {
       // Keep what it said, so Settings › Logs shows why

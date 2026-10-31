@@ -90,3 +90,14 @@ describe("AI Enhance on the recipe page", () => {
     expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply", "/api/recipes/7/enhance/undo"]);
   });
 });
+
+describe("expanded steps on the recipe page", () => {
+  it("a step's short label shows in bold, and headings group the steps", async () => {
+    server(on, recipeJson({ steps: [{ text: "Sear the Pork Chops", section: "Sear the Pork Chops" }, { text: "Brown: Sear 3–5 minutes per side until golden." }] }));
+    render(<RecipeView id={7} />);
+    const steps = await screen.findByRole("region", { name: "Steps" });
+    expect(within(steps).getByText("Brown:").tagName).toBe("STRONG");
+    expect(within(steps).getByText("Sear the Pork Chops")).toBeInTheDocument();
+    expect(within(steps).getByRole("button", { name: /3–5 minutes/ })).toBeInTheDocument(); // the timer still works
+  });
+});

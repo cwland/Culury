@@ -2,7 +2,7 @@ import { asc, count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { categories, recipeCategories, recipeSnapshots, recipes, recipeTags, tags, type Ingredient, type Nutrition, type RecipeSnapshot, type Step } from "../db/schema.js";
-import type { AiService } from "./ai.js";
+import type { AiProgress, AiService } from "./ai.js";
 import { HttpError } from "./errors.js";
 import { isOn } from "./features.js";
 import { cleanTag, loadRecipe, nutritionInput, refreshSearch, saveRecipe, type RecipeInput } from "./recipes.js";
@@ -20,7 +20,7 @@ export interface Section<T> {
   changed: boolean; // differs from the recipe as it is
 }
 export interface Enhancement {
-  steps: Section<string[]>;
+  steps: Section<string[]> & { mode: "expanded" | "filled" | null }; // expanded: brief steps rewritten in full
   ingredients: Section<string[]>;
   nutrition: Section<Nutrition | null>;
   organize: { categories: string[]; newCategories: string[]; tags: string[]; changes: string[]; changed: boolean };
@@ -36,13 +36,23 @@ export async function requireEnhance(db: Db, ai: AiService) {
 export const stepLines = (steps: Step[]) => steps.map((s) => (s.section ? `# ${s.section}` : s.text));
 export const ingredientLines = (list: Ingredient[]) => list.map((i) => (i.section ? `# ${i.section}` : i.raw));
 
+// Brief steps get rewritten in full (grouped, with how and why); detailed ones only get gaps filled
+export function briefSteps(steps: Step[]) {
+  const lines = steps.filter((s) => !s.section);
+  if (steps.some((s) => s.section)) return false;
+  if (lines.length <= 3) return true;
+  return lines.reduce((n, s) => n + s.text.length, 0) / lines.length < 70;
+}
+
 const SYSTEM = `You check home recipes and suggest careful fixes. Reply with JSON only, in this shape:
-{"steps": ["..."], "stepChanges": ["..."],
+{"steps": ["..."], "stepMode": "expanded" or "filled", "stepChanges": ["..."],
  "ingredients": ["..."], "ingredientChanges": ["..."],
  "nutrition": {"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "protein": 0, "sodium": 0, "note": ""}, "nutritionChanges": ["..."],
  "categories": ["..."], "tags": ["..."], "organizeChanges": ["..."]}
 Rules:
-- Keep the recipe's own wording. Change a step only to fix a mistake or add a missing detail (a time, a temperature, a doneness cue, a missing step). Keep every step; lines starting with "# " are headings, keep them.
+- Steps marked DETAILED (fill gaps only, "stepMode": "filled"): keep the recipe's own wording. Change a step only to fix a mistake or add a missing detail (a time, a temperature, a doneness cue, a missing step). Keep every step; lines starting with "# " are headings, keep them.
+- Steps marked BRIEF (expand them, "stepMode": "expanded"): rewrite them as full instructions a home cook can follow. Group them under short headings, each its own line starting with "# " (for example "# Prep and Season", "# Sear the Pork Chops", "# Build the Pan Sauce"). Each step starts with a short label and a colon ("Pat dry: ...", "Deglaze: ..."), then says how and why: pan and heat level, visual and doneness cues, times, resting, scraping up browned bits. Keep every action and the cook's own numbers; add detail, don't drop anything. Never number the lines.
+- Food safety: if a doneness temperature is below the USDA safe minimum (pork 145°F, poultry 165°F, ground meat 160°F), use the safe one and say so in stepChanges.
 - Ingredients: one per line, as written. Add an ingredient only if the steps use it and it's missing. Never change a quantity without saying why in ingredientChanges.
 - Nutrition is for ONE serving: grams, except calories (kcal) and sodium (mg), from standard food tables (USDA). "note": one short sentence on what you assumed.
 - Categories: choose from the household's categories. Suggest a new one only if none fits.
@@ -73,9 +83,15 @@ function section<T>(current: T, suggested: T | null, changes: string[], same: (a
   return { suggested, changes: changes.length ? changes : ["The AI changed this section."], changed: true };
 }
 
-export async function suggestEnhancements(db: Db, ai: AiService, recipeId: number): Promise<Enhancement> {
+// A line for the wizard's progress list; "waiting": the step still going (the wizard shows a timer)
+export type EnhanceStep = { text: string; waiting?: boolean };
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+export async function suggestEnhancements(db: Db, ai: AiService, recipeId: number, onStep: (s: EnhanceStep) => void = () => {}): Promise<Enhancement> {
   await requireEnhance(db, ai);
   const r = await loadRecipe(db, recipeId, null);
+  const stepCount = r.steps.filter((x) => !x.section).length;
+  onStep({ text: `Reading “${r.title}”: ${plural(r.ingredients.filter((i) => !i.section).length, "ingredient")}, ${plural(stepCount, "step")}` });
   const household = (await db.select({ name: categories.name }).from(categories).orderBy(asc(categories.sortOrder), asc(categories.name))).map((c) => c.name);
   const known = (
     await db.select({ name: tags.name, n: count() }).from(tags).innerJoin(recipeTags, eq(recipeTags.tagId, tags.id)).groupBy(tags.name).orderBy(desc(count()), asc(tags.name)).limit(200)
@@ -90,7 +106,7 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
     `Recipe: ${r.title}`,
     `Makes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}`,
     `Ingredients:\n${ingredients.map((l) => `- ${l}`).join("\n") || "(none)"}`,
-    `Steps:\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n") || "(none)"}`,
+    `Steps (${briefSteps(r.steps) ? "BRIEF: expand them" : "DETAILED: fill gaps only"}):\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n") || "(none)"}`,
     `Nutrition now (per serving): ${shownNutrition ? JSON.stringify(shownNutrition) : "none"}`,
     `Its categories: ${cats.join(", ") || "none"}`,
     `Its tags: ${r.tags.join(", ") || "none"}`,
@@ -98,7 +114,11 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
     `Tags already in use: ${known.join(", ") || "none"}`,
   ].join("\n\n");
 
-  const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 6000 });
+  const onProgress = (p: AiProgress) =>
+    onStep(p.kind === "asking" ? { text: `Asking ${p.service} (${p.model})…`, waiting: true } : { text: `${p.from} didn't answer (${p.reason.replace(/\.$/, "")}). Asking ${p.to}…` });
+  // Longer than other jobs: a full rewrite is a long answer, and home models take their time
+  const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 8000, minWaitSec: 180, onProgress });
+  onStep({ text: `Answer received from ${service.name}` });
   // Readable JSON but none of the parts ({"error": ...}, {}): not "the recipe looks good"
   if (!["steps", "ingredients", "nutrition", "categories", "tags"].some((k) => json[k] != null)) {
     await logEvent(db, { category: "ai", level: "warning", source: service.name, event: `${service.name} sent no suggestions for “${r.title}”`, detail: `It said: ${JSON.stringify(json).slice(0, 600)}` });
@@ -133,14 +153,47 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   const organizeChanged = !sameSet(categoriesOut, cats) || !sameSet(tagsOut, r.tags);
   const organizeChanges = organizeChanged ? (changesOf("organizeChanges").length ? changesOf("organizeChanges") : ["The AI changed the categories or tags."]) : [];
 
-  return {
-    steps: section(steps, sSteps, changesOf("stepChanges"), sameLines),
+  const stepSection = section(steps, sSteps, changesOf("stepChanges"), sameLines);
+  const mode = !stepSection.changed ? null : json.stepMode === "expanded" || json.stepMode === "filled" ? json.stepMode : briefSteps(r.steps) ? "expanded" : "filled";
+  const out: Enhancement = {
+    steps: { ...stepSection, mode },
     ingredients: section(ingredients, sIngredients, changesOf("ingredientChanges"), sameLines),
     nutrition: section(r.nutrition ?? null, sNutrition, changesOf("nutritionChanges"), sameNutrition),
     organize: organizeChanged
       ? { categories: categoriesOut, newCategories, tags: tagsOut, changes: organizeChanges, changed: true }
       : { categories: cats, newCategories: [], tags: r.tags, changes: [], changed: false },
   };
+  for (const text of summary(out, steps, ingredients, cats, r.tags)) onStep({ text });
+  return out;
+}
+
+// One line per section for the progress list: what the AI found
+function summary(e: Enhancement, steps: string[], ingredients: string[], cats: string[], tagsBefore: string[]) {
+  const notIn = (a: string[], b: string[]) => {
+    const seen = new Set(b.map((x) => norm(x).toLowerCase()));
+    return a.filter((x) => !seen.has(norm(x).toLowerCase()));
+  };
+  const s = e.steps;
+  const heads = s.suggested.filter((l) => l.startsWith("# ")).length;
+  const lines = s.suggested.length - heads;
+  const stepsLine = !s.changed
+    ? "Instructions: no changes"
+    : s.mode === "expanded"
+      ? `Instructions: expanded into ${heads ? `${plural(heads, "part")}, ` : ""}${plural(lines, "step")}`
+      : `Instructions: ${plural(notIn(s.suggested, steps).length || 1, "step")} filled in or fixed`;
+  const added = notIn(e.ingredients.suggested, ingredients).length;
+  const gone = notIn(ingredients, e.ingredients.suggested).length;
+  const ingLine = !e.ingredients.changed ? "Ingredients: no changes" : `Ingredients: ${[added && `${added} added`, gone && `${gone} changed or removed`].filter(Boolean).join(", ") || "reworded"}`;
+  const n = e.nutrition.suggested;
+  const nutLine = e.nutrition.changed && n ? `Nutrition: estimated, ${n.calories} kcal per serving` : "Nutrition: no changes";
+  const o = e.organize;
+  const newCats = o.newCategories.length;
+  const catsAdded = notIn(o.categories, cats).length - newCats;
+  const tagsAdded = notIn(o.tags, tagsBefore).length;
+  const tagsGone = notIn(tagsBefore, o.tags).length;
+  const parts = [newCats && plural(newCats, "new category", "new categories"), catsAdded > 0 && `${plural(catsAdded, "category", "categories")} added`, tagsAdded && `${plural(tagsAdded, "tag")} added`, tagsGone && `${plural(tagsGone, "tag")} removed`].filter(Boolean);
+  const orgLine = !o.changed ? "Categories and tags: no changes" : `Categories and tags: ${parts.join(", ") || "changed"}`;
+  return [stepsLine, ingLine, nutLine, orgLine];
 }
 
 // ---------- apply and undo ----------

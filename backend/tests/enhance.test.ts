@@ -58,7 +58,7 @@ describe("asking AI to check a recipe", () => {
     t.ai.respond = () => reply(rest);
     const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
     expect(e.nutrition).toEqual({ suggested: null, changes: [], changed: false });
-    expect(e.steps).toEqual({ suggested: ["Cook the chicken."], changes: [], changed: false });
+    expect(e.steps).toEqual({ suggested: ["Cook the chicken."], changes: [], changed: false, mode: null });
     expect(e.ingredients.changed).toBe(true);
   });
 
@@ -208,5 +208,86 @@ describe("review fixes", () => {
     const logs = (await t.api("GET", "/api/logs?category=ai")).body.map((l: any) => l.event);
     expect(logs.some((e: string) => /couldn't be read/.test(e))).toBe(true);
     expect(logs.some((e: string) => /no suggestions/.test(e))).toBe(true);
+  });
+});
+
+describe("live progress and fuller instructions", () => {
+  // The wizard asks for progress lines (application/x-ndjson): one JSON object per line
+  const stream = async (id: number) => {
+    const res = await t.app.inject({ method: "POST", url: `/api/recipes/${id}/enhance`, headers: { authorization: `Bearer ${t.getToken()}`, accept: "application/x-ndjson" } });
+    expect(res.headers["content-type"]).toMatch(/application\/x-ndjson/);
+    return res.body.trim().split("\n").map((l) => JSON.parse(l));
+  };
+  const texts = (lines: any[]) => lines.filter((l) => l.type === "step").map((l) => l.text as string);
+
+  it("says what it's doing, step by step, then sends the suggestions", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = () => reply(full);
+    const lines = await stream(r.id);
+    const said = texts(lines);
+    expect(said[0]).toBe("Reading “Chili”: 2 ingredients, 1 step");
+    expect(said).toContain("Asking OpenAI (tiny)…");
+    expect(said).toContain("Answer received from OpenAI");
+    expect(said.some((s) => /^Instructions: /.test(s))).toBe(true);
+    expect(said).toContain("Ingredients: 1 added");
+    expect(said).toContain("Nutrition: estimated, 320 kcal per serving");
+    expect(said).toContain("Categories and tags: 1 new category, 1 tag added");
+    const asking = lines.find((l) => l.text === "Asking OpenAI (tiny)…");
+    expect(asking.waiting).toBe(true); // the wizard shows a timer on this line
+    const last = lines.at(-1);
+    expect(last.type).toBe("result");
+    expect(last.enhancement.steps.suggested).toEqual(full.steps);
+  });
+
+  it("shows when one AI service doesn't answer and the next one is asked", async () => {
+    await t.api("PUT", "/api/settings/ai", {
+      maxPerRun: 50,
+      services: [
+        { name: "Home AI", provider: "local", baseUrl: "http://10.0.0.5:11434/v1", model: "qwen3-vl:32b" },
+        { name: "Claude", provider: "openai", model: "big", apiKey: "k" },
+      ],
+    });
+    const r = await chili();
+    t.ai.respond = (url) => (url.includes("10.0.0.5") ? { status: 500, json: { error: { message: "out of memory" } } } : reply(full));
+    const said = texts(await stream(r.id));
+    expect(said).toContain("Asking Home AI (qwen3-vl:32b)…");
+    expect(said.some((s) => /^Home AI didn't answer .*Asking Claude…$/.test(s))).toBe(true);
+    expect(said).toContain("Answer received from Claude");
+  });
+
+  it("a failure ends the progress with the reason", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = () => ({ status: 200, json: { choices: [{ message: { content: "no idea" } }] } });
+    const last = (await stream(r.id)).at(-1);
+    expect(last).toMatchObject({ type: "error", status: 502 });
+    expect(last.error).toMatch(/couldn't be read/);
+  });
+
+  it("brief steps are expanded into detailed, grouped steps; detailed ones only get gaps filled", async () => {
+    await aiOn();
+    const brief = (await t.api("POST", "/api/recipes", { title: "Pork Chops", ingredients: "2 pork chops\nsalt\npepper", steps: ["Salt and pepper pork chops", "Brown pork chops to 135 degrees", "Rest"] })).body;
+    const expanded = ["# Prep and Season", "Pat dry: Pat the chops dry with paper towels so they sear well.", "Season: Season both sides with salt and pepper.", "# Sear", "Brown: Sear 3–5 minutes per side until golden and 145°F inside.", "Rest: Rest 5 minutes on a warm plate."];
+    t.ai.respond = () => reply({ steps: expanded, stepMode: "expanded", stepChanges: ["Expanded the steps; 145°F is the USDA safe temperature for pork (was 135)."] });
+    const e = (await t.api("POST", `/api/recipes/${brief.id}/enhance`)).body;
+    const prompt = t.ai.calls.at(-1)!.body.messages[1].content as string;
+    expect(prompt).toMatch(/brief: expand them/i);
+    expect(e.steps).toMatchObject({ suggested: expanded, mode: "expanded", changed: true });
+    // a recipe with full steps is only filled in
+    const detailed = (await t.api("POST", "/api/recipes", {
+      title: "Braise",
+      ingredients: "2 lb beef chuck",
+      steps: [
+        "Season the beef chuck all over with salt and pepper and let it sit at room temperature for 30 minutes.",
+        "Heat oil in a Dutch oven over medium-high heat and brown the beef on all sides, about 10 minutes in total.",
+        "Add the stock, cover, and braise in a 325°F oven for 3 hours until fork tender.",
+        "Rest the beef for 10 minutes, then slice against the grain and serve with the braising liquid.",
+      ],
+    })).body;
+    t.ai.respond = () => reply({ steps: ["Season the beef chuck all over with salt and pepper and let it sit at room temperature for 30 minutes.", "x"], stepChanges: ["Filled a gap."] });
+    const e2 = (await t.api("POST", `/api/recipes/${detailed.id}/enhance`)).body;
+    expect(t.ai.calls.at(-1)!.body.messages[1].content).toMatch(/detailed: fill gaps only/i);
+    expect(e2.steps.mode).toBe("filled");
   });
 });

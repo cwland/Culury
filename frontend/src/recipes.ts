@@ -68,7 +68,7 @@ export interface EnhanceSection<T> {
   changed: boolean;
 }
 export interface Enhancement {
-  steps: EnhanceSection<string[]>;
+  steps: EnhanceSection<string[]> & { mode?: "expanded" | "filled" | null }; // expanded: brief steps rewritten in full
   ingredients: EnhanceSection<string[]>;
   nutrition: EnhanceSection<Nutrition | null>;
   organize: { categories: string[]; newCategories: string[]; tags: string[]; changes: string[]; changed: boolean };
@@ -286,4 +286,10 @@ export function parseMinutes(s: string): number | null | undefined {
   }
   if (/and a half/.test(t) && found) total += /hour|hr/.test(t) ? 30 : 0.5;
   return found ? Math.round(total) : undefined;
+}
+
+// "Pat dry: Pat the chops dry…" -> ["Pat dry:", " Pat the chops dry…"]: a short label at the start of a step
+export function stepLabel(text: string): [string, string] | null {
+  const m = text.match(/^(\p{Lu}[\p{L}'’&-]*(?: [\p{L}'’&-]+){0,3}:)(\s+\S[\s\S]*)$/u);
+  return m ? [m[1], m[2]] : null;
 }

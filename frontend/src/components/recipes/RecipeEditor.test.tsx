@@ -26,7 +26,7 @@ describe("adding a recipe by hand", () => {
     await u.click(await screen.findByRole("button", { name: "Breakfast" }));
     await u.click(screen.getByRole("button", { name: "Save recipe" }));
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/42?added=1"));
-    expect(server.writes()).toEqual([
+    expect(server.writes().map(({ method, path, body }) => ({ method, path, body }))).toEqual([
       {
         method: "POST",
         path: "/api/recipes",
