@@ -13,18 +13,26 @@ const features = async () => (await t.api("GET", "/api/settings/features")).body
 const turn = (changes: object) => t.api("PUT", "/api/settings/features", changes);
 
 describe("feature switches", () => {
+  it("AI Enhance follows AI: on once AI is set up, and can be switched off", async () => {
+    expect((await features()).aiEnhance).toBe(false);
+    await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+    expect((await features()).aiEnhance).toBe(true);
+    expect((await turn({ aiEnhance: false })).body.aiEnhance).toBe(false);
+    expect((await features()).aiEnhance).toBe(false);
+  });
+
   it("start off when nothing is set up, and on for what is", async () => {
-    expect(await features()).toEqual({ ai: false, apiKeys: false });
+    expect(await features()).toEqual({ ai: false, apiKeys: false, aiEnhance: false });
     await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
     await t.api("POST", "/api/keys", { name: "n8n" });
-    expect(await features()).toEqual({ ai: true, apiKeys: true });
+    expect(await features()).toEqual({ ai: true, apiKeys: true, aiEnhance: true });
   });
 
   it("only flipped switches are stored; the rest follow what's set up", async () => {
     await turn({ apiKeys: true });
     await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
-    expect(await features()).toEqual({ ai: true, apiKeys: true });
-    expect((await turn({ ai: false })).body).toEqual({ ai: false, apiKeys: true });
+    expect(await features()).toEqual({ ai: true, apiKeys: true, aiEnhance: true });
+    expect((await turn({ ai: false })).body).toEqual({ ai: false, apiKeys: true, aiEnhance: true });
     expect((await t.api("PUT", "/api/settings/features", { nope: true })).status).toBe(400);
   });
 

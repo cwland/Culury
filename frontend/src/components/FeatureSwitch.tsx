@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Toggle } from "./settingsUi";
 import { Notice } from "./settingsUi";
 
-export type Feature = "ai" | "apiKeys";
+export type Feature = "ai" | "apiKeys" | "aiEnhance";
 export type Features = Record<Feature, boolean>;
 
 // The master switch at the top of Settings > AI and API keys. Off hides that tab's

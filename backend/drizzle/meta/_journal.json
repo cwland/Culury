@@ -64,6 +64,13 @@
       "when": 1793381166666,
       "tag": "0008_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793461292694,
+      "tag": "0009_recipe_snapshots",
+      "breakpoints": true
     }
   ]
 }
