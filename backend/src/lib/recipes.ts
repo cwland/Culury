@@ -18,7 +18,7 @@ import {
 import { parseIngredient } from "./ingredients.js";
 import { notFound } from "./errors.js";
 
-type Tx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Tx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 // ---------- input ----------
 
@@ -194,7 +194,7 @@ const wholeWords = (q: string) => words(q).join(" & ");
 
 // ---------- save ----------
 
-export async function saveRecipe(db: Db, id: number | null, input: RecipeInput, userId: number | null) {
+export async function saveRecipe(db: Tx, id: number | null, input: RecipeInput, userId: number | null) {
   return db.transaction(async (tx) => {
     const [current] = id ? await tx.select().from(recipes).where(eq(recipes.id, id)) : [];
     if (id && !current) throw notFound("Recipe");

@@ -6,6 +6,8 @@ import type { AiService } from "./ai.js";
 import { HttpError } from "./errors.js";
 import { isOn } from "./features.js";
 import { cleanTag, loadRecipe, nutritionInput, refreshSearch, saveRecipe, type RecipeInput } from "./recipes.js";
+import { AiError } from "./ai.js";
+import { logEvent } from "./appLog.js";
 import { notFound } from "./errors.js";
 
 // AI Enhance: the AI checks a recipe (fills gaps in the steps, catches ingredient mistakes,
@@ -96,7 +98,12 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
     `Tags already in use: ${known.join(", ") || "none"}`,
   ].join("\n\n");
 
-  const { json } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 6000 });
+  const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 6000 });
+  // Readable JSON but none of the parts ({"error": ...}, {}): not "the recipe looks good"
+  if (!["steps", "ingredients", "nutrition", "categories", "tags"].some((k) => json[k] != null)) {
+    await logEvent(db, { category: "ai", level: "warning", source: service.name, event: `${service.name} sent no suggestions for “${r.title}”`, detail: `It said: ${JSON.stringify(json).slice(0, 600)}` });
+    throw new AiError(`${service.name} didn't send any suggestions. Try again, or try another AI service.`);
+  }
   const changesOf = (k: string) => textList(json[k], 10, 300) ?? [];
 
   // Instructions: numbering the AI may have kept is dropped
@@ -152,26 +159,36 @@ export const applyInput = z
 // Keep the recipe as it is now (replacing any older snapshot: one level of undo), then save only
 // the sections sent. New categories are created; tags are matched without case.
 export async function applyEnhancements(db: Db, recipeId: number, body: z.infer<typeof applyInput>, userId: number | null) {
-  const [r] = await db.select().from(recipes).where(eq(recipes.id, recipeId));
-  if (!r) throw notFound("Recipe");
-  const categoryIds = (await db.select({ id: recipeCategories.categoryId }).from(recipeCategories).where(eq(recipeCategories.recipeId, recipeId))).map((c) => c.id);
-  const tagNames = (await db.select({ name: tags.name }).from(recipeTags).innerJoin(tags, eq(tags.id, recipeTags.tagId)).where(eq(recipeTags.recipeId, recipeId))).map((t) => t.name);
-  const data: RecipeSnapshot = { steps: r.steps, ingredients: r.ingredients, nutrition: r.nutrition ?? null, categoryIds, tags: tagNames };
-  await db
-    .insert(recipeSnapshots)
-    .values({ recipeId, data })
-    .onConflictDoUpdate({ target: recipeSnapshots.recipeId, set: { data, createdAt: new Date() } });
-  await saveRecipe(db, recipeId, { steps: body.steps, ingredients: body.ingredients, nutrition: body.nutrition, categories: body.categories, tags: body.tags } as RecipeInput, userId);
+  // One transaction: if saving fails, the earlier undo point is kept and nothing changes
+  await db.transaction(async (tx) => {
+    const [r] = await tx.select().from(recipes).where(eq(recipes.id, recipeId));
+    if (!r) throw notFound("Recipe");
+    const categoryIds = (await tx.select({ id: recipeCategories.categoryId }).from(recipeCategories).where(eq(recipeCategories.recipeId, recipeId))).map((c) => c.id);
+    const tagNames = (await tx.select({ name: tags.name }).from(recipeTags).innerJoin(tags, eq(tags.id, recipeTags.tagId)).where(eq(recipeTags.recipeId, recipeId))).map((t) => t.name);
+    const applied: RecipeSnapshot["applied"] = [];
+    if (body.steps) applied.push("steps");
+    if (body.ingredients) applied.push("ingredients");
+    if (body.nutrition !== undefined) applied.push("nutrition");
+    if (body.categories || body.tags) applied.push("organize");
+    const data: RecipeSnapshot = { steps: r.steps, ingredients: r.ingredients, nutrition: r.nutrition ?? null, categoryIds, tags: tagNames, applied };
+    await tx
+      .insert(recipeSnapshots)
+      .values({ recipeId, data })
+      .onConflictDoUpdate({ target: recipeSnapshots.recipeId, set: { data, createdAt: new Date() } });
+    await saveRecipe(tx, recipeId, { steps: body.steps, ingredients: body.ingredients, nutrition: body.nutrition, categories: body.categories, tags: body.tags } as RecipeInput, userId);
+  });
 }
 
-// Put back what the latest AI change replaced, exactly, and forget the snapshot
+// Put back what the latest AI change replaced (only the sections it touched), exactly, and forget the snapshot
 export async function undoEnhancements(db: Db, recipeId: number) {
-  const [snap] = await db.select().from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
-  if (!snap) throw new HttpError(404, "There's no AI change to undo on this recipe");
-  const d = snap.data;
-  await saveRecipe(db, recipeId, { categories: d.categoryIds, tags: d.tags } as RecipeInput, null);
   await db.transaction(async (tx) => {
-    await tx.update(recipes).set({ steps: d.steps, ingredients: d.ingredients, nutrition: d.nutrition, updatedAt: new Date() }).where(eq(recipes.id, recipeId));
+    const [snap] = await tx.select().from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
+    if (!snap) throw new HttpError(404, "There's no AI change to undo on this recipe");
+    const d = snap.data;
+    const did = new Set(d.applied ?? ["steps", "ingredients", "nutrition", "organize"]);
+    if (did.has("organize")) await saveRecipe(tx, recipeId, { categories: d.categoryIds, tags: d.tags } as RecipeInput, null);
+    const back = { ...(did.has("steps") && { steps: d.steps }), ...(did.has("ingredients") && { ingredients: d.ingredients }), ...(did.has("nutrition") && { nutrition: d.nutrition }) };
+    await tx.update(recipes).set({ ...back, updatedAt: new Date() }).where(eq(recipes.id, recipeId));
     await tx.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
     await refreshSearch(tx, [recipeId]);
   });

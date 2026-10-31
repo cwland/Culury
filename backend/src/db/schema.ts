@@ -265,6 +265,7 @@ export interface RecipeSnapshot {
   nutrition: Nutrition | null;
   categoryIds: number[];
   tags: string[];
+  applied?: ("steps" | "ingredients" | "nutrition" | "organize")[]; // what the AI change touched (undo puts back only these)
 }
 export const recipeSnapshots = pgTable("recipe_snapshots", {
   recipeId: integer("recipe_id")

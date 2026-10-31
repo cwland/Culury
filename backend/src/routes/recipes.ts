@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { recipeUser, recipes, substitutions } from "../db/schema.js";
+import { recipeSnapshots, recipeUser, recipes, substitutions } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { createRecipe, listQuery, listRecipes, loadRecipe, saveRecipe, updateRecipe } from "../lib/recipes.js";
@@ -38,6 +38,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
     const body = updateRecipe.parse(req.body);
     const [before] = await db.select({ imageUrl: recipes.imageUrl }).from(recipes).where(eq(recipes.id, id));
     await saveRecipe(db, id, body, userOf(req));
+    await db.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id)); // edited by hand: "Undo AI changes" would wipe the edit
     // A new photo (or none): the old one goes, if it was uploaded here and nothing else uses it
     if (body.imageUrl !== undefined && before?.imageUrl && body.imageUrl !== before.imageUrl) {
       const [other] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.imageUrl, before.imageUrl));

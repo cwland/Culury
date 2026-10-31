@@ -159,3 +159,54 @@ describe("applying and undoing AI changes", () => {
     expect((await undo(r.id)).status).toBe(404);
   });
 });
+
+describe("review fixes", () => {
+  const apply = (id: number, body: object) => t.api("POST", `/api/recipes/${id}/enhance/apply`, body);
+  const undo = (id: number) => t.api("POST", `/api/recipes/${id}/enhance/undo`);
+
+  it("undo puts back only the sections the AI changed, not later edits elsewhere", async () => {
+    await aiOn();
+    const r = await chili();
+    await apply(r.id, { tags: ["chicken"] });
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 380 }); // typed in afterwards
+    const back = (await undo(r.id)).body;
+    expect(back.tags).toEqual(["spicy"]);
+    expect(back.nutrition).toMatchObject({ calories: 380, source: "you" });
+  });
+
+  it("editing the recipe by hand after an AI change removes the undo, so it can't wipe your edit", async () => {
+    await aiOn();
+    const r = await chili();
+    await apply(r.id, { tags: ["chicken"] });
+    await t.api("PATCH", `/api/recipes/${r.id}`, { steps: ["Cook the chicken well."] });
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.aiSnapshotAt).toBeNull();
+    expect((await undo(r.id)).status).toBe(404);
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.steps).toEqual([{ text: "Cook the chicken well." }]);
+  });
+
+  it("an apply that fails keeps the earlier undo point and changes nothing", async () => {
+    await aiOn();
+    const r = await chili();
+    await apply(r.id, { steps: ["First AI version."] });
+    const bad = await apply(r.id, { steps: ["bad\u0000line"], tags: ["broken"] }); // the database refuses this text
+    expect(bad.status).toBeGreaterThanOrEqual(400);
+    const now = (await t.api("GET", `/api/recipes/${r.id}`)).body;
+    expect(now.steps).toEqual([{ text: "First AI version." }]);
+    expect(now.tags).toEqual(["spicy"]);
+    expect((await undo(r.id)).body.steps).toEqual([{ text: "Cook the chicken." }]);
+  });
+
+  it("an unreadable answer, or one with none of the parts, is a 502 with a log entry", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = () => ({ status: 200, json: { choices: [{ message: { content: "Sorry, I can't help with that." } }] } });
+    expect((await t.api("POST", `/api/recipes/${r.id}/enhance`)).status).toBe(502);
+    t.ai.respond = () => reply({ error: "context too long" });
+    const res = await t.api("POST", `/api/recipes/${r.id}/enhance`);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/didn't send any suggestions/);
+    const logs = (await t.api("GET", "/api/logs?category=ai")).body.map((l: any) => l.event);
+    expect(logs.some((e: string) => /couldn't be read/.test(e))).toBe(true);
+    expect(logs.some((e: string) => /no suggestions/.test(e))).toBe(true);
+  });
+});
