@@ -189,6 +189,7 @@ export interface Nutrition {
   source: "site" | "ai" | "you";
   servings?: number | null; // the servings it was worked out for
   note?: string | null;
+  outdated?: boolean; // the ingredients changed since (cleared by a new estimate or typing them in)
 }
 
 export const recipes = pgTable(
