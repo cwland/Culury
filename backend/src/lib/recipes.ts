@@ -267,7 +267,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
 export const listQuery = z.object({
   q: z.string().trim().max(200).optional(),
   tag: z.union([z.string(), z.array(z.string())]).optional(), // every one given must match
-  category: z.coerce.number().int().optional(),
+  category: z.union([z.literal("none"), z.coerce.number().int()]).optional(), // "none": recipes in no category
   collection: z.coerce.number().int().optional(),
   favorite: z.enum(["true", "false"]).optional(),
   pinned: z.enum(["true", "false"]).optional(),
@@ -285,10 +285,14 @@ export async function listRecipes(db: Db, userId: number | null, q: z.infer<type
     // the search document, or your own notes on it
     where.push(sql`(r.search_vector @@ to_tsquery('simple', ${ts}) or r.search_vector @@ to_tsquery('english', ${wholeWords(q.q!)}) or exists (select 1 from recipe_user ru where ru.recipe_id = r.id and ru.user_id = ${userId ?? 0} and ru.notes ilike ${"%" + q.q + "%"}))`);
   }
-  for (const t of [q.tag ?? []].flat().map(cleanTag).filter(Boolean)) {
+  const tagList = [q.tag ?? []].flat();
+  // tag=none: recipes with no tags
+  if (tagList.includes("none")) where.push(sql`not exists (select 1 from recipe_tags rt where rt.recipe_id = r.id)`);
+  for (const t of tagList.filter((x) => x !== "none").map(cleanTag).filter(Boolean)) {
     where.push(sql`exists (select 1 from recipe_tags rt join tags t on t.id = rt.tag_id where rt.recipe_id = r.id and t.name = ${t})`);
   }
-  if (q.category) where.push(sql`exists (select 1 from recipe_categories rc where rc.recipe_id = r.id and rc.category_id = ${q.category})`);
+  if (q.category === "none") where.push(sql`not exists (select 1 from recipe_categories rc where rc.recipe_id = r.id)`);
+  else if (q.category) where.push(sql`exists (select 1 from recipe_categories rc where rc.recipe_id = r.id and rc.category_id = ${q.category})`);
   if (q.collection) where.push(sql`exists (select 1 from collection_recipes cr where cr.recipe_id = r.id and cr.collection_id = ${q.collection})`);
   if (q.favorite) where.push(sql`coalesce((select ru.favorite from recipe_user ru where ru.recipe_id = r.id and ru.user_id = ${userId ?? 0}), false) = ${q.favorite === "true"}`);
   if (q.pinned) where.push(sql`coalesce((select ru.pinned from recipe_user ru where ru.recipe_id = r.id and ru.user_id = ${userId ?? 0}), false) = ${q.pinned === "true"}`);

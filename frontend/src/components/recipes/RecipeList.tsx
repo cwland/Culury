@@ -5,11 +5,17 @@ import { ChefIcon, ClockIcon, FilterIcon, PinIcon, PlusIcon, SearchIcon, StarIco
 import { Popup } from "../Popup";
 import ImportDialog from "./ImportDialog";
 
-type Filters = { q: string; tag: string; category: string; collection: string; favorite: string; sort: string };
+// tag: every tag that's on (recipes must have all of them); "none" = recipes with no tags
+type Filters = { q: string; tag: string[]; category: string; collection: string; favorite: string; sort: string };
 // Open the import dialog from anywhere (the empty state, the menu)
 export const openImport = () => window.dispatchEvent(new Event("culury:import"));
-const KEYS: (keyof Filters)[] = ["q", "tag", "category", "collection", "favorite", "sort"];
-const fromParams = (p: URLSearchParams): Filters => Object.fromEntries(KEYS.map((k) => [k, p.get(k) ?? ""])) as Filters;
+const KEYS = ["q", "category", "collection", "favorite", "sort"] as const;
+const fromParams = (p: URLSearchParams): Filters => ({ ...(Object.fromEntries(KEYS.map((k) => [k, p.get(k) ?? ""])) as Omit<Filters, "tag">), tag: p.getAll("tag") });
+const toParams = (f: Filters) => {
+  const qs = new URLSearchParams(KEYS.filter((k) => f[k]).map((k) => [k, f[k]]));
+  f.tag.forEach((t) => qs.append("tag", t));
+  return qs;
+};
 
 const SORTS = [
   { id: "", label: "Recently changed" },
@@ -26,6 +32,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [categories, setCategories] = useState<TagInfo[]>([]);
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
+  const [noCategory, setNoCategory] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // ?import=<link or text>: shared from another app (Android share sheet), or a bookmarklet
   const [importing, setImporting] = useState<{ initial?: string } | null>(() => (params.get("import") ? { initial: params.get("import")! } : null));
@@ -42,18 +49,19 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       setCategories(c);
       setCollections(col);
     });
+    void api<{ total: number }>("GET", "/api/recipes?category=none&limit=1").then((d) => setNoCategory(d.total)).catch(() => {});
   }, []);
 
   // The filters live in the address (#/recipes?tag=grill), so Back returns to the same list
   useEffect(() => {
-    const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+    const qs = toParams(f).toString();
     const hash = `#/recipes${qs ? `?${qs}` : ""}`;
     // (only while still on the list: never rewrite the address of a page you're going to)
     if (window.location.hash.startsWith("#/recipes") && !/^#\/recipes\/./.test(window.location.hash)) {
       history.replaceState(null, "", hash);
       rememberList(hash);
     }
-    const query = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+    const query = toParams(f);
     query.set("limit", "200");
     let live = true;
     api<{ total: number; recipes: RecipeSummary[] }>("GET", `/api/recipes?${query}`)
@@ -82,16 +90,31 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
     return () => window.removeEventListener("keydown", key);
   }, []);
 
-  // Only one way of browsing at a time (a collection, a category, a tag, or favorites)
+  // One place at a time (a collection, a category, or favorites); clicking the one you're in leaves it.
+  // Tags narrow wherever you are, and stay on until you click them off (or All recipes).
   const browse = (change: Partial<Filters>) => {
-    setF((x) => ({ ...x, tag: "", category: "", collection: "", favorite: "", ...change }));
+    setF((x) => {
+      const [key, value] = Object.entries(change)[0] ?? [];
+      if (!key) return { ...x, tag: [], category: "", collection: "", favorite: "" };
+      const leaving = x[key as keyof Filters] === value;
+      return { ...x, category: "", collection: "", favorite: "", [key]: leaving ? "" : value };
+    });
     setFiltersOpen(false);
   };
+  const toggleTag = (name: string) =>
+    setF((x) => {
+      const on = x.tag.includes(name);
+      // "No tags" and real tags can't both be on
+      const others = x.tag.filter((t) => t !== name && (name === "none" ? false : t !== "none"));
+      return { ...x, tag: on ? x.tag.filter((t) => t !== name) : [...others, name] };
+    });
   const heading = useMemo(() => {
     if (f.favorite) return "Favorites";
     if (f.collection) return collections.find((c) => String(c.id) === f.collection)?.name ?? "Collection";
+    if (f.category === "none") return "No category";
     if (f.category) return categories.find((c) => String(c.id) === f.category)?.name ?? "Category";
-    if (f.tag) return `#${f.tag}`;
+    if (f.tag.includes("none")) return "No tags";
+    if (f.tag.length) return f.tag.map((t) => `#${t}`).join(" ");
     return "All recipes";
   }, [f, collections, categories]);
   const collection = f.collection ? collections.find((c) => String(c.id) === f.collection) : undefined;
@@ -100,6 +123,8 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
     <BrowseList
       f={f}
       browse={browse}
+      toggleTag={toggleTag}
+      noCategory={noCategory}
       tags={tags}
       categories={categories}
       collections={collections}
@@ -177,9 +202,9 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
   );
 }
 
-function BrowseList({ f, browse, tags, categories, collections }: { f: Filters; browse: (c: Partial<Filters>) => void; tags: TagInfo[]; categories: TagInfo[]; collections: CollectionInfo[] }) {
+function BrowseList({ f, browse, toggleTag, noCategory, tags, categories, collections }: { f: Filters; browse: (c: Partial<Filters>) => void; toggleTag: (t: string) => void; noCategory: number; tags: TagInfo[]; categories: TagInfo[]; collections: CollectionInfo[] }) {
   const item = (active: boolean) => `flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left ${active ? "bg-pressed font-semibold text-action" : "hover:bg-container"}`;
-  const none = !f.tag && !f.category && !f.collection && !f.favorite;
+  const none = !f.tag.length && !f.category && !f.collection && !f.favorite;
   const topTags = [...tags].filter((t) => t.count).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 20);
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <section className="mt-5">
@@ -210,23 +235,30 @@ function BrowseList({ f, browse, tags, categories, collections }: { f: Filters; 
       </Section>
       <Section title="Categories">
         {categories.map((c) => (
-          <button key={c.id} type="button" className={item(f.category === String(c.id))} onClick={() => browse({ category: String(c.id) })}>
+          <button key={c.id} type="button" aria-pressed={f.category === String(c.id)} className={item(f.category === String(c.id))} onClick={() => browse({ category: String(c.id) })}>
             <span className="truncate">{c.name}</span>
             <span className="text-xs text-muted">{c.count}</span>
           </button>
         ))}
+        {noCategory > 0 && (
+          <button type="button" aria-pressed={f.category === "none"} className={item(f.category === "none")} onClick={() => browse({ category: "none" })}>
+            <span className="truncate italic">No category</span>
+            <span className="text-xs text-muted">{noCategory}</span>
+          </button>
+        )}
       </Section>
       {topTags.length > 0 && (
         <Section title="Tags">
           <div className="flex flex-wrap gap-1.5 px-2 pt-1">
-            {topTags.map((t) => (
+            {[...topTags.map((t) => ({ key: String(t.id), name: t.name, label: t.name })), { key: "none", name: "none", label: "No tags" }].map((t) => (
               <button
-                key={t.id}
+                key={t.key}
                 type="button"
-                onClick={() => browse({ tag: t.name })}
-                className={`rounded-full px-2.5 py-1 text-sm ${f.tag === t.name ? "bg-action text-white" : "bg-container text-subtle hover:text-ink"}`}
+                aria-pressed={f.tag.includes(t.name)}
+                onClick={() => toggleTag(t.name)}
+                className={`rounded-full px-2.5 py-1 text-sm ${f.tag.includes(t.name) ? "bg-action text-white" : "bg-container text-subtle hover:text-ink"} ${t.key === "none" ? "italic" : ""}`}
               >
-                {t.name}
+                {t.label}
               </button>
             ))}
           </div>
@@ -250,7 +282,7 @@ export function RecipeImage({ src, title, className = "" }: { src: string | null
 function RecipeCard({ r }: { r: RecipeSummary }) {
   const time = formatMinutes(r.totalMinutes);
   return (
-    <a href={`#/recipes/${r.id}`} className="group block overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
+    <a href={`#/recipes/${r.id}`} className="group flex h-full flex-col overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
       <div className="relative">
         <RecipeImage src={r.imageUrl} title={r.title} className="aspect-[4/3] w-full" />
         <div className="absolute right-2 top-2 flex gap-1">
@@ -267,15 +299,16 @@ function RecipeCard({ r }: { r: RecipeSummary }) {
         </div>
       </div>
       <div className="p-3">
-        <h3 className="line-clamp-2 font-semibold leading-snug group-hover:text-action">{r.title}</h3>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-subtle">
+        {/* Every card the same size: the title always takes two lines, the details one */}
+        <h3 className="line-clamp-2 min-h-[2lh] font-semibold leading-snug group-hover:text-action">{r.title}</h3>
+        <p className="mt-1 flex min-h-[1lh] min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap text-xs text-subtle">
           {time && (
-            <span className="flex items-center gap-1">
+            <span className="flex shrink-0 items-center gap-1">
               <ClockIcon className="size-3.5" /> {time}
             </span>
           )}
           {r.rating && <span aria-label={`Rated ${r.rating} of 5`}>{"★".repeat(r.rating)}</span>}
-          {r.sourceName && <span className="truncate">{r.sourceName}</span>}
+          {r.sourceName && <span className="min-w-0 truncate">{r.sourceName}</span>}
         </p>
       </div>
     </a>

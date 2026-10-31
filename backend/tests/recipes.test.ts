@@ -259,3 +259,19 @@ describe("editing keeps what you didn't touch", () => {
     expect((await t.api("GET", "/api/recipes?q=beef")).body.recipes).toHaveLength(0);
   });
 });
+
+describe("browsing by category and tag", () => {
+  const titles = async (qs: string) => (await t.api("GET", `/api/recipes?${qs}`)).body.recipes.map((r: any) => r.title).sort();
+  it("recipes with no category, and with no tags", async () => {
+    await t.api("POST", "/api/recipes", { title: "Chili", categories: ["Dinner"], tags: ["beef"] });
+    await t.api("POST", "/api/recipes", { title: "Toast" });
+    await t.api("POST", "/api/recipes", { title: "Salad", tags: ["quick"] });
+    expect(await titles("category=none")).toEqual(["Salad", "Toast"]);
+    expect(await titles("tag=none")).toEqual(["Toast"]);
+  });
+  it("several tags: recipes with all of them", async () => {
+    await t.api("POST", "/api/recipes", { title: "Chili", tags: ["beef", "spicy"] });
+    await t.api("POST", "/api/recipes", { title: "Burger", tags: ["beef"] });
+    expect(await titles("tag=beef&tag=spicy")).toEqual(["Chili"]);
+  });
+});
