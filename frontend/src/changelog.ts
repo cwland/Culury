@@ -10,6 +10,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.9.0",
+    date: "2026-10-31",
+    title: "AI Enhance and Paprika import",
+    changes: [
+      "AI Enhance: after you add a recipe, Culury offers to check it with AI. It fills gaps in the steps (times, temperatures, doneness), catches missing ingredients, estimates nutrition and suggests categories and tags. You see the original and the suggestion side by side and keep only the parts you want. Undo AI changes puts it back. Any recipe has an AI check button too; turn it off in Settings › AI.",
+      "Add a recipe › From a file: import your whole Paprika collection (.paprikarecipes), with photos, categories, ratings and notes. Recipes you already have are skipped.",
+      "Browsing: click a tag or category again to turn it off, pick several tags at once, and find recipes with no category or no tags.",
+      "All recipe cards are the same size.",
+      "Settings › AI: the (i) next to AI services suggests models that work well, at home and paid.",
+      "Fixes: saving a recipe typed in by hand, pressing Enter in the editor, finishing Cook Mode, and clearer messages when the connection drops.",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-10-30",
     title: "Sharing and backups with photos",

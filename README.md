@@ -149,6 +149,7 @@ Turn it on in **Settings › AI** and add one or more services (OpenAI, Claude, 
 - **Nutrition**: per serving, from the recipe's site, estimated by AI (`POST /api/recipes/:id/nutrition`), or typed in (`PUT`). The points figure is an approximation from calories, saturated fat, sugar and protein, not any diet program's official number.
 - **Meal ideas**: Meal plan › Week ▾ › Meal ideas, or on the Pantry page (`POST /api/ai/ideas`).
 - **Aisles**: items the word list can't place are sorted by AI once and remembered.
+- **AI Enhance**: a newly added recipe offers "Check this recipe with AI?", and every recipe has an **AI check** button. The AI fills gaps in the steps, catches missing ingredients, estimates nutrition and suggests categories (from your own list) and tags. A side-by-side window shows the original and the suggestion for each part; you keep the parts you want, and **Undo AI changes** puts the recipe back (the latest AI change). Checking saves nothing. Switch it off in Settings › AI. API: `POST /api/recipes/:id/enhance` (suggestions), `…/enhance/apply` (`{ steps?, ingredients?, nutrition?, categories?, tags? }`), `…/enhance/undo`.
 
 ## Sharing and backups
 
@@ -190,6 +191,7 @@ A passkey belongs to the address it was added on, and browsers only offer them o
 ## Importing recipes
 
 - **From a link:** recipe sites that include schema.org recipe data (most do) import without AI. Other pages, and TikTok, Instagram or YouTube videos (their description), are read by your AI service.
+- **From a file:** Add a recipe › From a file takes a Paprika export (`.paprikarecipes`, or one `.paprikarecipe`), with photos, categories, ratings and notes. Recipes you already have (same link, or same name and ingredients) are skipped. `POST /api/recipes/import/file` (multipart, field `file`).
 - **Pasted text:** read straight away when it has "Ingredients" and "Instructions" headings, otherwise by AI.
 - Imports run in the background (a job queue in PostgreSQL), so they survive a restart. Results and problems show in Settings › Logs › Imports.
 - Some sites turn away apps (403). Paste the recipe text instead.
