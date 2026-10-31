@@ -111,7 +111,7 @@ export default function RecipeView({ id }: { id: number }) {
       {/* Header: photo, name, the facts, and what you can do with it */}
       <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
-        <div className="flex flex-col p-5 sm:p-7 md:justify-center">
+        <div className="flex flex-col p-5 sm:p-7 md:pt-5">
           {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
           <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
           {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
