@@ -1,10 +1,12 @@
 import { asc, count, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { categories, recipeTags, tags, type Ingredient, type Nutrition, type Step } from "../db/schema.js";
+import { categories, recipeCategories, recipeSnapshots, recipes, recipeTags, tags, type Ingredient, type Nutrition, type RecipeSnapshot, type Step } from "../db/schema.js";
 import type { AiService } from "./ai.js";
 import { HttpError } from "./errors.js";
 import { isOn } from "./features.js";
-import { cleanTag, loadRecipe } from "./recipes.js";
+import { cleanTag, loadRecipe, nutritionInput, refreshSearch, saveRecipe, type RecipeInput } from "./recipes.js";
+import { notFound } from "./errors.js";
 
 // AI Enhance: the AI checks a recipe (fills gaps in the steps, catches ingredient mistakes,
 // estimates nutrition, suggests categories and tags). Checking saves nothing: the person picks
@@ -132,4 +134,45 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
       ? { categories: categoriesOut, newCategories, tags: tagsOut, changes: organizeChanges, changed: true }
       : { categories: cats, newCategories: [], tags: r.tags, changes: [], changed: false },
   };
+}
+
+// ---------- apply and undo ----------
+
+// The sections the person kept in the wizard (each one optional)
+export const applyInput = z
+  .object({
+    steps: z.array(z.string().max(10000)).max(300).optional(),
+    ingredients: z.array(z.string().max(1000)).max(500).optional(),
+    nutrition: nutritionInput.nullable().optional(),
+    categories: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+    tags: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
+  })
+  .strict();
+
+// Keep the recipe as it is now (replacing any older snapshot: one level of undo), then save only
+// the sections sent. New categories are created; tags are matched without case.
+export async function applyEnhancements(db: Db, recipeId: number, body: z.infer<typeof applyInput>, userId: number | null) {
+  const [r] = await db.select().from(recipes).where(eq(recipes.id, recipeId));
+  if (!r) throw notFound("Recipe");
+  const categoryIds = (await db.select({ id: recipeCategories.categoryId }).from(recipeCategories).where(eq(recipeCategories.recipeId, recipeId))).map((c) => c.id);
+  const tagNames = (await db.select({ name: tags.name }).from(recipeTags).innerJoin(tags, eq(tags.id, recipeTags.tagId)).where(eq(recipeTags.recipeId, recipeId))).map((t) => t.name);
+  const data: RecipeSnapshot = { steps: r.steps, ingredients: r.ingredients, nutrition: r.nutrition ?? null, categoryIds, tags: tagNames };
+  await db
+    .insert(recipeSnapshots)
+    .values({ recipeId, data })
+    .onConflictDoUpdate({ target: recipeSnapshots.recipeId, set: { data, createdAt: new Date() } });
+  await saveRecipe(db, recipeId, { steps: body.steps, ingredients: body.ingredients, nutrition: body.nutrition, categories: body.categories, tags: body.tags } as RecipeInput, userId);
+}
+
+// Put back what the latest AI change replaced, exactly, and forget the snapshot
+export async function undoEnhancements(db: Db, recipeId: number) {
+  const [snap] = await db.select().from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
+  if (!snap) throw new HttpError(404, "There's no AI change to undo on this recipe");
+  const d = snap.data;
+  await saveRecipe(db, recipeId, { categories: d.categoryIds, tags: d.tags } as RecipeInput, null);
+  await db.transaction(async (tx) => {
+    await tx.update(recipes).set({ steps: d.steps, ingredients: d.ingredients, nutrition: d.nutrition, updatedAt: new Date() }).where(eq(recipes.id, recipeId));
+    await tx.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
+    await refreshSearch(tx, [recipeId]);
+  });
 }

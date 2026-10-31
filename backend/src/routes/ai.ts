@@ -8,7 +8,8 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { nutritionInput } from "../lib/recipes.js";
 import { jobView } from "../lib/importJobs.js";
-import { suggestEnhancements } from "../lib/enhance.js";
+import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements, undoEnhancements } from "../lib/enhance.js";
+import { loadRecipe } from "../lib/recipes.js";
 import { userOf } from "./recipes.js";
 
 // AI for everyone in the household (the settings themselves are the owner's, under /api/settings/ai)
@@ -54,6 +55,20 @@ export default async function aiRoutes(app: FastifyInstance) {
   app.post("/api/recipes/:id/enhance", async (req) => {
     const { id } = idParam.parse(req.params);
     return asHttp(() => suggestEnhancements(db, ai, id));
+  });
+  // Save the sections kept in the wizard (the recipe as it was is kept for undo)
+  app.post("/api/recipes/:id/enhance/apply", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const body = applyInput.parse(req.body ?? {});
+    await requireEnhance(db, ai);
+    await applyEnhancements(db, id, body, userOf(req));
+    return loadRecipe(db, id, userOf(req));
+  });
+  // Undo works even if AI has been switched off since: it only puts the recipe back
+  app.post("/api/recipes/:id/enhance/undo", async (req) => {
+    const { id } = idParam.parse(req.params);
+    await undoEnhancements(db, id);
+    return loadRecipe(db, id, userOf(req));
   });
 
   // ---------- meal ideas ----------

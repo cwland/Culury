@@ -6,6 +6,7 @@ import {
   collectionRecipes,
   collections,
   recipeCategories,
+  recipeSnapshots,
   recipeTags,
   recipeUser,
   recipes,
@@ -253,6 +254,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
   const cats = await db.select({ id: categories.id, name: categories.name }).from(recipeCategories).innerJoin(categories, eq(categories.id, recipeCategories.categoryId)).where(eq(recipeCategories.recipeId, id)).orderBy(asc(categories.sortOrder), asc(categories.name));
   const cols = await db.select({ id: collections.id, name: collections.name }).from(collectionRecipes).innerJoin(collections, eq(collections.id, collectionRecipes.collectionId)).where(eq(collectionRecipes.recipeId, id)).orderBy(asc(collections.sortOrder), asc(collections.name));
   const [me] = userId ? await db.select().from(recipeUser).where(and(eq(recipeUser.recipeId, id), eq(recipeUser.userId, userId))) : [];
+  const [snap] = await db.select({ at: recipeSnapshots.createdAt }).from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id));
   const subs = await db.select({ id: substitutions.id, original: substitutions.original, replacement: substitutions.replacement, note: substitutions.note, createdAt: substitutions.createdAt }).from(substitutions).where(eq(substitutions.recipeId, id)).orderBy(desc(substitutions.createdAt), desc(substitutions.id));
   return {
     ...recipe,
@@ -261,6 +263,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
     collections: cols,
     me: { favorite: me?.favorite ?? false, pinned: me?.pinned ?? false, rating: me?.rating ?? null, notes: me?.notes ?? null },
     substitutions: subs,
+    aiSnapshotAt: snap?.at ?? null, // there's an AI Enhance change to undo
   };
 }
 
