@@ -21,7 +21,7 @@ import type { RateLimitOptions } from "../src/lib/security.js";
 const url = process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/culury_test";
 if (!url.includes("test")) throw new Error("TEST_DATABASE_URL must point at a test database");
 
-export async function setupTestApp(opts: { email?: boolean; pages?: Record<string, { status?: number; type?: string; body: string | Buffer; location?: string }>; backupKey?: string; jwtSecret?: string; oauthFetch?: typeof fetch; githubToken?: string; rateLimit?: RateLimitOptions } = {}) {
+export async function setupTestApp(opts: { email?: boolean; pages?: Record<string, { status?: number; type?: string; body: string | Buffer; location?: string }>; backupKey?: string; jwtSecret?: string; oauthFetch?: typeof fetch; githubToken?: string; rateLimit?: RateLimitOptions; aiTimeScale?: number } = {}) {
   const { db, pool } = createDb(url);
   await db.execute(sql`drop schema if exists public cascade`);
   await db.execute(sql`drop schema if exists drizzle cascade`);
@@ -46,11 +46,14 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
     opts.email === false
       ? null
       : { host: "env.smtp", port: 25, security: "none", username: null, password: null, fromName: null, fromAddress: "app@test", appUrl: "http://recipes.test" };
-  // Fake AI: records calls; answer with ai.respond(url, body, headers) -> { status, json }
+  // Fake AI: records calls; answer with ai.respond(url, body, headers) -> { status, json }, or a
+  // streamed reply: { status, sse: ["data: {...}", ...], gapMs?: pause between pieces, hang?: stop
+  // sending after the pieces without closing }
+  type Streamed = { status: number; sse: string[]; gapMs?: number; hang?: boolean };
   const ai = {
     calls: [] as { url: string; method: string; headers: Record<string, string>; body: any }[],
     // (may return a promise, e.g. one that never settles to act like a server that hangs)
-    respond: (_url: string, _body: any, _headers: Record<string, string>): { status: number; json: unknown } | Promise<{ status: number; json: unknown }> => ({ status: 200, json: { choices: [{ message: { content: '{"ok": true}' } }] } }),
+    respond: (_url: string, _body: any, _headers: Record<string, string>): { status: number; json: unknown } | Streamed | Promise<{ status: number; json: unknown } | Streamed> => ({ status: 200, json: { choices: [{ message: { content: '{"ok": true}' } }] } }),
     down: false,
   };
   const aiFetch: AiFetch = async (url, init) => {
@@ -58,6 +61,23 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
     const body = init.body ? JSON.parse(init.body) : undefined;
     ai.calls.push({ url, method: init.method, headers: init.headers, body });
     const r = await ai.respond(url, body, init.headers);
+    if ("sse" in r) {
+      const enc = new TextEncoder();
+      const pieces = r.sse;
+      const stream = new ReadableStream<Uint8Array>({
+        async start(c) {
+          init.signal?.addEventListener("abort", () => c.error(new Error("aborted")));
+          for (const p of pieces) {
+            if (init.signal?.aborted) return;
+            if (r.gapMs) await new Promise((res) => setTimeout(res, r.gapMs));
+            if (init.signal?.aborted) return;
+            c.enqueue(enc.encode(p + "\n\n"));
+          }
+          if (!r.hang) c.close();
+        },
+      });
+      return { ok: r.status < 300, status: r.status, json: async () => ({}), body: stream };
+    }
     return { ok: r.status < 300, status: r.status, json: async () => r.json };
   };
   // Fake GitHub releases: answer with github.respond(url, headers) -> { status, json }; down = unreachable
@@ -78,6 +98,7 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
   const app = buildApp({
     now: () => clock.date ?? new Date(),
     aiFetch,
+    aiTimeScale: opts.aiTimeScale,
     updateFetch,
     updateRepo: "cwland/Culury",
     githubToken: opts.githubToken ?? null,

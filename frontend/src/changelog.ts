@@ -10,6 +10,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.9.2",
+    date: "2026-10-31",
+    title: "AI check: slow home AI, handled",
+    changes: [
+      "The AI check reads the answer as the AI writes it, so you see “Home AI is thinking…” and then “Home AI is writing… 420 words”.",
+      "A slow home AI is no longer cut off after 3 minutes: Culury waits as long as it keeps writing, and only gives up if it goes quiet for a minute (or never starts). The message says which.",
+      "Skip button: while an AI service is working and you have another one, “Skip Home AI” stops it (your AI server stops too) and asks the next service.",
+    ],
+  },
+  {
     version: "0.9.1",
     date: "2026-10-31",
     title: "AI check: fuller steps and live progress",

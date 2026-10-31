@@ -78,6 +78,7 @@ export interface AppOptions {
   emailEnv?: EmailConfig | null; // email settings from .env (used when none are saved in the app)
   mailTransport?: TransportFactory; // tests swap in a fake
   aiFetch?: AiFetch; // tests swap in a fake AI
+  aiTimeScale?: number; // tests shrink AI waits (0.01: 3 minutes becomes 1.8 seconds)
   updateFetch?: UpdateFetch; // tests swap in a fake GitHub
   updateRepo?: string; // where releases are published (UPDATE_REPO)
   githubToken?: string | null; // GITHUB_TOKEN: needed while that repository is private
@@ -116,7 +117,7 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/auth/oauth/finish",
 ]);
 
-export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT, photoDir = path.join(process.env.DATA_DIR || defaultDataDir, "photos"), importFetch, importResolve }: AppOptions): FastifyInstance {
+export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, aiTimeScale = 1, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT, photoDir = path.join(process.env.DATA_DIR || defaultDataDir, "photos"), importFetch, importResolve }: AppOptions): FastifyInstance {
   if (!jwtSecret || jwtSecret.length < 16) {
     throw new Error("JWT_SECRET must be set to at least 16 characters");
   }
@@ -133,7 +134,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("backupSecrets", () => ({ jwtSecret, backupKey: bk.key }));
   app.decorate("backupKeep", backupKeep);
   app.decorate("mail", new MailService(db, jwtSecret, emailEnv, mailTransport));
-  app.decorate("ai", new AiService(db, jwtSecret, aiFetch));
+  app.decorate("ai", new AiService(db, jwtSecret, aiFetch, aiTimeScale));
   app.decorate("now", now);
   app.decorate("updates", new UpdateService(db, updateRepo, githubToken, updateFetch, now));
   app.decorate("photos", new Photos(photoDir));

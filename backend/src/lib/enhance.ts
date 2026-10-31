@@ -84,10 +84,12 @@ function section<T>(current: T, suggested: T | null, changes: string[], same: (a
 }
 
 // A line for the wizard's progress list; "waiting": the step still going (the wizard shows a timer)
-export type EnhanceStep = { text: string; waiting?: boolean };
+// "status": an update to the line still going ("Home AI is writing… 420 words"), not a new line.
+// "skip": this service can be skipped (there's another to ask after it).
+export type EnhanceStep = { text: string; waiting?: boolean; status?: boolean; skip?: { id: string; name: string } };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export async function suggestEnhancements(db: Db, ai: AiService, recipeId: number, onStep: (s: EnhanceStep) => void = () => {}): Promise<Enhancement> {
+export async function suggestEnhancements(db: Db, ai: AiService, recipeId: number, onStep: (s: EnhanceStep) => void = () => {}, o: { skip?: string[]; signal?: AbortSignal } = {}): Promise<Enhancement> {
   await requireEnhance(db, ai);
   const r = await loadRecipe(db, recipeId, null);
   const stepCount = r.steps.filter((x) => !x.section).length;
@@ -114,10 +116,15 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
     `Tags already in use: ${known.join(", ") || "none"}`,
   ].join("\n\n");
 
-  const onProgress = (p: AiProgress) =>
-    onStep(p.kind === "asking" ? { text: `Asking ${p.service} (${p.model})…`, waiting: true } : { text: `${p.from} didn't answer (${p.reason.replace(/\.$/, "")}). Asking ${p.to}…` });
-  // Longer than other jobs: a full rewrite is a long answer, and home models take their time
-  const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 8000, minWaitSec: 180, onProgress });
+  const onProgress = (p: AiProgress) => {
+    if (p.kind === "asking") onStep({ text: `Asking ${p.service} (${p.model})…`, waiting: true, ...(p.next && { skip: { id: p.serviceId, name: p.service } }) });
+    else if (p.kind === "thinking") onStep({ text: `${p.service} is thinking…`, status: true });
+    else if (p.kind === "writing") onStep({ text: `${p.service} is writing… ${plural(p.words, "word")}`, status: true });
+    else onStep({ text: `${p.from} didn't answer (${p.reason.replace(/^The AI service /, "it ").replace(/\.$/, "")}). Asking ${p.to}…` });
+  };
+  // Read as it's written: up to 3 minutes to start (loading, thinking), then only a quiet minute
+  // ends it, so a slow home model that keeps writing finishes
+  const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 8000, minWaitSec: 180, onProgress, stream: true, signal: o.signal, skip: o.skip });
   onStep({ text: `Answer received from ${service.name}` });
   // Readable JSON but none of the parts ({"error": ...}, {}): not "the recipe looks good"
   if (!["steps", "ingredients", "nutrition", "categories", "tags"].some((k) => json[k] != null)) {

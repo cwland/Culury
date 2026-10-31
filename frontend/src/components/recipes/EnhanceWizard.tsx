@@ -5,15 +5,18 @@ import { Check } from "../Icons";
 import { stepLabel, type Enhancement, type Nutrition, type Recipe } from "../../recipes";
 
 // One line of the progress list from the server
-type Progress = { text: string; waiting?: boolean; at: number };
+type Skip = { id: string; name: string };
+type Progress = { text: string; waiting?: boolean; at: number; detail?: string; skip?: Skip };
+type StepEvent = { text: string; waiting?: boolean; skip?: Skip };
 
 // Ask for the check with progress: the server sends one JSON object per line as it works
 // ({"type":"step",...}, then {"type":"result",...} or {"type":"error",...}). A plain JSON reply works too.
-async function checkRecipe(id: number, onStep: (p: { text: string; waiting?: boolean }) => void): Promise<Enhancement> {
+async function checkRecipe(id: number, on: { step: (p: StepEvent) => void; status: (text: string) => void }, o: { skip: string[]; signal: AbortSignal }): Promise<Enhancement> {
   const token = getToken();
   let res: Response;
   try {
-    res = await fetch(`/api/recipes/${id}/enhance`, { method: "POST", headers: { accept: "application/x-ndjson, application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+    const query = o.skip.length ? `?skip=${o.skip.map(encodeURIComponent).join(",")}` : "";
+    res = await fetch(`/api/recipes/${id}/enhance${query}`, { method: "POST", signal: o.signal, headers: { accept: "application/x-ndjson, application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   } catch {
     throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
   }
@@ -34,7 +37,8 @@ async function checkRecipe(id: number, onStep: (p: { text: string; waiting?: boo
       buf = buf.slice(nl + 1);
       if (!line) continue;
       const o = JSON.parse(line);
-      if (o.type === "step") onStep({ text: o.text, waiting: o.waiting });
+      if (o.type === "step") on.step({ text: o.text, waiting: o.waiting, skip: o.skip });
+      else if (o.type === "status") on.status(o.text);
       else if (o.type === "result") return o.enhancement as Enhancement;
       else if (o.type === "error") throw new ApiError(o.status ?? 500, o.error ?? "The AI check failed");
     }
@@ -54,7 +58,7 @@ const ASKED = [
 ];
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-function ProgressList({ lines, working }: { lines: Progress[]; working: boolean }) {
+function ProgressList({ lines, working, onSkip }: { lines: Progress[]; working: boolean; onSkip: (s: Skip) => void }) {
   const [now, setNow] = useState(Date.now());
   const [tip, setTip] = useState(0);
   useEffect(() => {
@@ -74,9 +78,17 @@ function ProgressList({ lines, working }: { lines: Progress[]; working: boolean 
           return (
             <li key={i} className="flex items-start gap-2">
               {active ? <span className="mt-1 size-3 shrink-0 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden /> : <Check className="mt-0.5 size-4 shrink-0 text-action" />}
-              <span className={active ? "font-semibold" : "text-subtle"}>{text}</span>
+              <span className={active ? "font-semibold" : "text-subtle"}>
+                {text}
+                {active && l.detail && <span className="block text-xs font-normal text-muted">{l.detail}</span>}
+              </span>
               {active && l.waiting && <span className="ml-auto tabular-nums text-muted">{clock(Math.max(0, Math.floor((now - l.at) / 1000)))}</span>}
               {!active && l.waiting && next && <span className="ml-auto tabular-nums text-muted">took {clock(Math.max(0, Math.round((next.at - l.at) / 1000)))}</span>}
+              {active && l.skip && (
+                <button type="button" onClick={() => onSkip(l.skip!)} className="shrink-0 rounded-md border border-line bg-container px-2 py-0.5 text-xs font-semibold hover:bg-pressed">
+                  Skip {l.skip.name}
+                </button>
+              )}
             </li>
           );
         })}
@@ -225,24 +237,51 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   const [lines, setLines] = useState<Progress[]>([]);
   const [errorStatus, setErrorStatus] = useState(0);
   const run = useRef(0);
-  const check = useCallback(() => {
-    const mine = ++run.current; // a newer Try again wins over an older answer
-    setError("");
-    setE(null);
-    setLines([]);
-    checkRecipe(recipe.id, (p) => mine === run.current && setLines((ls) => [...ls, { ...p, at: Date.now() }]))
-      .then((r) => {
-        if (mine !== run.current) return;
-        setE(r);
-        setUse({ steps: r.steps.changed, ingredients: r.ingredients.changed, nutrition: r.nutrition.changed, organize: r.organize.changed });
-      })
-      .catch((err) => {
-        if (mine !== run.current) return;
-        setErrorStatus((err as ApiError).status ?? 0);
-        setError((err as Error).message);
-      });
-  }, [recipe.id]);
-  useEffect(check, [check]);
+  const stopper = useRef<AbortController | null>(null);
+  // skip: services the person skipped as too slow (asked again without them; the list carries on)
+  const check = useCallback(
+    (skip: string[] = []) => {
+      const mine = ++run.current; // a newer request wins over an older answer
+      stopper.current?.abort();
+      const stop = (stopper.current = new AbortController());
+      setError("");
+      setE(null);
+      if (!skip.length) setLines([]);
+      checkRecipe(
+        recipe.id,
+        {
+          step: (p) =>
+            mine === run.current &&
+            setLines((ls) => (skip.length && /^Reading “/.test(p.text) && ls.some((l) => /^Reading “/.test(l.text)) ? ls : [...ls, { ...p, at: Date.now() }])),
+          status: (text) => mine === run.current && setLines((ls) => (ls.length ? [...ls.slice(0, -1), { ...ls[ls.length - 1], detail: text }] : ls)),
+        },
+        { skip, signal: stop.signal }
+      )
+        .then((r) => {
+          if (mine !== run.current) return;
+          setE(r);
+          setUse({ steps: r.steps.changed, ingredients: r.ingredients.changed, nutrition: r.nutrition.changed, organize: r.organize.changed });
+        })
+        .catch((err) => {
+          if (mine !== run.current) return;
+          setErrorStatus((err as ApiError).status ?? 0);
+          setError((err as Error).message);
+        });
+    },
+    [recipe.id]
+  );
+  const skipped = useRef<string[]>([]);
+  const skipService = (s: Skip) => {
+    skipped.current = [...skipped.current, s.id];
+    setLines((ls) => [...ls.map((l) => ({ ...l, skip: undefined, detail: undefined })), { text: `Skipped ${s.name}`, at: Date.now() }]);
+    check(skipped.current);
+  };
+  // closing the window stops the request (the AI server stops working on it too)
+  useEffect(() => () => stopper.current?.abort(), []);
+  useEffect(() => {
+    skipped.current = [];
+    check();
+  }, [check]);
 
   async function apply() {
     if (!e) return;
@@ -270,13 +309,13 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   return (
     <Popup title="AI check" onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
-        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} />}
+        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} />}
         {error && (
           <div role="alert" className="rounded-xl bg-error-subtle p-4">
             <p>{error}</p>
             {/* AI Enhance or AI turned off, or the recipe is gone: asking again won't help */}
             {errorStatus !== 409 && errorStatus !== 404 && (
-              <button type="button" onClick={check} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
+              <button type="button" onClick={() => check(skipped.current)} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
                 Try again
               </button>
             )}

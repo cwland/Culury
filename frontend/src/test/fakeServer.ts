@@ -8,6 +8,7 @@ export interface Sent {
   path: string;
   body: any;
   headers: Record<string, string>;
+  signal?: AbortSignal | null;
 }
 type Handler = (body: any, path: string) => { status?: number; json?: unknown } | unknown;
 
@@ -18,7 +19,7 @@ export function fakeServer(routes: Record<string, Handler>) {
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     const method = (init?.method ?? "GET").toUpperCase();
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
-    sent.push({ method, path, body, headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+    sent.push({ method, path, body, headers: Object.fromEntries(new Headers(init?.headers).entries()), signal: init?.signal });
     const key = Object.keys(routes).find((k) => {
       const [m, pattern] = k.split(" ");
       return m === method && new RegExp(`^${pattern.replace(/:\w+/g, "[^/?]+")}(\\?.*)?$`).test(path);

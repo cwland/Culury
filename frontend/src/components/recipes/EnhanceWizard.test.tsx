@@ -140,3 +140,43 @@ describe("AI check progress and fuller instructions", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 });
+
+describe("a slow AI service", () => {
+  it("shows the AI thinking, then writing with a word count, on the line still going", async () => {
+    const live = ndjsonStream();
+    open({ "POST /api/recipes/7/enhance": () => live.response });
+    live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true });
+    live.push({ type: "status", text: "Home AI is thinking…" });
+    const log = await screen.findByRole("log", { name: "AI check progress" });
+    expect(await within(log).findByText("Home AI is thinking…")).toBeInTheDocument();
+    live.push({ type: "status", text: "Home AI is writing… 42 words" });
+    expect(await within(log).findByText("Home AI is writing… 42 words")).toBeInTheDocument();
+    expect(within(log).queryByText("Home AI is thinking…")).toBeNull(); // replaced, not added
+  });
+
+  it("Skip stops waiting for that service and asks the next one", async () => {
+    const u = userEvent.setup();
+    const live = ndjsonStream();
+    const { server } = open({
+      "POST /api/recipes/7/enhance": (_b: unknown, path: string) => (path.includes("skip=home") ? suggestion() : live.response),
+    });
+    live.push({ type: "step", text: "Reading “Weeknight Chili”: 2 ingredients, 2 steps" });
+    live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true, skip: { id: "home", name: "Home AI" } });
+    await u.click(await screen.findByRole("button", { name: "Skip Home AI" }));
+    expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    const calls = server.sent.filter((s) => s.path.startsWith("/api/recipes/7/enhance"));
+    expect(calls.map((c) => c.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance?skip=home"]);
+    expect(calls[0].signal?.aborted).toBe(true); // the first request was stopped
+    const log = within(screen.getByRole("log", { name: "AI check progress" }));
+    expect(log.getByText("Skipped Home AI")).toBeInTheDocument();
+    expect(log.getAllByText(/^Reading/)).toHaveLength(1);
+  });
+
+  it("no Skip button when there's no other service to ask", async () => {
+    const live = ndjsonStream();
+    open({ "POST /api/recipes/7/enhance": () => live.response });
+    live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true });
+    await screen.findByText("Asking Home AI (qwen3-vl:32b)…");
+    expect(screen.queryByRole("button", { name: /^Skip/ })).toBeNull();
+  });
+});

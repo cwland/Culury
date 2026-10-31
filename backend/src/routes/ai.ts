@@ -57,13 +57,18 @@ export default async function aiRoutes(app: FastifyInstance) {
   // {"type":"result","enhancement":{…}} or {"type":"error","status":502,"error":"…"}
   app.post("/api/recipes/:id/enhance", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    if (!String(req.headers.accept ?? "").includes("application/x-ndjson")) return asHttp(() => suggestEnhancements(db, ai, id));
+    // ?skip=<service id>,…: leave out services the person skipped as too slow
+    const skip = String((req.query as { skip?: string }).skip ?? "").split(",").filter(Boolean);
+    if (!String(req.headers.accept ?? "").includes("application/x-ndjson")) return asHttp(() => suggestEnhancements(db, ai, id, undefined, { skip }));
     reply.hijack();
     const out = reply.raw;
+    // The window was closed or the service skipped: stop asking (the AI server stops generating too)
+    const stop = new AbortController();
+    out.on("close", () => !out.writableFinished && stop.abort());
     out.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-cache", "x-accel-buffering": "no" });
-    const send = (o: object) => out.write(JSON.stringify(o) + "\n");
+    const send = (o: object) => !out.destroyed && out.write(JSON.stringify(o) + "\n");
     try {
-      const enhancement = await asHttp(() => suggestEnhancements(db, ai, id, (s) => send({ type: "step", ...s })));
+      const enhancement = await asHttp(() => suggestEnhancements(db, ai, id, (s) => send(s.status ? { type: "status", text: s.text } : { type: "step", ...s }), { skip, signal: stop.signal }));
       send({ type: "result", enhancement });
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode ?? 500;

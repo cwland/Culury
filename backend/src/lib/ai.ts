@@ -104,12 +104,21 @@ export type AiFetch = (url: string, init: { method: string; headers: Record<stri
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  body?: ReadableStream<Uint8Array> | null; // read piece by piece for streamed answers
 }>;
 
 export class AiError extends Error {}
+// The request was stopped on purpose (the person skipped this service or closed the window)
+export class AiStopped extends AiError {}
 
 // What's happening during a request, for screens that show progress (AI Enhance)
-export type AiProgress = { kind: "asking"; service: string; model: string } | { kind: "failover"; from: string; to: string; reason: string };
+export type AiProgress =
+  | { kind: "asking"; service: string; model: string; serviceId: string; next: { id: string; name: string } | null }
+  | { kind: "thinking"; service: string }
+  | { kind: "writing"; service: string; words: number }
+  | { kind: "failover"; from: string; to: string; reason: string };
+type StreamOpts = { stream?: boolean; signal?: AbortSignal; onProgress?: (p: AiProgress) => void };
+const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -143,7 +152,8 @@ export class AiService {
   constructor(
     private db: Db,
     private secret: string,
-    private fetchImpl: AiFetch = fetch as unknown as AiFetch
+    private fetchImpl: AiFetch = fetch as unknown as AiFetch,
+    private timeScale = 1 // tests shrink the waits
   ) {}
 
   async stored(): Promise<StoredAi | null> {
@@ -245,17 +255,20 @@ export class AiService {
    * Try the services in order until one answers. A service that can't be reached, times out, or
    * returns an error is skipped. Throws only when every one failed.
    */
-  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = [], onProgress?: (p: AiProgress) => void) {
+  async chatWithFailover(services: ActiveService[], system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = [], onProgress?: (p: AiProgress) => void, opts: StreamOpts = {}) {
     const failures: string[] = [];
     for (const [index, sv] of services.entries()) {
-      onProgress?.({ kind: "asking", service: sv.name, model: sv.model });
+      const next = services[index + 1];
+      onProgress?.({ kind: "asking", service: sv.name, model: sv.model, serviceId: sv.id, next: next ? { id: next.id, name: next.name } : null });
       try {
-        const { text, stop } = await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images);
+        const { text, stop } = opts.stream
+          ? await this.streamRaw(sv, system, user, maxTokens, timeoutMs, images, { signal: opts.signal, onProgress })
+          : await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images);
         return { text, stop, service: sv, index, failures };
       } catch (e) {
+        if (e instanceof AiStopped) throw e; // stopped on purpose: don't move on to the next one
         if (!(e instanceof AiError) && !(e instanceof HttpError)) throw e;
         failures.push(`${sv.name}: ${(e as Error).message}`);
-        const next = services[index + 1];
         if (next) onProgress?.({ kind: "failover", from: sv.name, to: next.name, reason: (e as Error).message });
         await logEvent(this.db, {
           category: "ai",
@@ -267,6 +280,124 @@ export class AiService {
       }
     }
     throw new AiError(services.length === 1 ? failures[0].slice(services[0].name.length + 2) : `None of your AI services answered. ${failures.join(" ")}`);
+  }
+
+  // The same request, with the answer read as the model writes it. Waits up to firstMs for it to
+  // start (loading a model and thinking take a while), then gives up only if it goes quiet for a
+  // minute: a slow model that keeps writing is never cut off.
+  private async streamRaw(c: AiConfig, system: string, user: string, maxTokens: number, firstMs: number, images: AiImage[], o: { signal?: AbortSignal; onProgress?: (p: AiProgress) => void }): Promise<{ text: string; stop: string | null }> {
+    if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
+    if (!c.model) throw new HttpError(400, "Choose a model first");
+    const base = this.base(c);
+    const { url, body } = this.requestFor(c, base, system, user, maxTokens, images, true);
+    const idleMs = 60000 * this.timeScale;
+    const abort = new AbortController();
+    let why: AiError | null = null;
+    const stopNow = () => {
+      why = new AiStopped("The AI check was stopped.");
+      abort.abort();
+    };
+    if (o.signal?.aborted) throw new AiStopped("The AI check was stopped.");
+    o.signal?.addEventListener("abort", stopNow);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let started = false;
+    let text = "";
+    let thinkingShown = false;
+    let lastWords = 0;
+    let lastShown = 0;
+    const words = () => (text.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").match(/[\p{L}\p{N}]+/gu) ?? []).length;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        why = new AiError(
+          started
+            ? `The AI service stopped sending for ${plural(Math.round(idleMs / 1000), "second")} (after ${plural(words(), "word")}).`
+            : `The AI service didn't start answering within ${plural(Math.round(firstMs / 1000), "second")}.`
+        );
+        abort.abort();
+      }, started ? idleMs : firstMs);
+    };
+    const failed = (e: unknown): never => {
+      if (why) throw why;
+      if (e instanceof AiError || e instanceof HttpError) throw e;
+      throw new AiError(`Couldn't reach the AI service (${(e as Error).message}).`);
+    };
+    try {
+      arm();
+      const res = await this.fetchImpl(url, { method: "POST", headers: { "content-type": "application/json", ...this.authHeaders(c) }, body: JSON.stringify(body), signal: abort.signal }).catch(failed);
+      if (!res.ok || !res.body) {
+        const json = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok) throw httpError(res.status, json);
+        return readReply(c.provider, json); // a server that ignored "stream": the whole answer at once
+      }
+      let stop: string | null = null;
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let raw = ""; // everything, in case the server ignored "stream" and sent plain JSON
+      let sawData = false;
+      const thinking = () => {
+        if (!thinkingShown) o.onProgress?.({ kind: "thinking", service: (c as ActiveService).name ?? "The AI" });
+        thinkingShown = true;
+      };
+      for (;;) {
+        const { value, done } = await reader.read().catch(failed);
+        if (value) {
+          if (!started) started = true;
+          arm();
+          const chunk = dec.decode(value, { stream: true });
+          buf += chunk;
+          if (!sawData && raw.length < 2_000_000) raw += chunk;
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith("data:")) continue;
+            sawData = true;
+            const data = line.slice(5).trim();
+            if (!data || data === "[DONE]") continue;
+            let d: any;
+            try {
+              d = JSON.parse(data);
+            } catch {
+              continue;
+            }
+            const piece = readPiece(c.provider, d);
+            if (piece.error) throw new AiError(`The AI service returned an error: ${piece.error}`);
+            if (piece.thinking) thinking();
+            if (piece.text) {
+              text += piece.text;
+              if (/^\s*<think>/.test(text) && !text.includes("</think>")) thinking();
+              const n = words();
+              const now = Date.now();
+              if (n > lastWords && (now - lastShown >= 1000 || lastWords === 0)) {
+                o.onProgress?.({ kind: "writing", service: (c as ActiveService).name ?? "The AI", words: n });
+                lastShown = now;
+                lastWords = n;
+              }
+            }
+            if (piece.stop) stop = piece.stop;
+          }
+        }
+        if (done) break;
+      }
+      if (!sawData && raw.trim().startsWith("{")) {
+        // The whole answer in one piece, not streamed
+        let json: any = null;
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          /* not JSON after all */
+        }
+        if (json) return readReply(c.provider, json);
+      }
+      return { text: text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), stop };
+    } catch (e) {
+      return failed(e);
+    } finally {
+      clearTimeout(timer);
+      o.signal?.removeEventListener("abort", stopNow);
+    }
   }
 
   private base(c: AiConfig) {
@@ -297,13 +428,7 @@ export class AiService {
       clearTimeout(timer);
     }
     const json = (await res.json().catch(() => ({}))) as any;
-    if (!res.ok) {
-      const msg = json?.error?.message ?? json?.message ?? (typeof json?.error === "string" ? json.error : "") ?? "";
-      if (res.status === 401 || res.status === 403) throw new AiError(`The AI service didn't accept the API key${msg ? `: ${msg}` : "."}`);
-      if (res.status === 404) throw new AiError(`Not found. Check the model name and address${msg ? ` (${msg})` : ""}.`);
-      if (res.status === 429) throw new AiError(`The AI service says too many requests or out of credit${msg ? `: ${msg}` : ""}.`);
-      throw new AiError(`The AI service returned ${res.status}${msg ? `: ${msg}` : ""}`);
-    }
+    if (!res.ok) throw httpError(res.status, json);
     return json;
   }
 
@@ -329,46 +454,60 @@ export class AiService {
   private async chatRaw(c: AiConfig, system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = []): Promise<{ text: string; stop: string | null }> {
     if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
     if (!c.model) throw new HttpError(400, "Choose a model first");
-    const base = this.base(c);
-    const headers = this.authHeaders(c);
+    const { url, body } = this.requestFor(c, this.base(c), system, user, maxTokens, images, false);
+    return readReply(c.provider, await this.request(url, this.authHeaders(c), body, "POST", timeoutMs));
+  }
 
-    if (c.provider === "anthropic") {
-      const r = await this.request(`${base}/messages`, headers, {
-        model: c.model,
-        max_tokens: maxTokens,
-        temperature: 0,
-        system,
-        messages: [{ role: "user", content: images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.base64 } })), { type: "text", text: user }] : user }],
-      }, "POST", timeoutMs);
-      return { text: (r.content ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join(""), stop: r.stop_reason ?? null };
-    }
+  // Each provider's address and request body (stream: the answer comes in pieces)
+  private requestFor(c: AiConfig, base: string, system: string, user: string, maxTokens: number, images: AiImage[], stream: boolean): { url: string; body: unknown } {
+    if (c.provider === "anthropic")
+      return {
+        url: `${base}/messages`,
+        body: {
+          model: c.model,
+          max_tokens: maxTokens,
+          temperature: 0,
+          system,
+          messages: [{ role: "user", content: images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.base64 } })), { type: "text", text: user }] : user }],
+          ...(stream && { stream: true }),
+        },
+      };
     if (c.provider === "gemini") {
-      const r = await this.request(`${base}/models/${encodeURIComponent(c.model.replace(/^models\//, ""))}:generateContent`, headers, {
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.base64 } })), { text: user }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-      }, "POST", timeoutMs);
-      return { text: (r.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? "").join(""), stop: r.candidates?.[0]?.finishReason ?? null };
+      const model = encodeURIComponent(c.model.replace(/^models\//, ""));
+      return {
+        url: stream ? `${base}/models/${model}:streamGenerateContent?alt=sse` : `${base}/models/${model}:generateContent`,
+        body: {
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts: [...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.base64 } })), { text: user }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
+        },
+      };
     }
     // OpenAI, OpenRouter and local servers share the chat-completions format
-    const r = await this.request(`${base}/chat/completions`, headers, {
-      model: c.model,
-      temperature: 0,
-      max_tokens: maxTokens,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: images.length ? [{ type: "text", text: user }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] : user },
-      ],
-    }, "POST", timeoutMs);
-    return { text: r.choices?.[0]?.message?.content ?? "", stop: r.choices?.[0]?.finish_reason ?? null };
+    return {
+      url: `${base}/chat/completions`,
+      body: {
+        model: c.model,
+        temperature: 0,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: images.length ? [{ type: "text", text: user }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] : user },
+        ],
+        ...(stream && { stream: true }),
+      },
+    };
   }
 
   // One job for AI: the right services for it, failover, and the reply read as JSON. Throws AiError
   // when AI is off (or no service takes this job) or no answer could be read.
-  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string; minWaitSec?: number; onProgress?: (p: AiProgress) => void } = {}) {
-    const active = await this.active(task);
+  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string; minWaitSec?: number; onProgress?: (p: AiProgress) => void; stream?: boolean; signal?: AbortSignal; skip?: string[] } = {}) {
+    const found = await this.active(task);
+    // Services the person chose to skip this time (too slow)
+    const active = found && opts.skip?.length ? { ...found, services: found.services.filter((sv) => !opts.skip!.includes(sv.id)) } : found;
+    if (found && active && !active.services.length) throw new AiError("There's no other AI service to ask. Try again without skipping, or add another service in Settings › AI.");
     if (!active) throw new AiError(opts.off ?? (task === "photo" ? "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service." : "This needs AI. Turn it on in Settings › AI."));
-    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000, opts.images, opts.onProgress);
+    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000 * this.timeScale, opts.images, opts.onProgress, { stream: opts.stream, signal: opts.signal });
     const json = parseJsonReply(text);
     if (json === null || typeof json !== "object") {
       // Keep what it said, so Settings › Logs shows why
@@ -408,6 +547,38 @@ export class AiService {
     const parsed = parseJsonReply(text);
     if (!parsed || (parsed as any).ok !== true) throw new AiError(`The model answered, but not with the expected JSON${outOfRoom ? " (it ran out of room)" : ""}. It said: ${text.slice(0, 120)}`);
   }
+}
+
+// A refused request, said plainly
+function httpError(status: number, json: any) {
+  const msg = json?.error?.message ?? json?.message ?? (typeof json?.error === "string" ? json.error : "") ?? "";
+  if (status === 401 || status === 403) return new AiError(`The AI service didn't accept the API key${msg ? `: ${msg}` : "."}`);
+  if (status === 404) return new AiError(`Not found. Check the model name and address${msg ? ` (${msg})` : ""}.`);
+  if (status === 429) return new AiError(`The AI service says too many requests or out of credit${msg ? `: ${msg}` : ""}.`);
+  return new AiError(`The AI service returned ${status}${msg ? `: ${msg}` : ""}`);
+}
+
+// A whole answer: its text, and why the model stopped ("length" = it ran out of room)
+function readReply(provider: string, r: any): { text: string; stop: string | null } {
+  if (provider === "anthropic") return { text: (r.content ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join(""), stop: r.stop_reason ?? null };
+  if (provider === "gemini") return { text: (r.candidates?.[0]?.content?.parts ?? []).filter((p: any) => !p.thought).map((p: any) => p.text ?? "").join(""), stop: r.candidates?.[0]?.finishReason ?? null };
+  return { text: r.choices?.[0]?.message?.content ?? "", stop: r.choices?.[0]?.finish_reason ?? null };
+}
+
+// One piece of a streamed answer: answer text, thinking, why it stopped, or an error
+function readPiece(provider: string, d: any): { text?: string; thinking?: boolean; stop?: string; error?: string } {
+  if (d?.error) return { error: d.error.message ?? String(d.error) };
+  if (provider === "anthropic") {
+    if (d.type === "content_block_delta") return d.delta?.type === "text_delta" ? { text: d.delta.text } : d.delta?.type === "thinking_delta" ? { thinking: true } : {};
+    if (d.type === "message_delta") return { stop: d.delta?.stop_reason ?? undefined };
+    return {};
+  }
+  if (provider === "gemini") {
+    const parts = d.candidates?.[0]?.content?.parts ?? [];
+    return { text: parts.filter((p: any) => !p.thought).map((p: any) => p.text ?? "").join(""), thinking: parts.some((p: any) => p.thought), stop: d.candidates?.[0]?.finishReason ?? undefined };
+  }
+  const delta = d.choices?.[0]?.delta ?? {};
+  return { text: delta.content ?? undefined, thinking: !!(delta.reasoning || delta.reasoning_content), stop: d.choices?.[0]?.finish_reason ?? undefined };
 }
 
 // Models often wrap JSON in ```json fences or add a sentence; pull out the JSON
