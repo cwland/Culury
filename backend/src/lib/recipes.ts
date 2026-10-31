@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
+import { isOn } from "./features.js";
 import {
   categories,
   jobs,
@@ -270,6 +271,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
     me: { favorite: me?.favorite ?? false, pinned: me?.pinned ?? false, rating: me?.rating ?? null, notes: me?.notes ?? null },
     substitutions: subs,
     nutritionUpdating: !!working, // Auto nutrition is working it out right now
+    versioning: await isOn(db as Db, "recipeVersions"), // (shows the Version history tab)
   };
 }
 

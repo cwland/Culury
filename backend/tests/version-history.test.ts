@@ -173,3 +173,13 @@ describe("restoring an older backup (from before versions)", () => {
     expect((await list(id))).toHaveLength(2);
   });
 });
+
+describe("the recipe says whether versioning is on (for its History tab)", () => {
+  it("on, then off", async () => {
+    const id = await add();
+    expect((await t.api("GET", `/api/recipes/${id}`)).body.versioning).toBe(true);
+    await t.api("PUT", "/api/settings/features", { recipeVersions: false });
+    expect((await t.api("GET", `/api/recipes/${id}`)).body.versioning).toBe(false);
+  });
+});
+

@@ -144,7 +144,9 @@ describe("Auto nutrition on the recipe page", () => {
       "GET /api/events": () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
     });
     try {
+      const u = userEvent.setup();
       const { unmount } = render(<RecipeView id={7} />);
+      await u.click(await screen.findByRole("tab", { name: "Nutrition" }));
       const panel = await screen.findByRole("region", { name: "Nutrition" });
       expect(within(panel).getByRole("status")).toHaveTextContent("Updating nutrition…");
       done = true;
@@ -154,6 +156,53 @@ describe("Auto nutrition on the recipe page", () => {
     } finally {
       setToken(null);
     }
+  });
+});
+
+describe("recipe tabs", () => {
+  const versions = [
+    { number: 2, source: "edit", summary: "Changed ingredients and steps", active: true, createdAt: "2026-10-31T22:20:00.000Z", by: "Cory" },
+    { number: 1, source: "import", summary: "Imported", active: false, createdAt: "2026-10-30T12:00:00.000Z", by: "Cory" },
+  ];
+
+  it("starts on the recipe; nutrition has its own tab", async () => {
+    server(on, recipeJson({ nutrition: { calories: 410, fat: 20, saturatedFat: 7, carbs: 30, fiber: 6, sugar: 14, protein: 33, sodium: 640, source: "ai", servings: 4 } }));
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const tabs = await screen.findByRole("tablist", { name: "Recipe sections" });
+    expect(within(tabs).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Active recipe", "Nutrition", "Version history"]);
+    expect(within(tabs).getByRole("tab", { name: "Active recipe" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Ingredients" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Steps" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Nutrition" })).toBeNull();
+    await u.click(within(tabs).getByRole("tab", { name: "Nutrition" }));
+    expect(within(screen.getByRole("region", { name: "Nutrition" })).getByText("410")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Ingredients" })).toBeNull();
+  });
+
+  it("the version history lists every version, newest first, with the active one marked", async () => {
+    server(on, recipeJson(), { "GET /api/recipes/7/versions": () => versions });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("tab", { name: "Version history" }));
+    const list = await screen.findByRole("list", { name: "Versions" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("v2");
+    expect(items[0]).toHaveTextContent("Edit");
+    expect(items[0]).toHaveTextContent("Changed ingredients and steps");
+    expect(items[0]).toHaveTextContent("Active");
+    expect(items[0]).toHaveTextContent("Cory");
+    expect(items[1]).toHaveTextContent("v1");
+    expect(items[1]).toHaveTextContent("Imported");
+    expect(items[1]).not.toHaveTextContent("Active");
+  });
+
+  it("versioning off: no Version history tab", async () => {
+    server(on, recipeJson({ versioning: false }));
+    render(<RecipeView id={7} />);
+    const tabs = await screen.findByRole("tablist", { name: "Recipe sections" });
+    expect(within(tabs).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Active recipe", "Nutrition"]);
   });
 });
 

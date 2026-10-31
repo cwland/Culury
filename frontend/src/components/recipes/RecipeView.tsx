@@ -9,6 +9,7 @@ import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
 import { NutritionCard } from "./NutritionCard";
+import { VersionHistory } from "./VersionHistory";
 import ShareDialog from "./ShareDialog";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
 import { StepText } from "./StepText";
@@ -30,6 +31,7 @@ export default function RecipeView({ id }: { id: number }) {
   const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
   const [more, setMore] = useState(false);
+  const [tab, setTab] = useState<"recipe" | "nutrition" | "history">("recipe");
 
   useEffect(() => {
     setR(null);
@@ -221,50 +223,87 @@ export default function RecipeView({ id }: { id: number }) {
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <section aria-label="Ingredients" className={`${card} self-start`}>
-          <h2 className="text-xl font-bold">Ingredients</h2>
-          {r.ingredients.some((i) => i.quantity || i.unit) && (
-            <div className="mt-3">
-              <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
-            </div>
-          )}
-          {r.ingredients.length ? (
-            <ul className="mt-3">
-              {r.ingredients.map((i, n) =>
-                i.section ? (
-                  <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
-                    {i.section}
-                  </li>
-                ) : (
-                  <li key={n} className="border-b border-line py-2 last:border-0">
-                    <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
-                  </li>
-                )
+      {/* Tabs: the recipe itself, its nutrition, and its versions (when versioning is on) */}
+      <div role="tablist" aria-label="Recipe sections" className="mt-4 flex gap-1 overflow-x-auto rounded-xl bg-container p-1">
+        {(
+          [
+            ["recipe", "Active recipe"],
+            ["nutrition", "Nutrition"],
+            ...(r.versioning ? [["history", "Version history"]] : []),
+          ] as [typeof tab, string][]
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            id={`tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls={`panel-${key}`}
+            onClick={() => setTab(key)}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold ${tab === key ? "bg-action text-white" : "text-subtle hover:bg-pressed hover:text-ink"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "recipe" && (
+        <div role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <section aria-label="Ingredients" className={`${card} self-start`}>
+              <h2 className="text-xl font-bold">Ingredients</h2>
+              {r.ingredients.some((i) => i.quantity || i.unit) && (
+                <div className="mt-3">
+                  <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
+                </div>
               )}
-            </ul>
-          ) : (
-            <p className="mt-2 text-subtle">No ingredients yet.</p>
-          )}
-        </section>
+              {r.ingredients.length ? (
+                <ul className="mt-3">
+                  {r.ingredients.map((i, n) =>
+                    i.section ? (
+                      <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
+                        {i.section}
+                      </li>
+                    ) : (
+                      <li key={n} className="border-b border-line py-2 last:border-0">
+                        <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
+                      </li>
+                    )
+                  )}
+                </ul>
+              ) : (
+                <p className="mt-2 text-subtle">No ingredients yet.</p>
+              )}
+            </section>
 
-        <section aria-label="Steps" className={card}>
-          <h2 className="text-xl font-bold">Steps</h2>
-          {r.steps.length ? <Steps steps={r.steps} units={prefs.units} recipe={r} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
-        </section>
-      </div>
+            <section aria-label="Steps" className={card}>
+              <h2 className="text-xl font-bold">Steps</h2>
+              {r.steps.length ? <Steps steps={r.steps} units={prefs.units} recipe={r} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
+            </section>
+          </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {r.notes && (
-          <section aria-label="Recipe notes" className={card}>
-            <h2 className="text-xl font-bold">Notes</h2>
-            <p className="mt-2 whitespace-pre-line">{r.notes}</p>
-          </section>
-        )}
-        <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
-        <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
-        <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} updating={r.nutritionUpdating} onChange={(nutrition) => setR({ ...r, nutrition })} />
-      </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {r.notes && (
+              <section aria-label="Recipe notes" className={card}>
+                <h2 className="text-xl font-bold">Notes</h2>
+                <p className="mt-2 whitespace-pre-line">{r.notes}</p>
+              </section>
+            )}
+            <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
+            <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
+          </div>
+        </div>
+      )}
+      {tab === "nutrition" && (
+        <div role="tabpanel" id="panel-nutrition" aria-labelledby="tab-nutrition" className="mt-4">
+          <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} updating={r.nutritionUpdating} onChange={(nutrition) => setR({ ...r, nutrition })} />
+        </div>
+      )}
+      {tab === "history" && r.versioning && (
+        <div role="tabpanel" id="panel-history" aria-labelledby="tab-history" className="mt-4">
+          <VersionHistory recipeId={r.id} reloadKey={r.updatedAt} />
+        </div>
+      )}
 
       {enhancing && (
         <EnhanceWizard

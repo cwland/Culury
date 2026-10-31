@@ -66,6 +66,8 @@ export function recipeJson(over: Record<string, unknown> = {}) {
     collections: [],
     me: { favorite: false, pinned: false, rating: null, notes: null },
     substitutions: [],
+    nutritionUpdating: false,
+    versioning: true,
     ...over,
   };
 }

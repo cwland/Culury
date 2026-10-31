@@ -59,6 +59,7 @@ export interface Recipe {
   substitutions: Substitution[];
   nutrition: Nutrition | null;
   nutritionUpdating?: boolean; // Auto nutrition is working it out right now
+  versioning?: boolean; // Recipe versioning is on (the Version history tab shows)
 }
 
 // What AI Enhance suggests (POST /api/recipes/:id/enhance); nothing is saved until applied
