@@ -33,3 +33,19 @@ export async function uploadFiles<T>(path: string, files: File[]): Promise<T> {
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Upload failed (${res.status})`);
   return data as T;
 }
+
+// One file in a request (field "file")
+export async function uploadFile<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(path, { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {}, body: form });
+  } catch {
+    throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.error ?? `Upload failed (${res.status})`);
+  return data as T;
+}

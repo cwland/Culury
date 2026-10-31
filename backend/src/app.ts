@@ -31,7 +31,7 @@ import eventRoutes, { EventBus } from "./lib/events.js";
 import multipart from "@fastify/multipart";
 import { JobQueue } from "./lib/jobs.js";
 import { Photos } from "./lib/photos.js";
-import { registerImportJobs, registerPhotoImport } from "./lib/importJobs.js";
+import { registerFileImport, registerImportJobs, registerPhotoImport } from "./lib/importJobs.js";
 import { registerAisleSorting } from "./lib/aiHelpers.js";
 import aiRoutes from "./routes/ai.js";
 import shareRoutes from "./routes/share.js";
@@ -142,6 +142,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   const jobDeps = { db, ai: app.ai, photos: app.photos, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
   registerImportJobs(app.jobs, jobDeps);
   registerPhotoImport(app.jobs, jobDeps);
+  registerFileImport(app.jobs, jobDeps);
   registerAisleSorting(app.jobs, { db, ai: app.ai, events: app.events });
   app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 

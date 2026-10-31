@@ -56,6 +56,20 @@ export default async function aiRoutes(app: FastifyInstance) {
     return { ideas: await asHttp(() => mealIdeas(db, ai, { ask, today })) };
   });
 
+  // ---------- a collection from another app ----------
+  // One file (a Paprika export…), read in the background; GET /api/imports/:id has the summary
+  app.post("/api/recipes/import/file", async (req, reply) => {
+    const part = await req.file({ limits: { fileSize: 1024 * 1024 * 1024 } });
+    if (!part) throw new HttpError(400, "Choose a recipe file to import");
+    const buf = await part.toBuffer().catch(() => {
+      throw new HttpError(413, "That file is too large (1 GB at most)");
+    });
+    const name = (part.filename || "recipes").slice(0, 200);
+    const file = await photos.saveIncomingFile(buf);
+    const job = await queue.enqueue("import-file", { file, name }, userOf(req));
+    return reply.status(202).send(jobView(job));
+  });
+
   // ---------- recipes from photos ----------
   // Up to 4 photos of one recipe (a card front and back, two cookbook pages), read in the background
   app.post("/api/recipes/import/photos", async (req, reply) => {

@@ -24,7 +24,8 @@ export function fakeServer(routes: Record<string, Handler>) {
     });
     if (!key) return new Response(JSON.stringify({ error: `No fake for ${method} ${path}` }), { status: 404 });
     const out = (await routes[key](body, path)) as { status?: number; json?: unknown };
-    const isWrapped = out && typeof out === "object" && ("status" in out || "json" in out);
+    // { status: 201, json: … } sets the HTTP status; anything else is the JSON itself (a job has its own "status")
+    const isWrapped = !!out && typeof out === "object" && typeof out.status === "number" && Object.keys(out).every((k) => k === "status" || k === "json");
     const status = isWrapped ? (out.status ?? 200) : 200;
     const json = isWrapped ? out.json : out;
     return status === 204 ? new Response(null, { status }) : new Response(JSON.stringify(json ?? {}), { status, headers: { "content-type": "application/json" } });

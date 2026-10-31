@@ -1,6 +1,7 @@
-import { asc, ilike } from "drizzle-orm";
+import { asc, ilike, sql } from "drizzle-orm";
+import { readRecipeFile } from "./fileImport.js";
 import type { Db } from "../db/index.js";
-import { categories, recipes, type JobResult } from "../db/schema.js";
+import { categories, recipeUser, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { fetchUrl, type FetchOptions } from "./fetchPage.js";
@@ -29,7 +30,8 @@ export async function findDuplicate(db: Db, url: string) {
   return rows.find((r) => r.sourceUrl && normalizeUrl(r.sourceUrl) === want)?.id ?? null;
 }
 
-async function store(d: Deps, r: ImportedRecipe, job: JobRow, how: JobResult["how"]): Promise<JobResult> {
+// fromApp: a collection from your own recipe app, so its categories are yours (made if new) and its notes come too
+async function store(d: Deps, r: ImportedRecipe & { notes?: string | null }, job: JobRow, how: JobResult["how"], fromApp = false): Promise<JobResult> {
   const warnings: string[] = [];
   let imageUrl = r.imageUrl ?? null;
   // Keep a copy of the picture here, so it stays even if the site changes or goes away
@@ -55,8 +57,9 @@ async function store(d: Deps, r: ImportedRecipe, job: JobRow, how: JobResult["ho
     sourceName: r.sourceName?.slice(0, 200) ?? null,
     imageUrl,
     tags: (r.tags ?? []).map((t) => t.slice(0, 60)).slice(0, 12),
-    categories: matchCategories(r.categories ?? [], mine),
+    categories: fromApp ? [...new Set((r.categories ?? []).map((c) => c.trim().slice(0, 100)).filter(Boolean))].slice(0, 20) : matchCategories(r.categories ?? [], mine),
     nutrition: r.nutrition ?? null,
+    ...(fromApp && r.notes ? { notes: r.notes.slice(0, 20000) } : {}),
   });
   const recipeId = await saveRecipe(d.db, null, input, job.createdBy);
   return { recipeId, title: input.title, how, ...(warnings.length ? { warnings } : {}) };
@@ -135,11 +138,58 @@ export function registerPhotoImport(queue: JobQueue, d: Deps) {
   });
 }
 
+// A recipe already saved that this one is a copy of: the same page, or the same name and ingredients
+async function sameRecipe(db: Db, r: ImportedRecipe) {
+  if (r.sourceUrl) {
+    const dup = await findDuplicate(db, r.sourceUrl);
+    if (dup) return dup;
+  }
+  const rows = await db.select({ id: recipes.id, ingredients: recipes.ingredients }).from(recipes).where(sql`lower(${recipes.title}) = ${r.title.toLowerCase()}`);
+  const want = r.ingredients.map((l) => l.trim().toLowerCase()).join("\n");
+  return rows.find((x) => x.ingredients.map((i) => i.raw.trim().toLowerCase()).join("\n") === want)?.id ?? null;
+}
+
+// A collection exported from another app (Paprika now; more formats in fileImport.ts)
+export function registerFileImport(queue: JobQueue, d: Deps) {
+  queue.handle("import-file", async (job) => {
+    const { file, name } = job.payload as { file: string; name: string };
+    try {
+      const { format, recipes: found, problems } = readRecipeFile(name, await d.photos.readIncoming(file));
+      let imported = 0;
+      let skipped = 0;
+      for (const r of found) {
+        try {
+          if (await sameRecipe(d.db, r)) {
+            skipped++;
+            continue;
+          }
+          const imageUrl = r.photo ? await d.photos.save(r.photo).catch(() => null) : r.imageUrl;
+          const result = await store(d, { ...r, imageUrl: imageUrl ?? null }, job, "file", true);
+          if (r.rating && job.createdBy && result.recipeId)
+            await d.db
+              .insert(recipeUser)
+              .values({ recipeId: result.recipeId, userId: job.createdBy, rating: r.rating })
+              .onConflictDoUpdate({ target: [recipeUser.recipeId, recipeUser.userId], set: { rating: r.rating } });
+          imported++;
+        } catch (e) {
+          problems.push({ name: r.title, reason: (e as Error).message.split("\n")[0].slice(0, 200) });
+        }
+      }
+      await d.photos.removeIncoming([file]);
+      await logEvent(d.db, { category: "import", level: problems.length ? "warning" : "info", source: name.slice(0, 200), event: `Imported ${imported} recipe${imported === 1 ? "" : "s"} from ${format}`, detail: [skipped && `${skipped} already saved`, problems.length && `${problems.length} couldn't be used`].filter(Boolean).join(", ") || undefined });
+      return { format, imported, skipped, problems: problems.slice(0, 200) };
+    } catch (e) {
+      await logEvent(d.db, { category: "import", level: "warning", source: name.slice(0, 200), event: "Couldn't import a recipe file", detail: (e as Error).message });
+      throw e;
+    }
+  });
+}
+
 export const jobView = (j: JobRow) => ({
   id: j.id,
   kind: j.kind,
   status: j.status,
-  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : j.kind === "import-photo" ? (((j.payload as { files?: string[] }).files?.length ?? 1) > 1 ? "Photos" : "Photo") : "Pasted text",
+  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : j.kind === "import-file" ? String((j.payload as { name?: string }).name ?? "File") : j.kind === "import-photo" ? (((j.payload as { files?: string[] }).files?.length ?? 1) > 1 ? "Photos" : "Photo") : "Pasted text",
   result: j.result ?? null,
   error: j.error,
   createdAt: j.createdAt,

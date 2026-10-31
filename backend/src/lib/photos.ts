@@ -63,14 +63,22 @@ export class Photos {
     await fs.writeFile(path.join(this.incoming(), name), out);
     return name;
   }
+  // A recipe file from another app (Paprika, Mealie…), as it was uploaded
+  async saveIncomingFile(input: Buffer): Promise<string> {
+    await fs.mkdir(this.incoming(), { recursive: true });
+    const name = `${randomUUID()}.bin`;
+    await fs.writeFile(path.join(this.incoming(), name), input);
+    return name;
+  }
+
   async readIncoming(name: string): Promise<Buffer> {
-    if (!/^[0-9a-f-]{36}\.jpg$/.test(name)) throw new Error("Bad photo name");
+    if (!/^[0-9a-f-]{36}\.(jpg|bin)$/.test(name)) throw new Error("Bad file name");
     return fs.readFile(path.join(this.incoming(), name)).catch(() => {
       throw new Error("The photo is no longer here (photos waiting to be read are kept for 2 days). Add it again.");
     });
   }
   async removeIncoming(names: string[]) {
-    for (const n of names) if (/^[0-9a-f-]{36}\.jpg$/.test(n)) await fs.unlink(path.join(this.incoming(), n)).catch(() => {});
+    for (const n of names) if (/^[0-9a-f-]{36}\.(jpg|bin)$/.test(n)) await fs.unlink(path.join(this.incoming(), n)).catch(() => {});
   }
 
   path(name: string) {
