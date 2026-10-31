@@ -5,14 +5,15 @@ import { api, ApiError, getToken } from "./api";
 export interface AiStatus {
   ready: boolean;
   photos: boolean;
+  enhance: boolean; // AI Enhance is on (and AI is ready)
 }
 let cached: Promise<AiStatus> | null = null;
 export function useAiStatus(): AiStatus {
-  const [s, setS] = useState<AiStatus>({ ready: false, photos: false });
+  const [s, setS] = useState<AiStatus>({ ready: false, photos: false, enhance: false });
   useEffect(() => {
     cached ??= api<AiStatus>("GET", "/api/ai/status").catch(() => {
       cached = null;
-      return { ready: false, photos: false };
+      return { ready: false, photos: false, enhance: false };
     });
     void cached.then(setS);
   }, []);
@@ -22,6 +23,8 @@ export function useAiStatus(): AiStatus {
 export const forgetAiStatus = () => {
   cached = null;
 };
+// A switch on Settings › AI changed (AI, AI Enhance)
+if (typeof window !== "undefined") window.addEventListener("features-changed", forgetAiStatus);
 
 // Several photos in one request (field "photo")
 export async function uploadFiles<T>(path: string, files: File[]): Promise<T> {
