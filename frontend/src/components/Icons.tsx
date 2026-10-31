@@ -12,6 +12,7 @@ import {
   Pin,
   SlidersHorizontal,
   Share2,
+  Info,
   Mail,
   Users,
   CalendarDays,
@@ -73,6 +74,7 @@ export const EditIcon = icon(Pencil, "size-4", 1.8);
 export const ServingsIcon = icon(Users, "size-4", 1.8);
 export const FilterIcon = icon(SlidersHorizontal, "size-4", 1.8);
 export const ShareIcon = icon(Share2, "size-4", 1.8);
+export const InfoIcon = icon(Info, "size-4", 2);
 export const MailIcon = icon(Mail, "size-4", 1.8);
 
 // Filled when on (pinned)

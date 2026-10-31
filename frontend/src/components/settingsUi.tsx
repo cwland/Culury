@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 
-export function Card({ title, children, description }: { title: string; description?: ReactNode; children: ReactNode }) {
+export function Card({ title, children, description, titleExtra }: { title: string; description?: ReactNode; children: ReactNode; titleExtra?: ReactNode }) {
   return (
     <section aria-label={title} className="rounded-2xl bg-container p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        {title}
+        {titleExtra}
+      </h2>
       {description && <p className="mt-1 text-subtle">{description}</p>}
       <div className="mt-4">{children}</div>
     </section>

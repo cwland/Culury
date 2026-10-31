@@ -6,6 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ApiError, api } from "../api";
 import { Card, Notice, field, primaryButton, secondaryButton } from "./settingsUi";
 import { ChevronDown, ChevronRight, EyeIcon, EyeOffIcon, GripIcon } from "./Icons";
+import AiModelHelp from "./AiModelHelp";
 import { useUnsavedGuard } from "../unsavedGuard";
 
 // Which saved services are collapsed (remembered in this browser)
@@ -281,7 +282,7 @@ function ServiceCard({ d, index, count, saving, dirty, failed, onSave, onChange,
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={d.photos} onChange={(e) => onChange({ photos: e.target.checked })} className="mt-0.5 size-4 accent-action" />
             <span>
-              Can read photos <span className="text-subtle">(recipe cards and cookbook pages). Tick only if this model takes pictures (most hosted ones do; for home models, ones like llava or qwen-vl).</span>
+              Can read photos <span className="text-subtle">(recipe cards and cookbook pages). Tick only if this model takes pictures (most hosted ones do; for home models, ones like qwen3-vl or gemma3).</span>
             </span>
           </label>
           <span className="text-xs text-muted">Reading recipes from web pages and text uses every service, in order.</span>
@@ -472,6 +473,7 @@ export default function AiSettings() {
   return (
     <Card
       title="AI services"
+      titleExtra={<AiModelHelp />}
       description="The AI services Culury uses for importing recipes, reading photos, nutrition and grocery sorting. Recipes with schema.org data import without AI."
     >
       <form onSubmit={save} className="flex flex-col gap-5">
