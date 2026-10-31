@@ -246,8 +246,8 @@ export class AiService {
     const failures: string[] = [];
     for (const [index, sv] of services.entries()) {
       try {
-        const text = await this.chat(sv, system, user, maxTokens, timeoutMs, images);
-        return { text, service: sv, index, failures };
+        const { text, stop } = await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images);
+        return { text, stop, service: sv, index, failures };
       } catch (e) {
         if (!(e instanceof AiError) && !(e instanceof HttpError)) throw e;
         failures.push(`${sv.name}: ${(e as Error).message}`);
@@ -317,6 +317,11 @@ export class AiService {
 
   // Send one prompt, get the reply text. Asks for JSON where the provider supports it.
   async chat(c: AiConfig, system: string, user: string, maxTokens = 2000, timeoutMs = 60000, images: AiImage[] = []): Promise<string> {
+    return (await this.chatRaw(c, system, user, maxTokens, timeoutMs, images)).text;
+  }
+
+  // The reply text, and why the model stopped ("length" = it ran out of room)
+  private async chatRaw(c: AiConfig, system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = []): Promise<{ text: string; stop: string | null }> {
     if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
     if (!c.model) throw new HttpError(400, "Choose a model first");
     const base = this.base(c);
@@ -330,7 +335,7 @@ export class AiService {
         system,
         messages: [{ role: "user", content: images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.base64 } })), { type: "text", text: user }] : user }],
       }, "POST", timeoutMs);
-      return (r.content ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join("");
+      return { text: (r.content ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join(""), stop: r.stop_reason ?? null };
     }
     if (c.provider === "gemini") {
       const r = await this.request(`${base}/models/${encodeURIComponent(c.model.replace(/^models\//, ""))}:generateContent`, headers, {
@@ -338,7 +343,7 @@ export class AiService {
         contents: [{ role: "user", parts: [...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.base64 } })), { text: user }] }],
         generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
       }, "POST", timeoutMs);
-      return (r.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+      return { text: (r.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? "").join(""), stop: r.candidates?.[0]?.finishReason ?? null };
     }
     // OpenAI, OpenRouter and local servers share the chat-completions format
     const r = await this.request(`${base}/chat/completions`, headers, {
@@ -350,7 +355,7 @@ export class AiService {
         { role: "user", content: images.length ? [{ type: "text", text: user }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] : user },
       ],
     }, "POST", timeoutMs);
-    return r.choices?.[0]?.message?.content ?? "";
+    return { text: r.choices?.[0]?.message?.content ?? "", stop: r.choices?.[0]?.finish_reason ?? null };
   }
 
   // One job for AI: the right services for it, failover, and the reply read as JSON. Throws AiError
@@ -358,9 +363,13 @@ export class AiService {
   async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string } = {}) {
     const active = await this.active(task);
     if (!active) throw new AiError(opts.off ?? (task === "photo" ? "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service." : "This needs AI. Turn it on in Settings › AI."));
-    const { text, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, task === "quick" ? 30 : 60) * 1000, opts.images);
+    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, task === "quick" ? 30 : 60) * 1000, opts.images);
     const json = parseJsonReply(text);
-    if (json === null || typeof json !== "object") throw new AiError(`${service.name}'s answer couldn't be read. Try again, or try another AI service.`);
+    if (json === null || typeof json !== "object") {
+      // Keep what it said, so Settings › Logs shows why
+      await logEvent(this.db, { category: "ai", level: "warning", source: service.name, event: `${service.name}'s answer couldn't be read`, detail: `Stopped: ${stop ?? "unknown"}. It said: ${typeof text === "string" ? text.slice(0, 600) : JSON.stringify(text).slice(0, 600)}` });
+      throw new AiError(`${service.name}'s answer couldn't be read. Try again, or try another AI service.`);
+    }
     return { json: json as Record<string, unknown>, service };
   }
 

@@ -150,3 +150,16 @@ describe("meal ideas", () => {
     expect(asked).toContain(`${tacos.id}: Fish Tacos`);
   });
 });
+
+describe("when an answer can't be read", () => {
+  it("Settings › Logs shows what the model sent back and why it stopped", async () => {
+    await t.api("PUT", "/api/settings/ai", { enabled: true, maxPerRun: 50, services: [{ name: "OpenRouter", provider: "openrouter", model: "anthropic/claude-haiku-5.5", apiKey: "k" }] });
+    const r = (await t.api("POST", "/api/recipes", { title: "Chili", servings: 6, ingredients: "2 lb ground beef" })).body;
+    t.ai.respond = () => ({ status: 200, json: { choices: [{ finish_reason: "length", message: { content: "Let me work through each ingredient. Ground beef, 2 lb: about" } }] } });
+    expect((await t.api("POST", `/api/recipes/${r.id}/nutrition`)).status).toBe(502);
+    const log = (await t.api("GET", "/api/logs?category=ai")).body[0];
+    expect(log).toMatchObject({ level: "warning", source: "OpenRouter" });
+    expect(log.detail).toContain("Let me work through each ingredient");
+    expect(log.detail).toContain("length");
+  });
+});
