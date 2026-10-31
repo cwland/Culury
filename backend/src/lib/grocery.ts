@@ -105,3 +105,9 @@ export function splitLine(line: string): string[] {
   }
   return out;
 }
+
+// An ingredient with no amount, as things to buy: "Salt and pepper to taste" -> salt, pepper
+export function shoppingNames(name: string): string[] {
+  const t = name.replace(/\b(?:to taste|as needed|for serving|for garnish|optional|if desired)\b/gi, "").replace(/[,\s]+$/, "").trim();
+  return t.split(/\s*(?:,|&|\band\b)\s*/i).map((x) => x.trim().toLowerCase()).filter(Boolean);
+}

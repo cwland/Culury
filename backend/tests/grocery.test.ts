@@ -169,3 +169,22 @@ describe("live updates", () => {
     expect((await fetch(`http://127.0.0.1:${port}/api/events`)).status).toBe(401);
   });
 });
+
+describe("adding up across recipes", () => {
+  it("pounds and ounces of the same thing become one line", async () => {
+    const a = (await t.api("POST", "/api/recipes", { title: "Meatloaf", ingredients: "1 lb ground beef" })).body;
+    const b = (await t.api("POST", "/api/recipes", { title: "Tacos", ingredients: "8 oz ground beef" })).body;
+    const lines = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: a.id }, { recipeId: b.id }] })).body.lines;
+    expect(lines.map((l: any) => [l.name, l.quantity, l.unit])).toEqual([["ground beef", 1.5, "lb"]]);
+  });
+  it("a range in a recipe buys the larger amount", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Soup", ingredients: "2-3 carrots" })).body;
+    const lines = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: r.id }] })).body.lines;
+    expect(lines[0]).toMatchObject({ name: "carrots", quantity: 3 });
+  });
+  it("salt and pepper to taste isn't one weird item", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Eggs", ingredients: "4 eggs\nSalt and pepper to taste" })).body;
+    const lines = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: r.id }] })).body.lines;
+    expect(lines.map((l: any) => l.name).sort()).toEqual(["eggs", "pepper", "salt"]);
+  });
+});

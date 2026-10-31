@@ -255,10 +255,18 @@ export function parseMinutes(s: string): number | null | undefined {
   if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t));
   const clock = t.match(/^(\d+):(\d{1,2})$/);
   if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
-  const num = (x: string) => (x in NUMBER_WORDS ? NUMBER_WORDS[x] : x === "half" || x === "half an" ? 0.5 : Number(x));
+  const FR: Record<string, number> = { "½": 0.5, "⅓": 1 / 3, "⅔": 2 / 3, "¼": 0.25, "¾": 0.75 };
+  // "1 1/2", "1½", "3/4", "1.5", "an", "half"
+  const num = (x: string) => {
+    const f = x.match(/^(?:(\d+)\s+)?(\d+)\/(\d+)$/);
+    if (f) return Number(f[1] ?? 0) + Number(f[2]) / Number(f[3]);
+    const u = x.match(/^(\d*)([½⅓⅔¼¾])$/);
+    if (u) return Number(u[1] || 0) + FR[u[2]];
+    return x in NUMBER_WORDS ? NUMBER_WORDS[x] : x === "half" || x === "half an" ? 0.5 : Number(x);
+  };
   let total = 0;
   let found = false;
-  for (const m of t.matchAll(/(\d+(?:\.\d+)?|an?|one|two|three|four|five|six|half(?: an)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/g)) {
+  for (const m of t.matchAll(/(\d+\s+\d+\/\d+|\d+\/\d+|\d*[½⅓⅔¼¾]|\d+(?:\.\d+)?|an?|one|two|three|four|five|six|half(?: an)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/g)) {
     total += num(m[1]) * (m[2].startsWith("h") ? 60 : 1);
     found = true;
   }

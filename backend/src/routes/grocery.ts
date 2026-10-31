@@ -7,7 +7,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam, idList, isoDate } from "../lib/validation.js";
 import { parseIngredient } from "../lib/ingredients.js";
 import { learnedAisles, rememberAisle, sortAislesSoon } from "../lib/aiHelpers.js";
-import { AISLE_IDS, AISLES, addable, convertTo, guessAisle, itemKey, round, sameItem, splitLine, tidy } from "../lib/grocery.js";
+import { AISLE_IDS, AISLES, addable, convertTo, guessAisle, itemKey, round, sameItem, shoppingNames, splitLine, tidy } from "../lib/grocery.js";
 import { userOf } from "./recipes.js";
 
 type Tx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -273,17 +273,20 @@ export default async function groceryRoutes(app: FastifyInstance) {
       const factor = w.servings && r.servings ? w.servings / r.servings : 1;
       for (const ing of r.ingredients) {
         if (ing.section) continue;
-        const name = ing.name ?? ing.raw;
         const q = ing.quantity ? round((ing.quantityMax ?? ing.quantity) * factor) : null;
         const source = { recipeId: r.id, title: r.title };
+        // "Salt and pepper to taste" is two things to buy: salt, pepper
+        const names = q === null ? shoppingNames(ing.name ?? ing.raw) : [ing.name ?? ing.raw];
+        for (const name of names) {
         const same = lines.find((l) => l.key === itemKey(name) && addable(l.unit, ing.unit ?? null) && (l.quantity === null) === (q === null));
-        if (same) {
-          if (same.quantity !== null && q !== null) same.quantity = round(same.quantity + convertTo(q, ing.unit ?? null, same.unit));
-          same.sources = mergeSources(same.sources ?? [], [source]);
-          continue;
-        }
+          if (same) {
+            if (same.quantity !== null && q !== null) same.quantity = round(same.quantity + convertTo(q, ing.unit ?? null, same.unit));
+            same.sources = mergeSources(same.sources ?? [], [source]);
+            continue;
+          }
         const p = pantry.find((x) => sameItem(x.name, name));
         lines.push({ key: itemKey(name), name, quantity: q, unit: ing.unit ?? null, note: null, sources: [source], pantry: p ? { id: p.id, name: p.name, staple: p.staple, quantity: p.quantity, unit: p.unit } : null });
+        }
       }
     }
     return { recipes: found.length, lines: await (async () => {

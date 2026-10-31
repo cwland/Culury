@@ -243,3 +243,19 @@ describe("what people type", () => {
     expect((await t.api("POST", "/api/collections", { name: "holiday" })).status).toBe(409);
   });
 });
+
+describe("editing keeps what you didn't touch", () => {
+  it("changing only the name keeps categories, collections and tags", async () => {
+    const col = (await t.api("POST", "/api/collections", { name: "Favorites" })).body;
+    const r = (await t.api("POST", "/api/recipes", { title: "Chili", categories: ["Dinner"], collections: [col.id], tags: ["beef"] })).body;
+    await t.api("PATCH", `/api/recipes/${r.id}`, { title: "Best Chili" });
+    const after = (await t.api("GET", `/api/recipes/${r.id}`)).body;
+    expect([after.title, after.categories.map((c: any) => c.name), after.collections.map((c: any) => c.name), after.tags]).toEqual(["Best Chili", ["Dinner"], ["Favorites"], ["beef"]]);
+  });
+  it("search finds a recipe by an ingredient right after it's edited", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Stew", ingredients: "1 lb beef" })).body;
+    await t.api("PATCH", `/api/recipes/${r.id}`, { ingredients: "1 lb lamb" });
+    expect((await t.api("GET", "/api/recipes?q=lamb")).body.recipes.map((x: any) => x.title)).toEqual(["Stew"]);
+    expect((await t.api("GET", "/api/recipes?q=beef")).body.recipes).toHaveLength(0);
+  });
+});

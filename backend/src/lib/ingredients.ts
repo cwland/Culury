@@ -61,15 +61,16 @@ add("inch", "inch", "inches", "in.");
 // Longest first, so "fl oz" wins over "fl" and "tablespoons" over "t"
 const UNIT_WORDS = Object.keys(UNITS).sort((a, b) => b.length - a.length);
 
-const NUMBER = String.raw`(?:\d+\s+\d+\/\d+|\d+\/\d+|\d*\.\d+|\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])`;
+const NUMBER = String.raw`(?:\d+-\d+\/\d+|\d+\s+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|\d+\s+\d+\/\d+|\d+\/\d+|\d*\.\d+|\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]|\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])`;
 const QUANTITY = new RegExp(String.raw`^(${NUMBER})(?:\s*(?:-|–|—|to|or)\s*(${NUMBER}))?(?=\s|$|[a-zA-Z(])`, "i");
 
 export function parseNumber(s: string): number | null {
   const t = s.trim();
   let m: RegExpMatchArray | null;
-  if ((m = t.match(/^(\d+)\s+(\d+)\/(\d+)$/))) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+  // "1-1/2" is how some sites write one and a half
+  if ((m = t.match(/^(\d+)(?:\s+|-)(\d+)\/(\d+)$/))) return Number(m[1]) + Number(m[2]) / Number(m[3]);
   if ((m = t.match(/^(\d+)\/(\d+)$/))) return Number(m[2]) ? Number(m[1]) / Number(m[2]) : null;
-  if ((m = t.match(/^(\d+)([½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])$/))) return Number(m[1]) + UNICODE_FRACTIONS[m[2]];
+  if ((m = t.match(/^(\d+)\s*([½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])$/))) return Number(m[1]) + UNICODE_FRACTIONS[m[2]];
   if (t in UNICODE_FRACTIONS) return UNICODE_FRACTIONS[t];
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
@@ -103,7 +104,7 @@ export function parseIngredient(input: string): Ingredient {
 
   // "1 (14 oz) can tomatoes": the size in brackets is a note
   const notes: string[] = [];
-  const size = rest.match(/^\(([^)]*)\)\s*/);
+  const size = rest.match(/^\(([^)]*)\)\s*/) ?? (out.quantity !== null ? rest.match(/^(\d+(?:\.\d+)?-?\s?(?:oz|ounce|g|ml|lb)\.?)\s+(?=[a-z])/i) : null);
   if (size) {
     notes.push(size[1].trim());
     rest = rest.slice(size[0].length);
@@ -123,6 +124,12 @@ export function parseIngredient(input: string): Ingredient {
       }
     }
     rest = rest.replace(/^of\s+/i, "");
+    // "1 pound (450g) ground beef": a size in brackets after the unit
+    const after = !size && out.unit ? rest.match(/^\(([^)]*)\)\s*/) : null;
+    if (after) {
+      notes.push(after[1].trim());
+      rest = rest.slice(after[0].length);
+    }
   }
 
   // "flour, sifted" / "butter (softened)"

@@ -47,3 +47,26 @@ describe("ingredient lines", () => {
     expect([1.5, 0.333, 2, 0.25, 2.667, 1.1, 0.999].map(formatQuantity)).toEqual(["1 1/2", "1/3", "2", "1/4", "2 2/3", "1.1", "1"]);
   });
 });
+
+describe("ingredient lines as recipe sites and cards write them", () => {
+  it("a mixed number written with a hyphen is one amount, not a range", () => {
+    expect(p("1-1/2 cups flour")).toMatchObject({ quantity: 1.5, quantityMax: null, unit: "cup", name: "flour" });
+  });
+  it("a space before the fraction character", () => {
+    expect(p("2 ½ cups milk")).toMatchObject({ quantity: 2.5, unit: "cup", name: "milk" });
+  });
+  it("a unit with a period after it", () => {
+    expect(p("1 tbsp. olive oil")).toMatchObject({ quantity: 1, unit: "tbsp", name: "olive oil" });
+    expect(p("2 oz. cheddar")).toMatchObject({ quantity: 2, unit: "oz", name: "cheddar" });
+  });
+  it("a weight in brackets after the unit is a note", () => {
+    expect(p("1 pound (450g) ground beef")).toMatchObject({ quantity: 1, unit: "lb", name: "ground beef", note: "450g" });
+  });
+  it("sticks and pinches are units", () => {
+    expect(p("2 sticks butter")).toMatchObject({ quantity: 2, unit: "stick", name: "butter" });
+    expect(p("1 pinch salt")).toMatchObject({ quantity: 1, unit: "pinch", name: "salt" });
+  });
+  it("a can size without brackets", () => {
+    expect(p("1 15-oz can black beans, drained")).toMatchObject({ quantity: 1, unit: "can", name: "black beans", note: "15-oz; drained" });
+  });
+});
