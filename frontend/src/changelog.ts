@@ -10,6 +10,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.10.0",
+    date: "2026-10-31",
+    title: "Nutrition that keeps up",
+    changes: [
+      "Auto nutrition (Settings › AI): nutrition is worked out by itself, for a new recipe once its AI check is done or skipped (straight away if the AI check is off), and again whenever its ingredients change. The Nutrition panel says “Updating nutrition…” while it works and shows the new numbers when it's done, on every device.",
+      "Numbers you typed in are never replaced. When the ingredients change, the panel says the numbers are out of date and offers Estimate again.",
+      "Added sugars, like on a US label (“Includes 12 g added sugars”, with its daily value), and the serving size (“About 1½ cups (340 g)”). AI estimates both; you can type them in too.",
+      "The points estimate counts only added sugar when it's known, so fruit and milk sugar don't add points.",
+      "The import window no longer lists recent imports: every import is in Settings › Logs › Imports, now including links that were already saved.",
+    ],
+  },
+  {
     version: "0.9.2",
     date: "2026-10-31",
     title: "AI check: slow home AI, handled",
