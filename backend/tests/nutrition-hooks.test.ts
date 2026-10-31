@@ -176,17 +176,6 @@ describe("the AI check", () => {
     await aiCheck(id, { steps: ["Brown the beef."] });
     expect(await nutritionOf(id)).toMatchObject({ calories: 410 });
   });
-
-  it("undo puts the old ingredients back: worked out again for them", async () => {
-    await aiOn();
-    const id = await add();
-    t.ai.respond = () => reply(estimate);
-    await aiCheck(id, { ingredients: ["2 lb ground beef", "1 can beans", "1 tsp salt"] });
-    await t.app.jobs.drain();
-    t.ai.respond = () => reply({ ...estimate, calories: 400 });
-    await t.api("POST", `/api/recipes/${id}/enhance/undo`);
-    expect(await nutritionOf(id)).toMatchObject({ calories: 400 });
-  });
 });
 
 describe("the recipe page", () => {

@@ -1,8 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
-import { recipeVersions, recipes, type RecipeVersionData } from "../db/schema.js";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { recipeVersions, recipes, users, type RecipeVersionData } from "../db/schema.js";
+import { HttpError, notFound } from "./errors.js";
 import type { Db } from "../db/index.js";
 import { isOn } from "./features.js";
-import type { Tx } from "./recipes.js";
+import { refreshSearch, type Tx } from "./recipes.js";
 
 // Recipe versions (the "Recipe versioning" switch). The recipe row always holds the active
 // version's content; a version is a full copy of it. New versions come from adding a recipe (v1),
@@ -99,4 +100,94 @@ export async function syncActive(db: Tx, recipeId: number) {
     .update(recipeVersions)
     .set({ data: versionData(r) })
     .where(and(eq(recipeVersions.recipeId, recipeId), eq(recipeVersions.active, true)));
+}
+
+// ---------- the history ----------
+
+async function recipeOrNotFound(db: Tx, recipeId: number) {
+  const r = await load(db, recipeId);
+  if (!r) throw notFound("Recipe");
+  return r;
+}
+
+// Every version, newest first, without its content (open one for that)
+export async function listVersions(db: Tx, recipeId: number) {
+  await recipeOrNotFound(db, recipeId);
+  await ensureVersions(db, recipeId);
+  return db
+    .select({ number: recipeVersions.number, source: recipeVersions.source, summary: recipeVersions.summary, active: recipeVersions.active, createdAt: recipeVersions.createdAt, by: sql<string | null>`coalesce(${users.displayName}, ${users.username})` })
+    .from(recipeVersions)
+    .leftJoin(users, eq(users.id, recipeVersions.createdBy))
+    .where(eq(recipeVersions.recipeId, recipeId))
+    .orderBy(desc(recipeVersions.number));
+}
+
+export async function getVersion(db: Tx, recipeId: number, number: number) {
+  const [v] = await db
+    .select({ number: recipeVersions.number, source: recipeVersions.source, summary: recipeVersions.summary, active: recipeVersions.active, createdAt: recipeVersions.createdAt, data: recipeVersions.data })
+    .from(recipeVersions)
+    .where(and(eq(recipeVersions.recipeId, recipeId), eq(recipeVersions.number, number)));
+  if (!v) throw notFound("Version");
+  return v;
+}
+
+// The recipe becomes this version (its tags, categories, photo and everyone's favorites and notes stay)
+export async function activateVersion(db: Db, recipeId: number, number: number) {
+  await db.transaction(async (tx) => {
+    const v = await getVersion(tx, recipeId, number);
+    const d = v.data;
+    await tx
+      .update(recipes)
+      .set({ title: d.title, description: d.description, ingredients: d.ingredients, steps: d.steps, servings: d.servings, yieldText: d.yieldText, prepMinutes: d.prepMinutes, cookMinutes: d.cookMinutes, totalMinutes: d.totalMinutes, notes: d.notes, nutrition: d.nutrition, updatedAt: new Date() })
+      .where(eq(recipes.id, recipeId));
+    await tx.update(recipeVersions).set({ active: false }).where(and(eq(recipeVersions.recipeId, recipeId), eq(recipeVersions.active, true)));
+    await tx.update(recipeVersions).set({ active: true }).where(and(eq(recipeVersions.recipeId, recipeId), eq(recipeVersions.number, number)));
+    await refreshSearch(tx, [recipeId]);
+  });
+}
+
+// Any version but the active one (so a recipe always keeps at least one)
+export async function deleteVersion(db: Tx, recipeId: number, number: number) {
+  const v = await getVersion(db, recipeId, number);
+  if (v.active) throw new HttpError(409, "This is the active version. Set another version active first.");
+  await db.delete(recipeVersions).where(and(eq(recipeVersions.recipeId, recipeId), eq(recipeVersions.number, number)));
+}
+
+// ---------- a backup from before versions ----------
+
+// What the old one-level "Undo AI changes" kept: the recipe from before an AI change
+interface OldUndoPoint {
+  recipeId: number;
+  data: { steps?: RecipeVersionData["steps"]; ingredients?: RecipeVersionData["ingredients"]; nutrition?: RecipeVersionData["nutrition"]; applied?: string[] };
+  createdAt?: string;
+}
+
+// After a restore: every recipe without versions gets them, as the upgrade did. v1 is the recipe;
+// with an old undo point, v1 is the recipe from before that AI change (only the parts it touched;
+// an undo point that doesn't say puts back steps, ingredients and nutrition) and v2 is the recipe.
+export async function versionsAfterRestore(db: Tx, undoPoints: OldUndoPoint[]) {
+  const undo = new Map(undoPoints.map((p) => [Number(p.recipeId), p]));
+  const missing = await db
+    .select()
+    .from(recipes)
+    .where(sql`not exists (select 1 from ${recipeVersions} v where v.recipe_id = ${recipes.id})`);
+  for (const r of missing) {
+    const now = versionData(r);
+    const p = undo.get(r.id);
+    const source = r.sourceUrl ? "import" : "created";
+    const summary = r.sourceUrl ? "Imported" : "Added";
+    if (!p) {
+      await db.insert(recipeVersions).values({ recipeId: r.id, number: 1, source, summary, data: now, active: true, createdBy: r.createdBy, createdAt: r.createdAt });
+      continue;
+    }
+    const did = new Set(p.data.applied ?? ["steps", "ingredients", "nutrition"]);
+    const before: RecipeVersionData = {
+      ...now,
+      ...(did.has("steps") && p.data.steps && { steps: p.data.steps }),
+      ...(did.has("ingredients") && p.data.ingredients && { ingredients: p.data.ingredients }),
+      ...(did.has("nutrition") && p.data.nutrition !== undefined && { nutrition: p.data.nutrition }),
+    };
+    await db.insert(recipeVersions).values({ recipeId: r.id, number: 1, source, summary, data: before, active: false, createdBy: r.createdBy, createdAt: r.createdAt });
+    await db.insert(recipeVersions).values({ recipeId: r.id, number: 2, source: "ai", summary: "AI check", data: now, active: true, createdAt: p.createdAt ? new Date(p.createdAt) : new Date() });
+  }
 }

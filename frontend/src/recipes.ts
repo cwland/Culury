@@ -58,7 +58,6 @@ export interface Recipe {
   me: Mine;
   substitutions: Substitution[];
   nutrition: Nutrition | null;
-  aiSnapshotAt?: string | null; // there's an AI Enhance change to undo
   nutritionUpdating?: boolean; // Auto nutrition is working it out right now
 }
 

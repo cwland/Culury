@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, UndoIcon, WandIcon, MoreIcon } from "../Icons";
+import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, WandIcon, MoreIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
 import { useLive } from "../../live";
@@ -29,7 +29,6 @@ export default function RecipeView({ id }: { id: number }) {
   // Just added (typed in or imported): offer an AI check once
   const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
-  const [undoError, setUndoError] = useState("");
   const [more, setMore] = useState(false);
 
   useEffect(() => {
@@ -62,14 +61,6 @@ export default function RecipeView({ id }: { id: number }) {
       .then(() => api<Recipe>("GET", `/api/recipes/${r.id}`))
       .then((fresh) => setR((x) => (x ? { ...x, nutrition: fresh.nutrition, nutritionUpdating: fresh.nutritionUpdating } : x)))
       .catch(() => {});
-  };
-  const undoAi = async () => {
-    setUndoError("");
-    try {
-      setR(await api<Recipe>("POST", `/api/recipes/${r.id}/enhance/undo`));
-    } catch (e) {
-      setUndoError((e as Error).message);
-    }
   };
   const remove = async () => {
     await api("DELETE", `/api/recipes/${r.id}`);
@@ -119,11 +110,6 @@ export default function RecipeView({ id }: { id: number }) {
             </button>
           </div>
         </section>
-      )}
-      {undoError && (
-        <p role="alert" className="mb-3 rounded-lg bg-error-subtle px-4 py-3 text-error">
-          {undoError}
-        </p>
       )}
       {/* Header: photo, name, the facts, and what you can do with it */}
       <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -210,11 +196,6 @@ export default function RecipeView({ id }: { id: number }) {
               </button>
               {more && (
                 <div role="menu" className="absolute left-0 z-30 mt-1 w-56 overflow-hidden rounded-xl bg-container py-1 shadow-[0_8px_28px_rgba(0,0,0,0.16)]" onMouseLeave={() => setMore(false)}>
-                  {r.aiSnapshotAt && (
-                    <button role="menuitem" type="button" onClick={() => (setMore(false), void undoAi())} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-pressed">
-                      <UndoIcon /> Undo AI changes
-                    </button>
-                  )}
                   <button role="menuitem" type="button" onClick={() => (setMore(false), setConfirmDelete(true))} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-error hover:bg-error-subtle">
                     <Trash /> Delete
                   </button>

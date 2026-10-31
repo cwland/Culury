@@ -69,30 +69,18 @@ describe("AI Enhance on the recipe page", () => {
     expect(await screen.findByRole("dialog", { name: "AI check" })).toBeInTheDocument();
   });
 
-  it("Undo AI changes is in the More menu after applying, and puts the original back", async () => {
-    const changed = recipeJson({ steps: [{ text: "Brown the beef well, about 8 minutes." }, { text: "Simmer for 30 minutes." }], aiSnapshotAt: "2026-10-31T10:00:00Z" });
-    const s = server(on, recipeJson({ aiSnapshotAt: null }), {
-      "POST /api/recipes/7/enhance/apply": () => changed,
-      "POST /api/recipes/7/enhance/undo": () => recipeJson({ aiSnapshotAt: null }),
-    });
+  it("after applying AI changes there's no Undo (going back is in the version history)", async () => {
+    const changed = recipeJson({ steps: [{ text: "Brown the beef well, about 8 minutes." }, { text: "Simmer for 30 minutes." }] });
+    const s = server(on, recipeJson(), { "POST /api/recipes/7/enhance/apply": () => changed });
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
-    expect(await screen.findByRole("button", { name: "AI check" })).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.queryByRole("menuitem", { name: "Undo AI changes" })).toBeNull(); // nothing to undo yet
-    await u.click(screen.getByRole("button", { name: "More" }));
-    await u.click(screen.getByRole("button", { name: "AI check" }));
+    await u.click(await screen.findByRole("button", { name: "AI check" }));
     await u.click(await screen.findByRole("button", { name: "Apply selected" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "AI check" })).toBeNull());
-    expect(screen.queryByRole("button", { name: "Undo AI changes" })).toBeNull(); // not on the button row
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent(/Brown the beef well, about 8 minutes/);
     await u.click(screen.getByRole("button", { name: "More" }));
-    await u.click(await screen.findByRole("menuitem", { name: "Undo AI changes" }));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Brown the beef."));
-    expect(screen.getByRole("region", { name: "Steps" })).not.toHaveTextContent("about 8 minutes");
-    await u.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.queryByRole("menuitem", { name: "Undo AI changes" })).toBeNull();
-    expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply", "/api/recipes/7/enhance/undo"]);
+    expect(within(screen.getByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent?.trim())).toEqual(["Delete"]);
+    expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply"]);
   });
 });
 

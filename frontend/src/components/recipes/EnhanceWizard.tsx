@@ -246,7 +246,7 @@ function Part({ title, badge, changed, changes, use, onUse, original, suggested 
 }
 
 // AI Enhance: asks the AI to check the recipe (nothing is saved), shows each section side by side,
-// and saves only the sections you keep. The recipe page offers Undo AI changes afterwards.
+// and saves only the sections you keep. What it was before stays in the version history.
 export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void }) {
   const [e, setE] = useState<Enhancement | null>(null);
   const [error, setError] = useState("");

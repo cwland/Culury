@@ -97,34 +97,18 @@ describe("asking AI to check a recipe", () => {
   });
 });
 
-describe("applying and undoing AI changes", () => {
+describe("applying AI changes", () => {
   const apply = (id: number, body: object) => t.api("POST", `/api/recipes/${id}/enhance/apply`, body);
-  const undo = (id: number) => t.api("POST", `/api/recipes/${id}/enhance/undo`);
 
-  it("applies only the sections sent and keeps the original for undo", async () => {
+  it("applies only the sections sent", async () => {
     await aiOn();
     const r = await chili();
-    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.aiSnapshotAt).toBeNull();
     const res = await apply(r.id, { steps: ["# Cook", "Cook the chicken until it reaches 165°F."] });
     expect(res.status).toBe(200);
     expect(res.body.steps).toEqual([{ text: "Cook", section: "Cook" }, { text: "Cook the chicken until it reaches 165°F." }]);
     expect(res.body.ingredients.map((i: any) => i.raw)).toEqual(["1 lb chicken", "1 onion"]);
     expect(res.body.tags).toEqual(["spicy"]);
     expect(res.body.categories.map((c: any) => c.name)).toEqual(["Dinner"]);
-    expect(res.body.aiSnapshotAt).toEqual(expect.any(String));
-  });
-
-  it("undo puts it back and removes the snapshot", async () => {
-    await aiOn();
-    const r = await chili();
-    const nutrition = { calories: 320, fat: 9, saturatedFat: null, carbs: 6, fiber: 1, sugar: 2, protein: 48, sodium: 600, source: "ai", servings: 4, note: null };
-    await apply(r.id, { steps: ["Cook it well."], ingredients: ["2 lb chicken"], nutrition, categories: ["Soup"], tags: ["stew"] });
-    const back = await undo(r.id);
-    expect(back.status).toBe(200);
-    expect(back.body).toMatchObject({ steps: [{ text: "Cook the chicken." }], nutrition: null, tags: ["spicy"], aiSnapshotAt: null });
-    expect(back.body.ingredients.map((i: any) => i.raw)).toEqual(["1 lb chicken", "1 onion"]);
-    expect(back.body.categories.map((c: any) => c.name)).toEqual(["Dinner"]);
-    expect((await undo(r.id)).status).toBe(404);
   });
 
   it("new categories are created; a tag differing only in capitals reuses the existing one", async () => {
@@ -139,15 +123,6 @@ describe("applying and undoing AI changes", () => {
     expect((await t.api("GET", "/api/categories")).body.map((c: any) => c.name)).toContain("Soup");
   });
 
-  it("a second apply replaces the snapshot: undo goes back one step", async () => {
-    await aiOn();
-    const r = await chili();
-    await apply(r.id, { steps: ["First AI version."] });
-    await apply(r.id, { steps: ["Second AI version."] });
-    expect((await undo(r.id)).body.steps).toEqual([{ text: "First AI version." }]);
-    expect((await undo(r.id)).status).toBe(404);
-  });
-
   it("applying to a deleted recipe answers 404; applying is refused when AI Enhance is off", async () => {
     await aiOn();
     const r = await chili();
@@ -158,35 +133,13 @@ describe("applying and undoing AI changes", () => {
     const res = await apply(r.id, { steps: ["x"] });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/Recipe/);
-    expect((await undo(r.id)).status).toBe(404);
   });
 });
 
 describe("review fixes", () => {
   const apply = (id: number, body: object) => t.api("POST", `/api/recipes/${id}/enhance/apply`, body);
-  const undo = (id: number) => t.api("POST", `/api/recipes/${id}/enhance/undo`);
 
-  it("undo puts back only the sections the AI changed, not later edits elsewhere", async () => {
-    await aiOn();
-    const r = await chili();
-    await apply(r.id, { tags: ["chicken"] });
-    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 380 }); // typed in afterwards
-    const back = (await undo(r.id)).body;
-    expect(back.tags).toEqual(["spicy"]);
-    expect(back.nutrition).toMatchObject({ calories: 380, source: "you" });
-  });
-
-  it("editing the recipe by hand after an AI change removes the undo, so it can't wipe your edit", async () => {
-    await aiOn();
-    const r = await chili();
-    await apply(r.id, { tags: ["chicken"] });
-    await t.api("PATCH", `/api/recipes/${r.id}`, { steps: ["Cook the chicken well."] });
-    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.aiSnapshotAt).toBeNull();
-    expect((await undo(r.id)).status).toBe(404);
-    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.steps).toEqual([{ text: "Cook the chicken well." }]);
-  });
-
-  it("an apply that fails keeps the earlier undo point and changes nothing", async () => {
+  it("an apply that fails changes nothing, and makes no version", async () => {
     await aiOn();
     const r = await chili();
     await apply(r.id, { steps: ["First AI version."] });
@@ -195,7 +148,7 @@ describe("review fixes", () => {
     const now = (await t.api("GET", `/api/recipes/${r.id}`)).body;
     expect(now.steps).toEqual([{ text: "First AI version." }]);
     expect(now.tags).toEqual(["spicy"]);
-    expect((await undo(r.id)).body.steps).toEqual([{ text: "Cook the chicken." }]);
+    expect((await t.api("GET", `/api/recipes/${r.id}/versions`)).body.map((v: any) => v.number)).toEqual([2, 1]);
   });
 
   it("an unreadable answer, or one with none of the parts, is a 502 with a log entry", async () => {

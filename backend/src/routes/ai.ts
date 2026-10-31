@@ -8,7 +8,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { nutritionInput } from "../lib/recipes.js";
 import { jobView } from "../lib/importJobs.js";
-import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements, undoEnhancements } from "../lib/enhance.js";
+import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements } from "../lib/enhance.js";
 import { loadRecipe } from "../lib/recipes.js";
 import { userOf } from "./recipes.js";
 import { afterAiCheck, nutritionWanted } from "../lib/nutrition.js";
@@ -106,16 +106,6 @@ export default async function aiRoutes(app: FastifyInstance) {
     if (!r) throw notFound("Recipe");
     await nutritionWanted(app, id);
     return reply.status(204).send();
-  });
-  // Undo works even if AI has been switched off since: it only puts the recipe back
-  app.post("/api/recipes/:id/enhance/undo", async (req) => {
-    const { id } = idParam.parse(req.params);
-    const [before] = await db.select({ ingredients: recipes.ingredients, nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
-    await undoEnhancements(db, id);
-    await syncActive(db, id);
-    const [after] = await db.select({ nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
-    if (before && after) await afterAiCheck(app, id, before.ingredients, JSON.stringify(before.nutrition) !== JSON.stringify(after.nutrition));
-    return loadRecipe(db, id, userOf(req));
   });
 
   // ---------- meal ideas ----------

@@ -264,22 +264,6 @@ export const recipeCategories = pgTable(
 );
 
 // The recipe as it was before its latest AI Enhance change, for "Undo AI changes" (one level)
-export interface RecipeSnapshot {
-  steps: Step[];
-  ingredients: Ingredient[];
-  nutrition: Nutrition | null;
-  categoryIds: number[];
-  tags: string[];
-  applied?: ("steps" | "ingredients" | "nutrition" | "organize")[]; // what the AI change touched (undo puts back only these)
-}
-export const recipeSnapshots = pgTable("recipe_snapshots", {
-  recipeId: integer("recipe_id")
-    .notNull()
-    .unique()
-    .references(() => recipes.id, { onDelete: "cascade" }),
-  data: jsonb("data").$type<RecipeSnapshot>().notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
 
 // Recipe versions. Each one is a full copy of the recipe's own content (not its tags, categories,
 // collections, photo or anyone's favorites and notes). The recipe row always holds the active

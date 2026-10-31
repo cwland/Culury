@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { recipeSnapshots, recipeUser, recipes, substitutions } from "../db/schema.js";
+import { recipeUser, recipes, substitutions } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { createRecipe, listQuery, listRecipes, loadRecipe, saveRecipe, updateRecipe } from "../lib/recipes.js";
 import { ingredientsChanged, ingredientsUpdated, recipeAdded } from "../lib/nutrition.js";
-import { changedParts, describeParts, ensureVersions, firstVersion, newVersion, syncActive, versionData } from "../lib/versions.js";
+import { activateVersion, changedParts, deleteVersion, describeParts, ensureVersions, firstVersion, getVersion, listVersions, newVersion, syncActive, versionData } from "../lib/versions.js";
 
 // Who's asking: a signed-in person, or null for an API key (keys belong to the household, not a person)
 export const userOf = (req: FastifyRequest) => (req.auth?.method === "token" ? req.auth.userId : null);
@@ -55,13 +55,38 @@ export default async function recipeRoutes(app: FastifyInstance) {
       else await syncActive(db, id);
       if (ingredientsChanged(before.ingredients, after.ingredients)) await ingredientsUpdated(app, id);
     }
-    await db.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id)); // edited by hand: "Undo AI changes" would wipe the edit
     // A new photo (or none): the old one goes, if it was uploaded here and nothing else uses it
     if (body.imageUrl !== undefined && before?.imageUrl && body.imageUrl !== before.imageUrl) {
       const [other] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.imageUrl, before.imageUrl));
       if (!other) await app.photos.remove(before.imageUrl);
     }
     return loadRecipe(db, id, userOf(req));
+  });
+
+  // ---------- versions ----------
+  const versionParams = z.object({ id: z.coerce.number().int().positive(), number: z.coerce.number().int().positive() });
+  // Every version, newest first (number, source, summary, active, createdAt, by)
+  app.get("/api/recipes/:id/versions", async (req) => {
+    const { id } = idParam.parse(req.params);
+    return listVersions(db, id);
+  });
+  // One version with its content (data)
+  app.get("/api/recipes/:id/versions/:number", async (req) => {
+    const { id, number } = versionParams.parse(req.params);
+    return getVersion(db, id, number);
+  });
+  // The recipe becomes this version (tags, categories, photo and favorites stay)
+  app.post("/api/recipes/:id/versions/:number/activate", async (req) => {
+    const { id, number } = versionParams.parse(req.params);
+    await activateVersion(db, id, number);
+    app.events.emit({ topic: "recipes", id, by: userOf(req) });
+    return loadRecipe(db, id, userOf(req));
+  });
+  // Any version but the active one
+  app.delete("/api/recipes/:id/versions/:number", async (req, reply) => {
+    const { id, number } = versionParams.parse(req.params);
+    await deleteVersion(db, id, number);
+    return reply.status(204).send();
   });
 
   app.delete("/api/recipes/:id", async (req, reply) => {

@@ -14,7 +14,7 @@ const suggestion = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const open = (routes: Record<string, any> = {}) => {
-  const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion(), "POST /api/recipes/7/enhance/apply": () => recipeJson({ aiSnapshotAt: "2026-10-31T10:00:00Z" }), ...routes });
+  const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion(), "POST /api/recipes/7/enhance/apply": () => recipeJson({ title: "Applied" }), ...routes });
   const onApplied = vi.fn();
   const onClose = vi.fn();
   render(<EnhanceWizard recipe={recipe} onClose={onClose} onApplied={onApplied} />);
@@ -54,7 +54,7 @@ describe("AI Enhance wizard", () => {
     const body = server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body;
     expect(Object.keys(body).sort()).toEqual(["categories", "ingredients", "steps", "tags"]);
     expect(body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili"], ingredients: ["1 lb ground beef", "2 tbsp chili powder", "1 tsp salt"] });
-    expect(onApplied.mock.calls[0][0]).toMatchObject({ aiSnapshotAt: "2026-10-31T10:00:00Z" });
+    expect(onApplied.mock.calls[0][0]).toMatchObject({ title: "Applied" });
   });
 
   it("a section with no changes is unticked and says so", async () => {

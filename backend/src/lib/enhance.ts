@@ -1,7 +1,7 @@
 import { asc, count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { categories, recipeCategories, recipeSnapshots, recipes, recipeTags, tags, type Ingredient, type Nutrition, type RecipeSnapshot, type Step } from "../db/schema.js";
+import { categories, recipeTags, recipes, tags, type Ingredient, type Nutrition, type Step } from "../db/schema.js";
 import type { AiProgress, AiService } from "./ai.js";
 import { HttpError } from "./errors.js";
 import { isOn } from "./features.js";
@@ -217,40 +217,12 @@ export const applyInput = z
   })
   .strict();
 
-// Keep the recipe as it is now (replacing any older snapshot: one level of undo), then save only
-// the sections sent. New categories are created; tags are matched without case.
+// Save only the sections sent, in one transaction (a failed save changes nothing). New categories
+// are created; tags are matched without case. The version history keeps what it was before.
 export async function applyEnhancements(db: Db, recipeId: number, body: z.infer<typeof applyInput>, userId: number | null) {
-  // One transaction: if saving fails, the earlier undo point is kept and nothing changes
   await db.transaction(async (tx) => {
-    const [r] = await tx.select().from(recipes).where(eq(recipes.id, recipeId));
+    const [r] = await tx.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, recipeId));
     if (!r) throw notFound("Recipe");
-    const categoryIds = (await tx.select({ id: recipeCategories.categoryId }).from(recipeCategories).where(eq(recipeCategories.recipeId, recipeId))).map((c) => c.id);
-    const tagNames = (await tx.select({ name: tags.name }).from(recipeTags).innerJoin(tags, eq(tags.id, recipeTags.tagId)).where(eq(recipeTags.recipeId, recipeId))).map((t) => t.name);
-    const applied: RecipeSnapshot["applied"] = [];
-    if (body.steps) applied.push("steps");
-    if (body.ingredients) applied.push("ingredients");
-    if (body.nutrition !== undefined) applied.push("nutrition");
-    if (body.categories || body.tags) applied.push("organize");
-    const data: RecipeSnapshot = { steps: r.steps, ingredients: r.ingredients, nutrition: r.nutrition ?? null, categoryIds, tags: tagNames, applied };
-    await tx
-      .insert(recipeSnapshots)
-      .values({ recipeId, data })
-      .onConflictDoUpdate({ target: recipeSnapshots.recipeId, set: { data, createdAt: new Date() } });
     await saveRecipe(tx, recipeId, { steps: body.steps, ingredients: body.ingredients, nutrition: body.nutrition, categories: body.categories, tags: body.tags } as RecipeInput, userId);
-  });
-}
-
-// Put back what the latest AI change replaced (only the sections it touched), exactly, and forget the snapshot
-export async function undoEnhancements(db: Db, recipeId: number) {
-  await db.transaction(async (tx) => {
-    const [snap] = await tx.select().from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
-    if (!snap) throw new HttpError(404, "There's no AI change to undo on this recipe");
-    const d = snap.data;
-    const did = new Set(d.applied ?? ["steps", "ingredients", "nutrition", "organize"]);
-    if (did.has("organize")) await saveRecipe(tx, recipeId, { categories: d.categoryIds, tags: d.tags } as RecipeInput, null);
-    const back = { ...(did.has("steps") && { steps: d.steps }), ...(did.has("ingredients") && { ingredients: d.ingredients }), ...(did.has("nutrition") && { nutrition: d.nutrition }) };
-    await tx.update(recipes).set({ ...back, updatedAt: new Date() }).where(eq(recipes.id, recipeId));
-    await tx.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, recipeId));
-    await refreshSearch(tx, [recipeId]);
   });
 }
