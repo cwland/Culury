@@ -107,12 +107,12 @@ describe("expanded steps on the recipe page", () => {
 });
 
 describe("recipe page buttons", () => {
-  it("Start cooking sits on the title line; no Duplicate; Delete is under More", async () => {
+  it("Start cooking sits on the category line; no Duplicate; Delete is under More", async () => {
     server(on);
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
-    const title = await screen.findByRole("heading", { name: "Weeknight Chili" });
-    expect(within(title.parentElement!).getByRole("link", { name: /Start cooking/ })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Weeknight Chili" });
+    expect(within(screen.getByText("Dinner").parentElement!).getByRole("link", { name: /Start cooking/ })).toBeInTheDocument(); // on the category line
     expect(screen.queryByRole("button", { name: /Duplicate/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
     await u.click(screen.getByRole("button", { name: "More" }));

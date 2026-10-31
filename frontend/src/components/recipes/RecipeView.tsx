@@ -109,15 +109,18 @@ export default function RecipeView({ id }: { id: number }) {
       <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
         <div className="flex flex-col p-5 sm:p-7 md:pt-5">
-          {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
-          <div className="mt-1 flex items-start justify-between gap-4">
-            <h1 className="text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
-            {r.steps.length > 0 && (
-              <a href={`#/recipes/${r.id}/cook`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
-                <ChefIcon className="size-4" /> Start cooking
-              </a>
-            )}
-          </div>
+          {/* The categories on the left, Start cooking on the right */}
+          {(r.categories.length > 0 || r.steps.length > 0) && (
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>
+              {r.steps.length > 0 && (
+                <a href={`#/recipes/${r.id}/cook`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+                  <ChefIcon className="size-4" /> Start cooking
+                </a>
+              )}
+            </div>
+          )}
+          <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
           {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
 
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
