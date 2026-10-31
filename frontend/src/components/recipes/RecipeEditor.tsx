@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ApiError, api, uploadPhoto } from "../../api";
-import { ingredientsText, stepsText, type CollectionInfo, type Recipe, type TagInfo } from "../../recipes";
+import { ingredientsText, parseMinutes, parseServings, stepsText, type CollectionInfo, type Recipe, type TagInfo } from "../../recipes";
 import { clearUnsaved, useUnsavedGuard } from "../../unsavedGuard";
 import { BackIcon, CloseIcon } from "../Icons";
 import { RecipeImage } from "./RecipeList";
@@ -78,25 +78,44 @@ export default function RecipeEditor({ id }: { id?: number }) {
 
   if (!form) return <Frame id={id}>{error ? <p role="alert" className="text-error">{error}</p> : null}</Frame>;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm({ ...form, [k]: v });
-  const num = (s: string) => (s.trim() ? Number(s) : null);
+  // "allrecipes.com/x" -> "https://allrecipes.com/x"
+  const linkOf = (v: string) => {
+    const t = v.trim();
+    return t && !/^[a-z][a-z0-9+.-]*:/i.test(t) && !t.startsWith("/") && !/\s/.test(t) && /^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(t) ? `https://${t}` : t;
+  };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setErrors({});
     setError("");
+    // Numbers the way people write them ("1 hr 15 min", "2-3"); anything else is pointed out, not dropped
+    const servings = parseServings(form.servings);
+    const prep = parseMinutes(form.prepMinutes);
+    const cook = parseMinutes(form.cookMinutes);
+    const total = parseMinutes(form.totalMinutes);
+    const bad: Record<string, string> = {};
+    if (servings === undefined) bad.servings = "Servings should be a number. Put things like “2 loaves” in Makes.";
+    if (prep === undefined) bad.prepMinutes = "Use minutes or a time like 1 hr 15 min";
+    if (cook === undefined) bad.cookMinutes = "Use minutes or a time like 1 hr 15 min";
+    if (total === undefined) bad.totalMinutes = "Use minutes or a time like 1 hr 15 min";
+    if (Object.keys(bad).length) {
+      setErrors(bad);
+      setError("Check the highlighted fields.");
+      return;
+    }
+    setBusy(true);
     const body = {
       title: form.title,
       description: form.description,
-      imageUrl: form.imageUrl,
-      sourceUrl: form.sourceUrl,
+      imageUrl: linkOf(form.imageUrl),
+      sourceUrl: linkOf(form.sourceUrl),
       sourceName: form.sourceName,
-      servings: num(form.servings),
+      servings,
       yieldText: form.yieldText,
-      prepMinutes: num(form.prepMinutes),
-      cookMinutes: num(form.cookMinutes),
+      prepMinutes: prep,
+      cookMinutes: cook,
       // blank total: worked out from prep + cook
-      ...(form.totalMinutes.trim() || (!form.prepMinutes.trim() && !form.cookMinutes.trim()) ? { totalMinutes: num(form.totalMinutes) } : {}),
+      ...(form.totalMinutes.trim() || (!form.prepMinutes.trim() && !form.cookMinutes.trim()) ? { totalMinutes: total } : {}),
       ingredients: form.ingredients,
       steps: form.steps,
       notes: form.notes,
@@ -129,7 +148,7 @@ export default function RecipeEditor({ id }: { id?: number }) {
           <h1 className="text-2xl font-semibold">{id ? "Edit recipe" : "New recipe"}</h1>
           <label className="mt-4 block">
             <span className={labelText}>Name</span>
-            <input aria-label="Name" autoFocus={!id} value={form.title} onChange={(e) => set("title", e.target.value)} className={`${field} text-lg font-semibold`} placeholder="Weeknight Chili" />
+            <input aria-label="Name" maxLength={300} autoFocus={!id} value={form.title} onChange={(e) => set("title", e.target.value)} className={`${field} text-lg font-semibold`} placeholder="Weeknight Chili" />
             <Err k="title" />
           </label>
           <label className="mt-4 block">

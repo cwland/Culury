@@ -222,3 +222,24 @@ describe("backups", () => {
     for (const f of fs.readdirSync(t.backupDir)) fs.unlinkSync(`${t.backupDir}/${f}`);
   });
 });
+
+describe("what people type", () => {
+  it("adds https:// to a bare link and rounds servings", async () => {
+    const r = await t.api("POST", "/api/recipes", { title: "Pie", sourceUrl: "allrecipes.com/recipe/12/pie", imageUrl: "images.site.com/pie.jpg", servings: 4.5, prepMinutes: 12.4 });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ sourceUrl: "https://allrecipes.com/recipe/12/pie", imageUrl: "https://images.site.com/pie.jpg", servings: 5, prepMinutes: 12 });
+    const bad = await t.api("POST", "/api/recipes", { title: "Pie", sourceUrl: "Grandma's card" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.details[0]).toMatchObject({ path: "sourceUrl", message: expect.stringContaining("Source name") });
+  });
+  it("a category or collection name can't be used twice, whatever the capitals", async () => {
+    expect((await t.api("POST", "/api/categories", { name: "Sweets" })).status).toBe(201);
+    const again = await t.api("POST", "/api/categories", { name: "sweets" });
+    expect([again.status, again.body.error]).toEqual([409, "There's already a category called sweets"]);
+    const lunch = (await t.api("GET", "/api/categories")).body.find((c: any) => c.name === "Lunch");
+    expect((await t.api("PATCH", `/api/categories/${lunch.id}`, { name: "SWEETS" })).status).toBe(409);
+    expect((await t.api("PATCH", `/api/categories/${lunch.id}`, { name: "lunch" })).status).toBe(200); // its own name, other capitals
+    await t.api("POST", "/api/collections", { name: "Holiday" });
+    expect((await t.api("POST", "/api/collections", { name: "holiday" })).status).toBe(409);
+  });
+});

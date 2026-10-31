@@ -1,10 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // The app version shown on the sign-in screen and under the account button (from package.json)
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
+// The API's address for `npm run dev`: API_PROXY_TARGET if set, otherwise the PORT in backend/.env
+// (so moving the API to another port is one change), otherwise 4000
+const backendEnv = new URL("../backend/.env", import.meta.url);
+const apiPort = existsSync(backendEnv) ? readFileSync(backendEnv, "utf8").match(/^PORT=(\d+)/m)?.[1] : undefined;
+const apiTarget = process.env.API_PROXY_TARGET ?? `http://localhost:${apiPort ?? 4000}`;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -13,7 +19,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // xfwd: pass the browser's address along, so Signed-in devices shows the real IP
-      "/api": { target: process.env.API_PROXY_TARGET ?? "http://localhost:4000", xfwd: true },
+      "/api": { target: apiTarget, xfwd: true },
     },
   },
 });

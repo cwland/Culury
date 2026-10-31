@@ -21,23 +21,25 @@ type Tx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 // ---------- input ----------
 
-const text = (max: number) =>
+const text = (max: number, what = "This") =>
   z
     .string()
     .trim()
-    .max(max)
+    .max(max, `${what} is too long (${max} characters at most)`)
     .nullable()
     .optional()
     .transform((v) => (v === undefined ? undefined : v || null));
-const minutes = z.coerce.number().int().min(0).max(100000).nullable().optional();
+const minutes = z.coerce.number({ error: "Minutes should be a number" }).min(0).max(100000).transform(Math.round).nullable().optional();
+// "allrecipes.com/recipe/1" is a link too: https:// is added
+export const withScheme = (v: string) => (/^[a-z][a-z0-9+.-]*:/i.test(v) || v.startsWith("/") || /\s/.test(v) || !/^[\w-]+(\.[\w-]+)+([/:?#].*)?$/.test(v) ? v : `https://${v}`);
 const link = z
   .string()
   .trim()
   .max(2000)
   .nullable()
   .optional()
-  .transform((v) => (v === undefined ? undefined : v || null))
-  .refine((v) => !v || /^https?:\/\/\S+$/i.test(v) || v.startsWith("/api/"), "Should be a web address (https://...)");
+  .transform((v) => (v === undefined ? undefined : v ? withScheme(v) : null))
+.refine((v) => !v || /^https?:\/\/\S+$/i.test(v) || v.startsWith("/api/"), "That isn't a web address (like https://site.com/page). Names like “Grandma's card” go in Source name.");
 
 // Ingredients: a block of text (one per line), or a list of lines or {raw} / {section} objects
 const ingredientList = z.union([
@@ -72,11 +74,11 @@ export const nutritionInput = z
   .strict();
 
 export const recipeFields = {
-  title: z.string().trim().min(1, "Give the recipe a name").max(300),
-  description: text(5000),
+  title: z.string().trim().min(1, "Give the recipe a name").max(300, "The name is too long (300 characters at most)"),
+  description: text(5000, "The description"),
   ingredients: ingredientList.optional(),
   steps: stepList.optional(),
-  servings: z.coerce.number().int().min(1).max(1000).nullable().optional(),
+  servings: z.coerce.number({ error: "Servings should be a number" }).min(0.5, "Servings should be at least 1").max(1000).transform((n) => Math.max(1, Math.round(n))).nullable().optional(),
   yieldText: text(100),
   prepMinutes: minutes,
   cookMinutes: minutes,

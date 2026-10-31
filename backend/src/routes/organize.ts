@@ -22,6 +22,11 @@ async function uniqueName<T>(fn: () => Promise<T>, what: string): Promise<T> {
 
 export default async function organizeRoutes(app: FastifyInstance) {
   const { db } = app;
+  // "Sweets" and "sweets" are the same name
+  const nameTaken = async (table: typeof categories | typeof collections, name: string, exceptId?: number) => {
+    const [row] = await db.select({ id: table.id }).from(table).where(sql`lower(${table.name}) = ${name.toLowerCase()}${exceptId ? sql` and ${table.id} <> ${exceptId}` : sql``}`);
+    return !!row;
+  };
 
   // ---------- tags (made by adding them to a recipe) ----------
   app.get("/api/tags", async () =>
@@ -72,6 +77,7 @@ export default async function organizeRoutes(app: FastifyInstance) {
 
   app.post("/api/categories", async (req, reply) => {
     const { name } = z.object({ name: label }).strict().parse(req.body);
+    if (await nameTaken(categories, name)) throw new HttpError(409, `There's already a category called ${name}`);
     const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${categories.sortOrder}), -1) + 1` }).from(categories);
     const [row] = await uniqueName(() => db.insert(categories).values({ name, sortOrder: Number(n) }).returning({ id: categories.id, name: categories.name }), "category");
     return reply.status(201).send({ ...row, count: 0 });
@@ -80,6 +86,7 @@ export default async function organizeRoutes(app: FastifyInstance) {
   app.patch("/api/categories/:id", async (req) => {
     const { id } = idParam.parse(req.params);
     const { name } = z.object({ name: label }).strict().parse(req.body);
+    if (await nameTaken(categories, name, id)) throw new HttpError(409, `There's already a category called ${name}`);
     const [row] = await uniqueName(() => db.update(categories).set({ name }).where(eq(categories.id, id)).returning({ id: categories.id, name: categories.name }), "category");
     if (!row) throw notFound("Category");
     return row;
@@ -117,6 +124,7 @@ export default async function organizeRoutes(app: FastifyInstance) {
 
   app.post("/api/collections", async (req, reply) => {
     const body = z.object({ name: label, description: optionalText }).strict().parse(req.body);
+    if (await nameTaken(collections, body.name)) throw new HttpError(409, `There's already a collection called ${body.name}`);
     const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${collections.sortOrder}), -1) + 1` }).from(collections);
     const [row] = await uniqueName(() => db.insert(collections).values({ ...body, sortOrder: Number(n) }).returning({ id: collections.id, name: collections.name, description: collections.description }), "collection");
     return reply.status(201).send({ ...row, count: 0, images: [] });
@@ -125,6 +133,7 @@ export default async function organizeRoutes(app: FastifyInstance) {
   app.patch("/api/collections/:id", async (req) => {
     const { id } = idParam.parse(req.params);
     const body = z.object({ name: label.optional(), description: optionalText }).strict().parse(req.body);
+    if (body.name && (await nameTaken(collections, body.name, id))) throw new HttpError(409, `There's already a collection called ${body.name}`);
     const [row] = await uniqueName(() => db.update(collections).set(body).where(eq(collections.id, id)).returning({ id: collections.id, name: collections.name, description: collections.description }), "collection");
     if (!row) throw notFound("Collection");
     return row;

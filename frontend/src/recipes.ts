@@ -233,3 +233,35 @@ export function itemAmount(i: { quantity: number | null; unit: string | null }) 
   const q = Math.max(whole + frac, FRACTIONS[0]?.[0] ?? 0.125);
   return [formatQuantity(q), unitLabel(i.unit, q)].filter(Boolean).join(" ");
 }
+
+// ---------- what people type in the editor ----------
+
+const NUMBER_WORDS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, dozen: 12 };
+
+// "4", "4.5" (-> 5), "2-3" / "2 to 3" (-> 2), "four", "serves 6" -> a whole number; undefined if it isn't one
+export function parseServings(s: string): number | null | undefined {
+  const t = s.trim().toLowerCase();
+  if (!t) return null;
+  const n = t.match(/\d+(?:[.,]\d+)?/)?.[0];
+  if (n) return Math.max(1, Math.round(Number(n.replace(",", "."))));
+  const word = t.split(/[\s-]+/).find((w) => w in NUMBER_WORDS);
+  return word ? NUMBER_WORDS[word] : undefined;
+}
+
+// "90", "1 hr", "1 hour 15 min", "1:30", "1.5 hours", "45m", "an hour" -> minutes; undefined if it isn't a time
+export function parseMinutes(s: string): number | null | undefined {
+  const t = s.trim().toLowerCase().replace(/,/g, ".");
+  if (!t) return null;
+  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t));
+  const clock = t.match(/^(\d+):(\d{1,2})$/);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  const num = (x: string) => (x in NUMBER_WORDS ? NUMBER_WORDS[x] : x === "half" || x === "half an" ? 0.5 : Number(x));
+  let total = 0;
+  let found = false;
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?|an?|one|two|three|four|five|six|half(?: an)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/g)) {
+    total += num(m[1]) * (m[2].startsWith("h") ? 60 : 1);
+    found = true;
+  }
+  if (/and a half/.test(t) && found) total += /hour|hr/.test(t) ? 30 : 0.5;
+  return found ? Math.round(total) : undefined;
+}
