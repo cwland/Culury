@@ -188,6 +188,7 @@ export interface Nutrition {
   sodium: number | null; // milligrams
   source: "site" | "ai" | "you";
   servings?: number | null; // the servings it was worked out for
+  servingSize?: string | null; // "About 1½ cups (340 g)"
   note?: string | null;
   outdated?: boolean; // the ingredients changed since (cleared by a new estimate or typing them in)
 }

@@ -107,6 +107,18 @@ describe("nutrition", () => {
     expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition).toBeNull();
   });
 
+  it("serving size: asked of the AI, kept from its answer, and can be typed in", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Chili", servings: 6, ingredients: "2 lb ground beef\n1 can beans" })).body;
+    await twoServices();
+    t.ai.respond = () => reply({ calories: 410, servingSize: "About 1½ cups (340 g)", note: "" });
+    expect((await t.api("POST", `/api/recipes/${r.id}/nutrition`)).body).toMatchObject({ servingSize: "About 1½ cups (340 g)" });
+    expect(t.ai.calls[0].body.messages[0].content).toContain("servingSize");
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 400, servingSize: "1 bowl" });
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition).toMatchObject({ servingSize: "1 bowl", source: "you" });
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 400 });
+    expect((await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition.servingSize).toBeNull();
+  });
+
   it("added sugars: asked of the AI, kept from its answer, and can be typed in", async () => {
     const r = (await t.api("POST", "/api/recipes", { title: "Cookies", servings: 12, ingredients: "1 cup sugar\n2 cups flour" })).body;
     await twoServices();

@@ -4,6 +4,7 @@ import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredi
 import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, UndoIcon, WandIcon, MoreIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
+import { useLive } from "../../live";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
@@ -37,6 +38,10 @@ export default function RecipeView({ id }: { id: number }) {
       .then(setR)
       .catch((e) => setError((e as Error).message));
   }, [id]);
+  // Auto nutrition finished for this recipe (here or on another device): show the new numbers
+  useLive(["recipes"], (e) => {
+    if (e.id === id) void api<Recipe>("GET", `/api/recipes/${id}`).then((fresh) => setR((x) => (x ? { ...x, nutrition: fresh.nutrition, nutritionUpdating: fresh.nutritionUpdating } : fresh)));
+  });
 
   if (error) return <Shell><p role="alert" className="rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p></Shell>;
   if (!r) return <Shell />;
@@ -49,6 +54,14 @@ export default function RecipeView({ id }: { id: number }) {
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+  // The AI check offer was turned down, or the check closed with nothing applied: with Auto
+  // nutrition on, the server works nutrition out now instead (it waited so AI wasn't asked twice)
+  const skipAiCheck = () => {
+    void api("POST", `/api/recipes/${r.id}/enhance/skip`)
+      .then(() => api<Recipe>("GET", `/api/recipes/${r.id}`))
+      .then((fresh) => setR((x) => (x ? { ...x, nutrition: fresh.nutrition, nutritionUpdating: fresh.nutritionUpdating } : x)))
+      .catch(() => {});
   };
   const undoAi = async () => {
     setUndoError("");
@@ -84,7 +97,14 @@ export default function RecipeView({ id }: { id: number }) {
           <WandIcon className="size-5 shrink-0 text-action" />
           <p className="min-w-0 flex-1">Check this recipe with AI? It can fill gaps in the steps, catch ingredient mistakes, estimate nutrition and suggest categories and tags.</p>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setOffer(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-subtle hover:underline">
+            <button
+              type="button"
+              onClick={() => {
+                setOffer(false);
+                skipAiCheck();
+              }}
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-subtle hover:underline"
+            >
               Not now
             </button>
             <button
@@ -262,13 +282,16 @@ export default function RecipeView({ id }: { id: number }) {
         )}
         <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
         <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
-        <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} onChange={(nutrition) => setR({ ...r, nutrition })} />
+        <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} updating={r.nutritionUpdating} onChange={(nutrition) => setR({ ...r, nutrition })} />
       </div>
 
       {enhancing && (
         <EnhanceWizard
           recipe={r}
-          onClose={() => setEnhancing(false)}
+          onClose={() => {
+            setEnhancing(false);
+            skipAiCheck();
+          }}
           onApplied={(updated) => {
             setR(updated);
             setEnhancing(false);

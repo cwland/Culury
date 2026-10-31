@@ -59,6 +59,7 @@ export interface Recipe {
   substitutions: Substitution[];
   nutrition: Nutrition | null;
   aiSnapshotAt?: string | null; // there's an AI Enhance change to undo
+  nutritionUpdating?: boolean; // Auto nutrition is working it out right now
 }
 
 // What AI Enhance suggests (POST /api/recipes/:id/enhance); nothing is saved until applied
@@ -81,18 +82,23 @@ export interface Nutrition {
   saturatedFat: number | null;
   carbs: number | null;
   fiber: number | null;
-  sugar: number | null;
+  sugar: number | null; // total sugars
+  addedSugar?: number | null; // the part that's added (older recipes don't have it)
   protein: number | null;
   sodium: number | null;
   source: "site" | "ai" | "you";
   servings?: number | null;
+  servingSize?: string | null; // "About 1½ cups (340 g)"
   note?: string | null;
+  outdated?: boolean; // the ingredients changed since these numbers
 }
 // A points-style estimate (like the ones diet programs use) from calories, saturated fat, sugar and
-// protein. Approximate, not any program's official number.
+// protein. Only added sugar counts when it's known (fruit and milk sugar don't), else total sugar.
+// Approximate, not any program's official number.
 export function pointsEstimate(n: Nutrition): number | null {
   if (n.calories === null) return null;
-  return Math.max(0, Math.round(n.calories * 0.0305 + (n.saturatedFat ?? 0) * 0.275 + (n.sugar ?? 0) * 0.12 - (n.protein ?? 0) * 0.098));
+  const sugar = n.addedSugar ?? n.sugar ?? 0;
+  return Math.max(0, Math.round(n.calories * 0.0305 + (n.saturatedFat ?? 0) * 0.275 + sugar * 0.12 - (n.protein ?? 0) * 0.098));
 }
 
 export interface RecipeSummary {

@@ -188,3 +188,23 @@ describe("the AI check", () => {
     expect(await nutritionOf(id)).toMatchObject({ calories: 400 });
   });
 });
+
+describe("the recipe page", () => {
+  it("knows while nutrition is being worked out", async () => {
+    await aiOn();
+    const id = await addQuietly();
+    t.ai.respond = () => reply(estimate);
+    const realKick = t.app.jobs.kick;
+    t.app.jobs.kick = () => {}; // hold the job
+    try {
+      await t.api("PATCH", `/api/recipes/${id}`, { ingredients: "3 lb ground beef" });
+      expect((await t.api("GET", `/api/recipes/${id}`)).body.nutritionUpdating).toBe(true);
+    } finally {
+      t.app.jobs.kick = realKick;
+    }
+    t.app.jobs.kick();
+    await t.app.jobs.drain();
+    expect((await t.api("GET", `/api/recipes/${id}`)).body.nutritionUpdating).toBe(false);
+  });
+});
+

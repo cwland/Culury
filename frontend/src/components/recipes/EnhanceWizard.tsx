@@ -157,6 +157,7 @@ const NUTRIENTS: [keyof Nutrition, string, string][] = [
   ["carbs", "Carbs", "g"],
   ["fiber", "Fiber", "g"],
   ["sugar", "Sugar", "g"],
+  ["addedSugar", "Added sugars", "g"],
   ["protein", "Protein", "g"],
   ["sodium", "Sodium", "mg"],
 ];
@@ -164,6 +165,12 @@ function NutritionList({ n }: { n: Nutrition | null }) {
   if (!n) return <p className="text-subtle">None yet</p>;
   return (
     <dl className="grid grid-cols-[auto_auto] justify-start gap-x-4 gap-y-0.5">
+      {n.servingSize && (
+        <div className="contents">
+          <dt className="text-subtle">Serving size</dt>
+          <dd>{n.servingSize}</dd>
+        </div>
+      )}
       {NUTRIENTS.map(([k, label, unit]) => (
         <div key={k} className="contents">
           <dt className="text-subtle">{label}</dt>

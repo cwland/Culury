@@ -12,12 +12,13 @@ const ROWS: { key: keyof Nutrition; label: string; unit: string; dv?: number; in
   { key: "carbs", label: "Total carbohydrate", unit: "g", dv: 275 },
   { key: "fiber", label: "Dietary fiber", unit: "g", dv: 28, indent: true },
   { key: "sugar", label: "Total sugars", unit: "g", indent: true },
+  { key: "addedSugar", label: "Added sugars", unit: "g", dv: 50, indent: true },
   { key: "protein", label: "Protein", unit: "g", dv: 50 },
 ];
 const SOURCE = { site: "From the recipe's site", ai: "Estimated by AI", you: "Entered by you" };
 const fmt = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
 
-export function NutritionCard({ recipeId, servings, value, onChange }: { recipeId: number; servings: number | null; value: Nutrition | null; onChange: (n: Nutrition | null) => void }) {
+export function NutritionCard({ recipeId, servings, value, updating, onChange }: { recipeId: number; servings: number | null; value: Nutrition | null; updating?: boolean; onChange: (n: Nutrition | null) => void }) {
   const ai = useAiStatus();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -41,7 +42,13 @@ export function NutritionCard({ recipeId, servings, value, onChange }: { recipeI
         <h2 className="mr-auto text-xl font-bold">Nutrition</h2>
         {value && <span className="text-sm text-subtle">per serving</span>}
       </div>
+      {updating && (
+        <p role="status" className="mt-2 text-sm font-semibold text-action">
+          Updating nutrition…
+        </p>
+      )}
       {!value ? (
+        updating ? null : (
         <>
           <p className="mt-2 text-subtle">No nutrition facts yet.</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -55,8 +62,20 @@ export function NutritionCard({ recipeId, servings, value, onChange }: { recipeI
             </button>
           </div>
         </>
+        )
       ) : (
         <>
+          {value.outdated && (
+            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-sm">
+              The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Estimate again to update them, or edit them." : "Edit them to match."}
+            </p>
+          )}
+          {value.servingSize && (
+            <p className="mt-3 flex justify-between gap-3 font-semibold">
+              <span>Serving size</span>
+              <span>{value.servingSize}</span>
+            </p>
+          )}
           <div className="mt-3 border-y-[6px] border-ink py-2">
             <div className="flex items-end justify-between">
               <span className="text-lg font-black">Calories</span>
@@ -72,7 +91,17 @@ export function NutritionCard({ recipeId, servings, value, onChange }: { recipeI
             </thead>
             <tbody>
               {ROWS.map((r) => {
-                const v = value[r.key] as number | null;
+                const v = (value[r.key] ?? null) as number | null;
+                // Like a US label: "Includes 10 g added sugars", under total sugars (only when known)
+                if (r.key === "addedSugar") {
+                  if (v === null) return null;
+                  return (
+                    <tr key={r.key} className="border-t border-line">
+                      <td className="py-1.5 pl-8">Includes {fmt(v)} g added sugars</td>
+                      <td className="py-1.5 text-right font-semibold">{Math.round((v / 50) * 100)}%</td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr key={r.key} className="border-t border-line">
                     <td className={`py-1.5 ${r.indent ? "pl-4" : "font-semibold"}`}>
@@ -86,7 +115,7 @@ export function NutritionCard({ recipeId, servings, value, onChange }: { recipeI
           </table>
           {points !== null && (
             <p className="mt-3 flex items-center justify-between rounded-lg bg-page px-3 py-2 text-sm">
-              <span title="Worked out from calories, saturated fat, sugar and protein, the way points-based diet plans do. Approximate, not any program's official number.">
+              <span title="Worked out from calories, saturated fat, sugar (only added sugar, when it's known) and protein, the way points-based diet plans do. Approximate, not any program's official number.">
                 Points <span className="text-subtle">(estimate)</span>
               </span>
               <strong className="text-lg">{points}</strong>
@@ -127,13 +156,13 @@ export function NutritionCard({ recipeId, servings, value, onChange }: { recipeI
 
 function EditNutrition({ value, onClose, onSave }: { value: Nutrition | null; onClose: () => void; onSave: (n: Nutrition | null) => Promise<void> }) {
   const keys = ["calories", ...ROWS.map((r) => r.key)] as (keyof Nutrition)[];
-  const [form, setForm] = useState<Record<string, string>>(() => Object.fromEntries(keys.map((k) => [k, value?.[k] == null ? "" : String(value[k])])));
+  const [form, setForm] = useState<Record<string, string>>(() => Object.fromEntries([...keys, "servingSize" as const].map((k) => [k, value?.[k] == null ? "" : String(value[k])])));
   const [error, setError] = useState("");
   const save = async (clear = false) => {
     try {
       if (clear) return await onSave(null);
       const n = Object.fromEntries(keys.map((k) => [k, form[k].trim() === "" ? null : Number(form[k])])) as unknown as Nutrition;
-      await onSave({ ...n, source: "you" });
+      await onSave({ ...n, servingSize: form.servingSize.trim() || null, source: "you" });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -142,6 +171,10 @@ function EditNutrition({ value, onClose, onSave }: { value: Nutrition | null; on
   return (
     <Popup title="Nutrition per serving" onClose={onClose}>
       <div className="grid grid-cols-2 gap-3 p-5">
+        <label className="col-span-2 text-sm font-semibold text-subtle">
+          Serving size
+          <input value={form.servingSize} onChange={(e) => setForm({ ...form, servingSize: e.target.value })} maxLength={100} placeholder="About 1½ cups (340 g)" className="mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action" />
+        </label>
         {keys.map((k) => (
           <label key={k} className="text-sm font-semibold text-subtle">
             {label(k)}

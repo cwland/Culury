@@ -17,8 +17,8 @@ const num = (v: unknown, max = 100000) => {
 // ---------- nutrition ----------
 
 const NUTRITION_SYSTEM = `You estimate nutrition for recipes. Reply with JSON only:
-{"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0, "note": ""}
-Values are for ONE serving: grams, except calories (kcal) and sodium (mg). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like (not fruit or milk). Use typical values from standard food tables (USDA) for the ingredients and amounts given, divided by the number of servings. If an amount is missing, assume a typical amount. "note": one short sentence on what you assumed, or "".`;
+{"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0, "servingSize": "", "note": ""}
+Values are for ONE serving: grams, except calories (kcal) and sodium (mg). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like (not fruit or milk). "servingSize": how much one serving is, in kitchen measures with an approximate weight, like "About 1½ cups (340 g)". Use typical values from standard food tables (USDA) for the ingredients and amounts given, divided by the number of servings. If an amount is missing, assume a typical amount. "note": one short sentence on what you assumed, or "".`;
 
 export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
@@ -38,6 +38,7 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
     sodium: num(json.sodium),
     source: "ai",
     servings: servings ?? (r.yieldText ? null : 4),
+    servingSize: typeof json.servingSize === "string" && json.servingSize.trim() ? json.servingSize.trim().slice(0, 100) : null,
     note: typeof json.note === "string" && json.note.trim() ? json.note.trim().slice(0, 300) : null,
   };
   if (out.calories === null) throw new AiError("The AI didn't give a calorie estimate. Try again.");

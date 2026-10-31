@@ -37,3 +37,22 @@ describe("AI Enhance switch", () => {
     expect(server.writes().find((w) => w.path === "/api/settings/features")?.body).toEqual({ aiEnhance: false });
   });
 });
+
+describe("Auto nutrition switch", () => {
+  it("saves right away", async () => {
+    const server = fakeServer({
+      "GET /api/settings/ai": () => ({ settings: null }),
+      "GET /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true, autoNutrition: true }),
+      "PUT /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true, autoNutrition: false }),
+    });
+    const u = userEvent.setup();
+    render(<AiSettings />);
+    const card = await screen.findByRole("region", { name: "Auto nutrition" });
+    const sw = within(card).getByRole("switch", { name: "Auto nutrition" });
+    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "true"));
+    await u.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "false"));
+    expect(server.writes().find((w) => w.path === "/api/settings/features")?.body).toEqual({ autoNutrition: false });
+  });
+});
+

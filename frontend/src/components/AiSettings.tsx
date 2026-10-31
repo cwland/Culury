@@ -934,6 +934,14 @@ export default function AiSettings() {
       >
         {null}
       </FeatureSwitch>
+      <FeatureSwitch
+        feature="autoNutrition"
+        title="Auto nutrition"
+        text="Work out nutrition by itself: for a new recipe once its AI check is done or skipped, and again whenever its ingredients change. Numbers you typed in are never replaced; the recipe says when they're out of date."
+        offText="Off: nutrition is only worked out when you press Estimate with AI. Out-of-date numbers are still pointed out."
+      >
+        {null}
+      </FeatureSwitch>
     </>
   );
 }

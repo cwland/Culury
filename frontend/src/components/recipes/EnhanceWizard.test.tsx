@@ -183,3 +183,16 @@ describe("a slow AI service", () => {
     expect(screen.queryByRole("button", { name: /^Skip/ })).toBeNull();
   });
 });
+
+describe("AI check nutrition", () => {
+  it("shows added sugars and the serving size it suggests", async () => {
+    const withMore = suggestion({ nutrition: { suggested: { calories: 410, fat: 22, saturatedFat: 8, carbs: 10, fiber: 3, sugar: 2, addedSugar: 1, protein: 33, sodium: 640, source: "ai", servings: 4, servingSize: "About 1 cup", note: null }, changes: [], changed: true } });
+    open({ "POST /api/recipes/7/enhance": () => withMore });
+    const nut = await screen.findByRole("region", { name: "Nutrition" }, { timeout: 3000 });
+    expect(within(nut).getByText("Added sugars")).toBeInTheDocument();
+    expect(within(nut).getByText("1 g")).toBeInTheDocument();
+    expect(within(nut).getByText("Serving size")).toBeInTheDocument();
+    expect(within(nut).getByText("About 1 cup")).toBeInTheDocument();
+  });
+});
+

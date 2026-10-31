@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMinutes, parseServings } from "./recipes";
+import { parseMinutes, parseServings, pointsEstimate, type Nutrition } from "./recipes";
 
 describe("editor numbers", () => {
   it("servings", () => {
@@ -28,3 +28,16 @@ describe("times as recipe cards write them", () => {
     expect(parseMinutes("until golden")).toBeUndefined();
   });
 });
+
+describe("points estimate", () => {
+  const n = (over: Partial<Nutrition>): Nutrition => ({ calories: 300, fat: null, saturatedFat: 4, carbs: null, fiber: null, sugar: 20, protein: 10, sodium: null, source: "ai", ...over });
+  it("counts added sugar when it's known (fruit and milk sugar don't count against you)", () => {
+    expect(pointsEstimate(n({ addedSugar: 0 }))).toBeLessThan(pointsEstimate(n({}))!);
+    expect(pointsEstimate(n({ addedSugar: 20 }))).toBe(pointsEstimate(n({})));
+  });
+  it("uses total sugar when added sugar isn't known", () => {
+    expect(pointsEstimate(n({ addedSugar: null }))).toBe(pointsEstimate(n({ addedSugar: undefined })));
+    expect(pointsEstimate(n({ addedSugar: null }))).toBe(12);
+  });
+});
+

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/index.js";
 import {
   categories,
+  jobs,
   collectionRecipes,
   collections,
   recipeCategories,
@@ -71,6 +72,7 @@ export const nutritionInput = z
     sodium: amount,
     source: z.enum(["site", "ai", "you"]).default("you"),
     servings: z.number().int().min(1).max(1000).nullable().optional(),
+    servingSize: z.string().trim().max(100).nullable().default(null),
     note: z.string().trim().max(500).nullable().optional(),
   })
   .strict();
@@ -255,6 +257,11 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
   const cats = await db.select({ id: categories.id, name: categories.name }).from(recipeCategories).innerJoin(categories, eq(categories.id, recipeCategories.categoryId)).where(eq(recipeCategories.recipeId, id)).orderBy(asc(categories.sortOrder), asc(categories.name));
   const cols = await db.select({ id: collections.id, name: collections.name }).from(collectionRecipes).innerJoin(collections, eq(collections.id, collectionRecipes.collectionId)).where(eq(collectionRecipes.recipeId, id)).orderBy(asc(collections.sortOrder), asc(collections.name));
   const [me] = userId ? await db.select().from(recipeUser).where(and(eq(recipeUser.recipeId, id), eq(recipeUser.userId, userId))) : [];
+  const [working] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.kind, "nutrition"), inArray(jobs.status, ["queued", "running"]), sql`${jobs.payload}->>'recipeId' = ${String(id)}`))
+    .limit(1);
   const [snap] = await db.select({ at: recipeSnapshots.createdAt }).from(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id));
   const subs = await db.select({ id: substitutions.id, original: substitutions.original, replacement: substitutions.replacement, note: substitutions.note, createdAt: substitutions.createdAt }).from(substitutions).where(eq(substitutions.recipeId, id)).orderBy(desc(substitutions.createdAt), desc(substitutions.id));
   return {
@@ -265,6 +272,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
     me: { favorite: me?.favorite ?? false, pinned: me?.pinned ?? false, rating: me?.rating ?? null, notes: me?.notes ?? null },
     substitutions: subs,
     aiSnapshotAt: snap?.at ?? null, // there's an AI Enhance change to undo
+    nutritionUpdating: !!working, // Auto nutrition is working it out right now
   };
 }
 

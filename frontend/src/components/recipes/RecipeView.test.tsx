@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import RecipeView from "./RecipeView";
 import { fakeServer, recipeJson } from "../../test/fakeServer";
 import { forgetAiStatus } from "../../ai";
+import { setToken } from "../../api";
 
 const OFFER = "Check this recipe with AI? It can fill gaps in the steps, catch ingredient mistakes, estimate nutrition and suggest categories and tags.";
 const enhancement = {
@@ -122,3 +123,49 @@ describe("recipe page buttons", () => {
     expect(await screen.findByRole("dialog", { name: "Delete this recipe?" })).toBeInTheDocument();
   });
 });
+
+describe("Auto nutrition on the recipe page", () => {
+  const skips = (server: { writes: () => { path: string }[] }) => server.writes().filter((w) => w.path === "/api/recipes/7/enhance/skip");
+
+  it("Not now on the AI check offer lets nutrition be worked out", async () => {
+    window.location.hash = "#/recipes/7?added=1";
+    const s = server(on, recipeJson(), { "POST /api/recipes/7/enhance/skip": () => ({ status: 204 }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const offer = await screen.findByRole("region", { name: "AI check offer" });
+    await u.click(within(offer).getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(skips(s)).toHaveLength(1));
+  });
+
+  it("closing the AI check without applying anything lets nutrition be worked out too", async () => {
+    const s = server(on, recipeJson(), { "POST /api/recipes/7/enhance/skip": () => ({ status: 204 }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "AI check" }));
+    await u.click(await screen.findByRole("button", { name: "Keep original" }));
+    await waitFor(() => expect(skips(s)).toHaveLength(1));
+  });
+
+  it("while nutrition is being worked out it says so, and shows it as soon as it's done", async () => {
+    setToken("t");
+    let done = false;
+    let send: (s: string) => void = () => {};
+    const stream = new ReadableStream({ start: (c) => void (send = (s) => c.enqueue(new TextEncoder().encode(s))) });
+    server(on, recipeJson(), {
+      "GET /api/recipes/7": () => recipeJson(done ? { nutrition: { calories: 410, fat: 20, saturatedFat: 7, carbs: 30, fiber: 6, sugar: 14, addedSugar: 12, protein: 33, sodium: 640, source: "ai", servings: 4 }, nutritionUpdating: false } : { nutritionUpdating: true }),
+      "GET /api/events": () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    });
+    try {
+      const { unmount } = render(<RecipeView id={7} />);
+      const panel = await screen.findByRole("region", { name: "Nutrition" });
+      expect(within(panel).getByRole("status")).toHaveTextContent("Updating nutrition…");
+      done = true;
+      send(`data: ${JSON.stringify({ topic: "recipes", id: 7, by: null })}\n\n`);
+      await waitFor(() => expect(within(panel).getByText("410")).toBeInTheDocument());
+      unmount();
+    } finally {
+      setToken(null);
+    }
+  });
+});
+
