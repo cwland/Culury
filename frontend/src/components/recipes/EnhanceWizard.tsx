@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, getToken } from "../../api";
 import { Popup } from "../Popup";
-import { Check } from "../Icons";
+import { Check, ChevronRight } from "../Icons";
 import { stepLabel, type Enhancement, type Nutrition, type Recipe } from "../../recipes";
 
 // One line of the progress list from the server
@@ -58,7 +58,9 @@ const ASKED = [
 ];
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-function ProgressList({ lines, working, onSkip }: { lines: Progress[]; working: boolean; onSkip: (s: Skip) => void }) {
+// collapsed: the check is done and the suggestions are showing; a > opens the list again
+function ProgressList({ lines, working, onSkip, collapsed }: { lines: Progress[]; working: boolean; onSkip: (s: Skip) => void; collapsed?: boolean }) {
+  const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [tip, setTip] = useState(0);
   useEffect(() => {
@@ -67,8 +69,19 @@ function ProgressList({ lines, working, onSkip }: { lines: Progress[]; working: 
     const r = setInterval(() => setTip((i) => (i + 1) % ASKED.length), 3500);
     return () => (clearInterval(t), clearInterval(r));
   }, [working]);
+  if (collapsed && !open)
+    return (
+      <button type="button" aria-expanded={false} onClick={() => setOpen(true)} className="flex items-center gap-1.5 self-start rounded-lg px-1 py-1 text-sm font-semibold text-subtle hover:text-ink">
+        <ChevronRight className="size-4" /> What the AI did ({lines.length} steps)
+      </button>
+    );
   return (
     <div className="rounded-xl bg-page p-4">
+      {collapsed && (
+        <button type="button" aria-expanded={true} onClick={() => setOpen(false)} className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-subtle hover:text-ink">
+          <ChevronRight className="size-4 rotate-90" /> What the AI did ({lines.length} steps)
+        </button>
+      )}
       <ul role="log" aria-label="AI check progress" className="space-y-1.5 text-sm">
         {lines.map((l, i) => {
           const active = working && i === lines.length - 1;
@@ -309,7 +322,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   return (
     <Popup title="AI check" onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
-        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} />}
+        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
         {error && (
           <div role="alert" className="rounded-xl bg-error-subtle p-4">
             <p>{error}</p>

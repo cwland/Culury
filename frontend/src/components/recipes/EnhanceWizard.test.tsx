@@ -113,7 +113,9 @@ describe("AI check progress and fuller instructions", () => {
     live.push({ type: "result", enhancement: suggestion() });
     live.end();
     expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
-    // the list stays, so you can see what it did
+    // done: the list folds away behind a ">", and opens again on click
+    expect(screen.queryByRole("log", { name: "AI check progress" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: /What the AI did/ }));
     const done = within(screen.getByRole("log", { name: "AI check progress" }));
     expect(done.getByText("Instructions: 1 step filled in or fixed")).toBeInTheDocument();
     expect(done.getByText("Asked Home AI (qwen3-vl:32b)")).toBeInTheDocument(); // finished: past tense, with how long it took
@@ -167,6 +169,7 @@ describe("a slow AI service", () => {
     const calls = server.sent.filter((s) => s.path.startsWith("/api/recipes/7/enhance"));
     expect(calls.map((c) => c.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance?skip=home"]);
     expect(calls[0].signal?.aborted).toBe(true); // the first request was stopped
+    await u.click(screen.getByRole("button", { name: /What the AI did/ }));
     const log = within(screen.getByRole("log", { name: "AI check progress" }));
     expect(log.getByText("Skipped Home AI")).toBeInTheDocument();
     expect(log.getAllByText(/^Reading/)).toHaveLength(1);
