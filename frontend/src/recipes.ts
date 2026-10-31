@@ -58,6 +58,20 @@ export interface Recipe {
   me: Mine;
   substitutions: Substitution[];
   nutrition: Nutrition | null;
+  aiSnapshotAt?: string | null; // there's an AI Enhance change to undo
+}
+
+// What AI Enhance suggests (POST /api/recipes/:id/enhance); nothing is saved until applied
+export interface EnhanceSection<T> {
+  suggested: T;
+  changes: string[];
+  changed: boolean;
+}
+export interface Enhancement {
+  steps: EnhanceSection<string[]>;
+  ingredients: EnhanceSection<string[]>;
+  nutrition: EnhanceSection<Nutrition | null>;
+  organize: { categories: string[]; newCategories: string[]; tags: string[]; changes: string[]; changed: boolean };
 }
 
 // Per serving: grams, calories in kcal, sodium in mg

@@ -1,0 +1,97 @@
+import { describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import EnhanceWizard from "./EnhanceWizard";
+import { fakeServer, recipeJson } from "../../test/fakeServer";
+import type { Recipe } from "../../recipes";
+
+const recipe = recipeJson() as unknown as Recipe;
+const suggestion = (over: Record<string, unknown> = {}) => ({
+  steps: { suggested: ["Brown the beef over medium-high heat, about 8 minutes.", "Simmer for 30 minutes."], changes: ["Added how long to brown the beef."], changed: true },
+  ingredients: { suggested: ["1 lb ground beef", "2 tbsp chili powder", "1 tsp salt"], changes: ["Added salt."], changed: true },
+  nutrition: { suggested: { calories: 410, fat: 22, saturatedFat: 8, carbs: 10, fiber: 3, sugar: 2, protein: 33, sodium: 640, source: "ai", servings: 4, note: null }, changes: ["Estimated from the ingredients."], changed: true },
+  organize: { categories: ["Dinner", "Soup"], newCategories: ["Soup"], tags: ["chili"], changes: ["Added Soup.", "Swapped beef for chili."], changed: true },
+  ...over,
+});
+const open = (routes: Record<string, any> = {}) => {
+  const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion(), "POST /api/recipes/7/enhance/apply": () => recipeJson({ aiSnapshotAt: "2026-10-31T10:00:00Z" }), ...routes });
+  const onApplied = vi.fn();
+  const onClose = vi.fn();
+  render(<EnhanceWizard recipe={recipe} onClose={onClose} onApplied={onApplied} />);
+  return { server, onApplied, onClose };
+};
+
+describe("AI Enhance wizard", () => {
+  it("shows original and suggestion side by side for each section", async () => {
+    open();
+    const steps = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    expect(within(steps).getByRole("heading", { name: "Original" })).toBeInTheDocument();
+    expect(within(steps).getByRole("heading", { name: "AI suggestion" })).toBeInTheDocument();
+    expect(within(steps).getByText("Brown the beef.")).toBeInTheDocument();
+    expect(within(steps).getByText("Brown the beef over medium-high heat, about 8 minutes.").closest("mark")).not.toBeNull();
+    expect(within(steps).getAllByText("Simmer for 30 minutes.").every((el) => !el.closest("mark"))).toBe(true);
+    expect(within(steps).getByText("Added how long to brown the beef.")).toBeInTheDocument();
+    const ing = screen.getByRole("region", { name: "Ingredients" });
+    expect(within(ing).getByText("1 tsp salt").closest("mark")).not.toBeNull();
+    const nut = screen.getByRole("region", { name: "Nutrition" });
+    expect(within(nut).getByText(/none/i)).toBeInTheDocument();
+    expect(within(nut).getByText(/410/)).toBeInTheDocument();
+    const org = screen.getByRole("region", { name: "Categories and tags" });
+    expect(within(org).getByText("new")).toBeInTheDocument();
+    expect(within(org).getByText("beef").closest("s")).not.toBeNull();
+    expect(within(org).getByText("chili").closest("mark")).not.toBeNull();
+    for (const name of ["Instructions", "Ingredients", "Nutrition", "Categories and tags"])
+      expect(within(screen.getByRole("region", { name })).getByRole("checkbox", { name: "Use this" })).toBeChecked();
+  });
+
+  it("Apply selected sends only the ticked sections", async () => {
+    const u = userEvent.setup();
+    const { server, onApplied } = open();
+    const nut = await screen.findByRole("region", { name: "Nutrition" }, { timeout: 3000 });
+    await u.click(within(nut).getByRole("checkbox", { name: "Use this" }));
+    await u.click(screen.getByRole("button", { name: "Apply selected" }));
+    await vi.waitFor(() => expect(onApplied).toHaveBeenCalled());
+    const body = server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body;
+    expect(Object.keys(body).sort()).toEqual(["categories", "ingredients", "steps", "tags"]);
+    expect(body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili"], ingredients: ["1 lb ground beef", "2 tbsp chili powder", "1 tsp salt"] });
+    expect(onApplied.mock.calls[0][0]).toMatchObject({ aiSnapshotAt: "2026-10-31T10:00:00Z" });
+  });
+
+  it("a section with no changes is unticked and says so", async () => {
+    open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: ["Brown the beef.", "Simmer for 30 minutes."], changes: [], changed: false } }) });
+    const steps = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    expect(within(steps).getByText("No changes")).toBeInTheDocument();
+    expect(within(steps).queryByRole("checkbox", { name: "Use this" })).toBeNull();
+  });
+
+  it("Keep original closes without saving anything", async () => {
+    const u = userEvent.setup();
+    const { server, onClose } = open();
+    await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Keep original" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance"]);
+  });
+
+  it("when the AI fails it says why and Try again asks again", async () => {
+    const u = userEvent.setup();
+    let calls = 0;
+    const { server } = open({
+      "POST /api/recipes/7/enhance": () => (++calls === 1 ? { status: 502, json: { error: "OpenRouter's answer couldn't be read. Try again, or try another AI service." } } : suggestion()),
+    });
+    expect(await screen.findByText(/couldn't be read/, undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply selected" })).toBeNull();
+    await u.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 })).toBeInTheDocument();
+    expect(server.writes().filter((w) => w.path === "/api/recipes/7/enhance")).toHaveLength(2);
+  });
+
+  it("a recipe deleted meanwhile: applying shows the message instead of crashing", async () => {
+    const u = userEvent.setup();
+    const { onApplied } = open({ "POST /api/recipes/7/enhance/apply": () => ({ status: 404, json: { error: "Recipe not found" } }) });
+    await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Apply selected" }));
+    expect(await screen.findByText("Recipe not found")).toBeInTheDocument();
+    expect(onApplied).not.toHaveBeenCalled();
+  });
+});
