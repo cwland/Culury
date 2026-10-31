@@ -11,6 +11,7 @@ import { jobView } from "../lib/importJobs.js";
 import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements, undoEnhancements } from "../lib/enhance.js";
 import { loadRecipe } from "../lib/recipes.js";
 import { userOf } from "./recipes.js";
+import { afterAiCheck, nutritionWanted } from "../lib/nutrition.js";
 
 // AI for everyone in the household (the settings themselves are the owner's, under /api/settings/ai)
 export default async function aiRoutes(app: FastifyInstance) {
@@ -82,13 +83,26 @@ export default async function aiRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const body = applyInput.parse(req.body ?? {});
     await requireEnhance(db, ai);
+    const [before] = await db.select({ ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
     await applyEnhancements(db, id, body, userOf(req));
+    if (before) await afterAiCheck(app, id, before.ingredients, body.nutrition !== undefined);
     return loadRecipe(db, id, userOf(req));
+  });
+  // "Not now" on the AI check offer: nutrition it would have estimated is worked out now (Auto nutrition)
+  app.post("/api/recipes/:id/enhance/skip", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [r] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, id));
+    if (!r) throw notFound("Recipe");
+    await nutritionWanted(app, id);
+    return reply.status(204).send();
   });
   // Undo works even if AI has been switched off since: it only puts the recipe back
   app.post("/api/recipes/:id/enhance/undo", async (req) => {
     const { id } = idParam.parse(req.params);
+    const [before] = await db.select({ ingredients: recipes.ingredients, nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
     await undoEnhancements(db, id);
+    const [after] = await db.select({ nutrition: recipes.nutrition }).from(recipes).where(eq(recipes.id, id));
+    if (before && after) await afterAiCheck(app, id, before.ingredients, JSON.stringify(before.nutrition) !== JSON.stringify(after.nutrition));
     return loadRecipe(db, id, userOf(req));
   });
 

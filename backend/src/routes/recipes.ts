@@ -5,6 +5,7 @@ import { recipeSnapshots, recipeUser, recipes, substitutions } from "../db/schem
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { createRecipe, listQuery, listRecipes, loadRecipe, saveRecipe, updateRecipe } from "../lib/recipes.js";
+import { ingredientsChanged, ingredientsUpdated, recipeAdded } from "../lib/nutrition.js";
 
 // Who's asking: a signed-in person, or null for an API key (keys belong to the household, not a person)
 export const userOf = (req: FastifyRequest) => (req.auth?.method === "token" ? req.auth.userId : null);
@@ -29,6 +30,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
   app.post("/api/recipes", async (req, reply) => {
     const body = createRecipe.parse(req.body);
     const id = await saveRecipe(db, null, body, userOf(req));
+    await recipeAdded(app, id, { offered: userOf(req) !== null }); // (an API key never sees the AI check offer)
     return reply.status(201).send(await loadRecipe(db, id, userOf(req)));
   });
 
@@ -36,8 +38,12 @@ export default async function recipeRoutes(app: FastifyInstance) {
   app.patch("/api/recipes/:id", async (req) => {
     const { id } = idParam.parse(req.params);
     const body = updateRecipe.parse(req.body);
-    const [before] = await db.select({ imageUrl: recipes.imageUrl }).from(recipes).where(eq(recipes.id, id));
+    const [before] = await db.select({ imageUrl: recipes.imageUrl, ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
     await saveRecipe(db, id, body, userOf(req));
+    if (before && body.ingredients !== undefined) {
+      const [after] = await db.select({ ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+      if (ingredientsChanged(before.ingredients, after.ingredients)) await ingredientsUpdated(app, id);
+    }
     await db.delete(recipeSnapshots).where(eq(recipeSnapshots.recipeId, id)); // edited by hand: "Undo AI changes" would wipe the edit
     // A new photo (or none): the old one goes, if it was uploaded here and nothing else uses it
     if (body.imageUrl !== undefined && before?.imageUrl && body.imageUrl !== before.imageUrl) {

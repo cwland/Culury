@@ -9,12 +9,14 @@ import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromPh
 import type { JobQueue, JobRow } from "./jobs.js";
 import type { Photos } from "./photos.js";
 import { createRecipe, saveRecipe } from "./recipes.js";
+import { recipeAdded } from "./nutrition.js";
 
 interface Deps {
   db: Db;
   ai: AiService;
   photos: Photos;
   fetchOptions: FetchOptions; // tests swap in fake pages
+  jobs: JobQueue;
 }
 
 // A recipe already saved from this page, if any
@@ -62,6 +64,9 @@ async function store(d: Deps, r: ImportedRecipe & { notes?: string | null }, job
     ...(fromApp && r.notes ? { notes: r.notes.slice(0, 20000) } : {}),
   });
   const recipeId = await saveRecipe(d.db, null, input, job.createdBy);
+  // Nutrition (Auto nutrition): not for every recipe in a whole file, only one at a time.
+  // Imported by a person: they're offered the AI check; with an API key, nobody is.
+  if (how !== "file") await recipeAdded(d, recipeId, { offered: job.createdBy !== null });
   return { recipeId, title: input.title, how, ...(warnings.length ? { warnings } : {}) };
 }
 

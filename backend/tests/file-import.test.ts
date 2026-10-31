@@ -101,6 +101,13 @@ describe("importing a file", () => {
     return (await t.api("GET", `/api/imports/${r.json().id}`)).body;
   };
 
+  it("doesn't ask AI for the nutrition of every recipe in the file", async () => {
+    await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+    await t.api("PUT", "/api/settings/features", { aiEnhance: false });
+    await run("My Recipes.paprikarecipes", paprikaFile([paprikaRecipe(), paprikaRecipe({ name: "Toast", source_url: "", source: "", ingredients: "2 slices bread" })]));
+    expect(t.ai.calls.filter((c) => String(c.body.messages[0].content).startsWith("You estimate nutrition"))).toHaveLength(0);
+  });
+
   it("adds every recipe with its photo, categories and your rating, then skips them the second time", async () => {
     const file = paprikaFile([paprikaRecipe({ photo_data: jpeg.toString("base64") }), paprikaRecipe({ name: "Toast", source_url: "", source: "", ingredients: "2 slices bread", categories: [], rating: 0 })]);
     const job = await run("My Recipes.paprikarecipes", file);
