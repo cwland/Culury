@@ -10,6 +10,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.11.0",
+    date: "2026-10-31",
+    title: "Recipe versions",
+    changes: [
+      "Every recipe keeps its versions. An import or a new recipe is v1, and an AI check that changes the steps or ingredients saves a new version.",
+      "When you edit a recipe, Save asks: save to the current version, or save as a new version (so the recipe as it was stays). Changing only tags, categories or the photo saves straight away.",
+      "Recipe pages have tabs: Active recipe, Nutrition (everything nutrition, moved here) and Version history, which lists each version with its date, who made it and what changed. Set any version active again, or delete ones you don't need.",
+      "Undo AI changes is gone: go back with Set active on the version from before. Recipes that could be undone already have that version.",
+      "Switch versioning off in Settings › Recipes: edits then save over the recipe without asking, and the versions you have are kept.",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-10-31",
     title: "Nutrition that keeps up",
