@@ -5,6 +5,7 @@ import { readArchive } from "../src/lib/backup.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestApp, type TestApp } from "./helpers.js";
 import { toCsv } from "../src/lib/dataExport.js";
+import { sql } from "drizzle-orm";
 
 let t: TestApp;
 beforeAll(async () => (t = await setupTestApp()));
@@ -66,7 +67,7 @@ describe("restore", () => {
     const res = await t.api("POST", "/api/import?confirm=replace", exported);
     expect(res.status).toBe(200);
     expect(res.body.safetyBackup).toMatch(/before-restore\.tar\.gz$/);
-    expect((await t.api("GET", "/api/settings/features")).body).toEqual({ apiKeys: true, ai: false, aiEnhance: false, autoNutrition: false });
+    expect((await t.api("GET", "/api/settings/features")).body).toEqual({ apiKeys: true, ai: false, aiEnhance: false, autoNutrition: false, recipeVersions: true });
     expect((await t.api("GET", "/api/auth/me")).body.user.username).toBe("cory");
   });
 
@@ -90,6 +91,21 @@ describe("restore", () => {
     const ex = await raw("/api/export?photos=true");
     expect(ex.headers["content-disposition"]).toMatch(/\.tar\.gz"$/);
     expect(((await readArchive(ex.rawPayload)).data as any).data.recipes).toHaveLength(1);
+  });
+
+  it("a backup keeps every version of a recipe", async () => {
+    const id = (await t.api("POST", "/api/recipes", { title: "Chili", ingredients: "1 lb beef" })).body.id;
+    await t.app.db.execute(sql`delete from recipe_versions where recipe_id = ${id}`);
+    await t.app.db.execute(sql`insert into recipe_versions (recipe_id, number, source, summary, data, active) values (${id}, 1, 'created', 'Added', '{"title":"Chili"}', false), (${id}, 2, 'edit', 'Changed the title', '{"title":"Texas Chili"}', true)`);
+    const exported = JSON.parse((await raw("/api/export")).body);
+    expect(exported.data.recipeVersions).toHaveLength(2);
+    await t.app.db.execute(sql`delete from recipe_versions`);
+    expect((await t.api("POST", "/api/import?confirm=replace", exported)).status).toBe(200);
+    const back = (await t.app.db.execute(sql`select number, summary, active from recipe_versions order by number`)).rows;
+    expect(back).toEqual([
+      { number: 1, summary: "Added", active: false },
+      { number: 2, summary: "Changed the title", active: true },
+    ]);
   });
 
   it("refuses an archive that isn't a backup", async () => {

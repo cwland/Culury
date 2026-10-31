@@ -2,7 +2,8 @@ import { sql } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { aisleChoices, categories, collectionRecipes, collections, groceryItems, groceryLists, mealPlan, pantryItems, recipeCategories, recipeSnapshots, recipeTags, recipeUser, recipes, substitutions, tags, users } from "../db/schema.js";
+import { aisleChoices, categories, collectionRecipes, collections, groceryItems, groceryLists, mealPlan, pantryItems, recipeCategories, recipeSnapshots,
+  recipeVersions, recipeTags, recipeUser, recipes, substitutions, tags, users } from "../db/schema.js";
 import { refreshSearch } from "./recipes.js";
 import { exportSettings, importSettings, type BackupSecrets, type SettingsSection } from "./settingsBackup.js";
 
@@ -36,6 +37,7 @@ export const DATA_TABLES: DataTable[] = [
   { key: "pantryItems", table: pantryItems },
   { key: "aisleChoices", table: aisleChoices },
   { key: "recipeSnapshots", table: recipeSnapshots },
+  { key: "recipeVersions", table: recipeVersions, user: { column: "createdBy", missing: "null" } },
 ];
 
 const sqlName = (t: PgTable) => getTableConfig(t).name;

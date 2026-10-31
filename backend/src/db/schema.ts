@@ -14,7 +14,9 @@ import {
   real,
   primaryKey,
   customType,
+  unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // PostgreSQL full-text search document
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
@@ -278,6 +280,40 @@ export const recipeSnapshots = pgTable("recipe_snapshots", {
   data: jsonb("data").$type<RecipeSnapshot>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Recipe versions. Each one is a full copy of the recipe's own content (not its tags, categories,
+// collections, photo or anyone's favorites and notes). The recipe row always holds the active
+// version's content, so search, the grocery list, the meal plan and Cook Mode just read recipes.
+export interface RecipeVersionData {
+  title: string;
+  description: string | null;
+  ingredients: Ingredient[];
+  steps: Step[];
+  servings: number | null;
+  yieldText: string | null;
+  prepMinutes: number | null;
+  cookMinutes: number | null;
+  totalMinutes: number | null;
+  notes: string | null;
+  nutrition: Nutrition | null;
+}
+export const recipeVersions = pgTable(
+  "recipe_versions",
+  {
+    id: serial("id").primaryKey(),
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(), // v1, v2… (not reused after a delete)
+    source: text("source").$type<"import" | "created" | "ai" | "edit">().notNull(),
+    summary: text("summary").notNull(), // "Imported", "Changed ingredients and steps"…
+    data: jsonb("data").$type<RecipeVersionData>().notNull(),
+    active: boolean("active").notNull().default(false),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("recipe_versions_number").on(t.recipeId, t.number), uniqueIndex("recipe_versions_one_active").on(t.recipeId).where(sql`${t.active}`)]
+);
 
 // Hand-picked lists in your own order: "Quick Meals", "Ninja CREAMi", "Thanksgiving"
 export const collections = pgTable("collections", {
