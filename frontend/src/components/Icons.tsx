@@ -6,6 +6,7 @@ import {
   ChefHat,
   Clock,
   Copy,
+  Ellipsis,
   Undo2,
   WandSparkles,
   ExternalLink,
@@ -70,6 +71,7 @@ export const BackIcon = icon(ArrowLeft, "size-5", 1.8);
 export const ChefIcon = icon(ChefHat, "size-8", 1.5);
 export const ClockIcon = icon(Clock, "size-4", 1.8);
 export const CopyIcon = icon(Copy, "size-4", 1.8);
+export const MoreIcon = icon(Ellipsis, "size-4", 2);
 export const WandIcon = icon(WandSparkles, "size-4", 1.8);
 export const UndoIcon = icon(Undo2, "size-4", 1.8);
 export const LinkOutIcon = icon(ExternalLink, "size-4", 1.8);

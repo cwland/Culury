@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, UndoIcon, WandIcon } from "../Icons";
+import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, UndoIcon, WandIcon, MoreIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
 import { Popup } from "../Popup";
@@ -29,6 +29,7 @@ export default function RecipeView({ id }: { id: number }) {
   const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
   const [undoError, setUndoError] = useState("");
+  const [more, setMore] = useState(false);
 
   useEffect(() => {
     setR(null);
@@ -48,10 +49,6 @@ export default function RecipeView({ id }: { id: number }) {
     } catch (e) {
       setError((e as Error).message);
     }
-  };
-  const duplicate = async () => {
-    const copy = await api<Recipe>("POST", `/api/recipes/${r.id}/duplicate`);
-    window.location.hash = `#/recipes/${copy.id}/edit`;
   };
   const undoAi = async () => {
     setUndoError("");
@@ -113,7 +110,14 @@ export default function RecipeView({ id }: { id: number }) {
         <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
         <div className="flex flex-col p-5 sm:p-7 md:pt-5">
           {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
-          <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
+          <div className="mt-1 flex items-start justify-between gap-4">
+            <h1 className="text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
+            {r.steps.length > 0 && (
+              <a href={`#/recipes/${r.id}/cook`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+                <ChefIcon className="size-4" /> Start cooking
+              </a>
+            )}
+          </div>
           {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
 
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -147,12 +151,8 @@ export default function RecipeView({ id }: { id: number }) {
             <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
           </div>
 
+          {/* Using it */}
           <div className="flex flex-wrap gap-2 pt-5">
-            {r.steps.length > 0 && (
-              <a href={`#/recipes/${r.id}/cook`} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
-                <ChefIcon className="size-4" /> Start cooking
-              </a>
-            )}
             {r.ingredients.length > 0 && (
               <button type="button" onClick={() => setShopping(true)} className={smallButton}>
                 <GroceryIcon className="size-4" /> Add to grocery list
@@ -170,6 +170,9 @@ export default function RecipeView({ id }: { id: number }) {
             <button type="button" onClick={() => setSharing(true)} className={smallButton}>
               <ShareIcon /> Share
             </button>
+          </div>
+          {/* Changing it */}
+          <div className="flex flex-wrap gap-2 pt-2">
             <a href={`#/recipes/${r.id}/edit`} className={smallButton}>
               <EditIcon /> Edit
             </a>
@@ -178,17 +181,23 @@ export default function RecipeView({ id }: { id: number }) {
                 <WandIcon /> AI check
               </button>
             )}
-            {r.aiSnapshotAt && (
-              <button type="button" onClick={() => void undoAi()} className={smallButton}>
-                <UndoIcon /> Undo AI changes
+            <div className="relative">
+              <button type="button" aria-label="More" aria-expanded={more} onClick={() => setMore((m) => !m)} className={smallButton}>
+                <MoreIcon />
               </button>
-            )}
-            <button type="button" onClick={() => void duplicate()} className={smallButton}>
-              <CopyIcon /> Duplicate
-            </button>
-            <button type="button" onClick={() => setConfirmDelete(true)} className={`${smallButton} text-error`}>
-              <Trash /> Delete
-            </button>
+              {more && (
+                <div role="menu" className="absolute left-0 z-30 mt-1 w-56 overflow-hidden rounded-xl bg-container py-1 shadow-[0_8px_28px_rgba(0,0,0,0.16)]" onMouseLeave={() => setMore(false)}>
+                  {r.aiSnapshotAt && (
+                    <button role="menuitem" type="button" onClick={() => (setMore(false), void undoAi())} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-pressed">
+                      <UndoIcon /> Undo AI changes
+                    </button>
+                  )}
+                  <button role="menuitem" type="button" onClick={() => (setMore(false), setConfirmDelete(true))} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-error hover:bg-error-subtle">
+                    <Trash /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </section>

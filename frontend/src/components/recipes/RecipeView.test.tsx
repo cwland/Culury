@@ -68,7 +68,7 @@ describe("AI Enhance on the recipe page", () => {
     expect(await screen.findByRole("dialog", { name: "AI check" })).toBeInTheDocument();
   });
 
-  it("Undo AI changes shows after applying and puts the original back", async () => {
+  it("Undo AI changes is in the More menu after applying, and puts the original back", async () => {
     const changed = recipeJson({ steps: [{ text: "Brown the beef well, about 8 minutes." }, { text: "Simmer for 30 minutes." }], aiSnapshotAt: "2026-10-31T10:00:00Z" });
     const s = server(on, recipeJson({ aiSnapshotAt: null }), {
       "POST /api/recipes/7/enhance/apply": () => changed,
@@ -77,16 +77,20 @@ describe("AI Enhance on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     expect(await screen.findByRole("button", { name: "AI check" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Undo AI changes" })).toBeNull();
+    await u.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: "Undo AI changes" })).toBeNull(); // nothing to undo yet
+    await u.click(screen.getByRole("button", { name: "More" }));
     await u.click(screen.getByRole("button", { name: "AI check" }));
     await u.click(await screen.findByRole("button", { name: "Apply selected" }));
-    const undo = await screen.findByRole("button", { name: "Undo AI changes" });
-    expect(screen.queryByRole("dialog", { name: "AI check" })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "AI check" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Undo AI changes" })).toBeNull(); // not on the button row
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent(/Brown the beef well, about 8 minutes/);
-    await u.click(undo);
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Undo AI changes" })).toBeNull());
-    expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Brown the beef.");
+    await u.click(screen.getByRole("button", { name: "More" }));
+    await u.click(await screen.findByRole("menuitem", { name: "Undo AI changes" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Brown the beef."));
     expect(screen.getByRole("region", { name: "Steps" })).not.toHaveTextContent("about 8 minutes");
+    await u.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: "Undo AI changes" })).toBeNull();
     expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply", "/api/recipes/7/enhance/undo"]);
   });
 });
@@ -99,5 +103,22 @@ describe("expanded steps on the recipe page", () => {
     expect(within(steps).getByText("Brown:").tagName).toBe("STRONG");
     expect(within(steps).getByText("Sear the Pork Chops")).toBeInTheDocument();
     expect(within(steps).getByRole("button", { name: /3–5 minutes/ })).toBeInTheDocument(); // the timer still works
+  });
+});
+
+describe("recipe page buttons", () => {
+  it("Start cooking sits on the title line; no Duplicate; Delete is under More", async () => {
+    server(on);
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const title = await screen.findByRole("heading", { name: "Weeknight Chili" });
+    expect(within(title.parentElement!).getByRole("link", { name: /Start cooking/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Duplicate/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
+    await u.click(screen.getByRole("button", { name: "More" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent?.trim())).toEqual(["Delete"]);
+    await u.click(within(menu).getByRole("menuitem", { name: "Delete" }));
+    expect(await screen.findByRole("dialog", { name: "Delete this recipe?" })).toBeInTheDocument();
   });
 });
