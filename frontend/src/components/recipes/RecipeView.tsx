@@ -111,7 +111,7 @@ export default function RecipeView({ id }: { id: number }) {
       {/* Header: photo, name, the facts, and what you can do with it */}
       <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
-        <div className="flex flex-col p-5 sm:p-7">
+        <div className="flex flex-col p-5 sm:p-7 md:justify-center">
           {r.categories.length > 0 && <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>}
           <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
           {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
@@ -147,7 +147,7 @@ export default function RecipeView({ id }: { id: number }) {
             <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
           </div>
 
-          <div className="mt-auto flex flex-wrap gap-2 pt-5">
+          <div className="flex flex-wrap gap-2 pt-5">
             {r.steps.length > 0 && (
               <a href={`#/recipes/${r.id}/cook`} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
                 <ChefIcon className="size-4" /> Start cooking
@@ -305,14 +305,15 @@ function PhotoSlot({ recipe, onChange }: { recipe: Recipe; onChange: (url: strin
   };
   return (
     <label
-      className="group relative block cursor-pointer"
+      // Every recipe photo is the same 4:3 box, cropped to fill (uploads come in all shapes)
+      className="group relative block aspect-[4/3] cursor-pointer overflow-hidden"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
         void send(e.dataTransfer.files[0]);
       }}
     >
-      <RecipeImage src={recipe.imageUrl} title={recipe.title} className="aspect-[4/3] h-full w-full md:aspect-auto md:min-h-72" />
+      <RecipeImage src={recipe.imageUrl} title={recipe.title} className="absolute inset-0 h-full w-full" />
       <input type="file" accept="image/*" className="sr-only" aria-label={recipe.imageUrl ? "Change photo" : "Add a photo"} onChange={(e) => void send(e.target.files?.[0])} />
       <span className={`absolute bottom-3 left-3 rounded-full bg-container/90 px-3 py-1.5 text-sm font-semibold shadow transition ${recipe.imageUrl && !busy ? "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}>
         {busy ? "Uploading…" : recipe.imageUrl ? "Change photo" : "Add a photo"}
