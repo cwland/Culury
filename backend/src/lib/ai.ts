@@ -393,9 +393,15 @@ export class AiService {
 
   // A tiny round trip to prove the key, address and model work
   async test(c: AiConfig, timeoutMs = 60000) {
-    const text = await this.chat(c, "You reply with JSON only.", 'Reply with exactly this JSON: {"ok": true}', 50, timeoutMs);
+    // Room for models that think before answering (Qwen3, DeepSeek-R1, gpt-oss): their thinking counts too
+    const { text, stop } = await this.chatRaw(c, "You reply with JSON only.", 'Reply with exactly this JSON: {"ok": true}', 1000, timeoutMs);
+    const outOfRoom = !!stop && /length|max_tokens/i.test(stop);
+    if (!text.trim())
+      throw new AiError(
+        `The model sent back an empty answer${outOfRoom ? " (it ran out of room before answering)" : ""}. Models that think before answering can use up their room that way. Try a version without thinking (an "instruct" model), or Save anyway: real jobs give it more room.`
+      );
     const parsed = parseJsonReply(text);
-    if (!parsed || (parsed as any).ok !== true) throw new AiError(`The model answered, but not with the expected JSON. It said: ${text.slice(0, 120)}`);
+    if (!parsed || (parsed as any).ok !== true) throw new AiError(`The model answered, but not with the expected JSON${outOfRoom ? " (it ran out of room)" : ""}. It said: ${text.slice(0, 120)}`);
   }
 }
 

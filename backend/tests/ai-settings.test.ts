@@ -93,6 +93,19 @@ describe("AI settings", () => {
     expect((await t.api("POST", "/api/settings/ai/test", { provider: "openai", model: "m" })).body.error).toMatch(/Couldn't reach/);
   });
 
+  it("a thinking model gets room to answer, and an empty answer is explained", async () => {
+    t.ai.respond = () => ({ status: 200, json: { choices: [{ message: { content: '{"ok": true}' }, finish_reason: "stop" }] } });
+    expect((await t.api("POST", "/api/settings/ai/test", { provider: "local", baseUrl: "http://10.0.0.5:11434/v1", model: "qwen3-vl:32b" })).status).toBe(200);
+    expect(t.ai.calls.at(-1)!.body.max_tokens).toBeGreaterThanOrEqual(1000);
+    // it thought until it ran out of room and sent back nothing
+    t.ai.respond = () => ({ status: 200, json: { choices: [{ message: { content: "", reasoning: "Okay, the user wants JSON..." }, finish_reason: "length" }] } });
+    const err = (await t.api("POST", "/api/settings/ai/test", { provider: "local", baseUrl: "http://10.0.0.5:11434/v1", model: "qwen3-vl:32b" })).body.error;
+    expect(err).toMatch(/sent back an empty answer/);
+    expect(err).toMatch(/thinking/i);
+    expect(err).toMatch(/ran out of room/);
+    expect(err).not.toMatch(/It said:\s*$/);
+  });
+
   it("lists models for the picker", async () => {
     t.ai.respond = fake;
     // The form sends enabled: true and no model yet: listing must still work
