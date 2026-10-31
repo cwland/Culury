@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
+import type { Recipe } from "../../recipes";
+import { Popup } from "../Popup";
 
 // One version as GET /api/recipes/:id/versions lists it (newest first)
 export interface VersionInfo {
@@ -15,15 +17,38 @@ const SOURCE: Record<VersionInfo["source"], string> = { import: "Import", create
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 
 // The Version history tab: every saved version of the recipe and what changed in each
-export function VersionHistory({ recipeId, reloadKey }: { recipeId: number; reloadKey?: unknown }) {
+// (Set active and Delete for every version but the active one)
+export function VersionHistory({ recipeId, reloadKey, onActivated }: { recipeId: number; reloadKey?: unknown; onActivated: (r: Recipe) => void }) {
   const [versions, setVersions] = useState<VersionInfo[] | null>(null);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
-  useEffect(() => {
+  const load = () =>
     api<VersionInfo[]>("GET", `/api/recipes/${recipeId}/versions`)
       .then(setVersions)
       .catch((e) => setError((e as Error).message));
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recipeId, reloadKey]);
+
+  const act = async (number: number, what: () => Promise<void>) => {
+    setBusy(number);
+    setError("");
+    try {
+      await what();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(null);
+  };
+  const activate = (number: number) => act(number, async () => onActivated(await api<Recipe>("POST", `/api/recipes/${recipeId}/versions/${number}/activate`)));
+  const remove = (number: number) => {
+    setDeleting(null);
+    return act(number, async () => void (await api("DELETE", `/api/recipes/${recipeId}/versions/${number}`)));
+  };
 
   return (
     <section aria-label="Version history" className="rounded-2xl bg-container p-5 sm:p-6">
@@ -49,9 +74,34 @@ export function VersionHistory({ recipeId, reloadKey }: { recipeId: number; relo
                 </span>
               </div>
               <p className="mt-1">{v.summary}</p>
+              {!v.active && (
+                <div className="mt-2 flex gap-4 text-sm">
+                  <button type="button" disabled={busy !== null} onClick={() => void activate(v.number)} className="font-semibold text-link hover:underline disabled:opacity-60">
+                    {busy === v.number ? "Working…" : "Set active"}
+                  </button>
+                  <button type="button" disabled={busy !== null} onClick={() => setDeleting(v.number)} className="font-semibold text-error hover:underline disabled:opacity-60">
+                    Delete
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
+      )}
+      {deleting !== null && (
+        <Popup title={`Delete v${deleting}?`} onClose={() => setDeleting(null)}>
+          <div className="p-6">
+            <p>This version of the recipe will be gone for everyone in your household. The recipe itself stays as it is.</p>
+            <div className="mt-5 flex gap-3">
+              <button type="button" onClick={() => void remove(deleting)} className="rounded bg-error px-5 py-2.5 font-semibold text-white hover:opacity-90">
+                Delete v{deleting}
+              </button>
+              <button type="button" onClick={() => setDeleting(null)} className="px-2 py-2.5 font-semibold text-subtle hover:underline">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Popup>
       )}
     </section>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import RecipeEditor from "./RecipeEditor";
 import { fakeServer, recipeJson } from "../../test/fakeServer";
@@ -106,7 +106,59 @@ describe("editing a recipe", () => {
     await u.clear(name);
     await u.type(name, "Best Chili");
     await u.click(screen.getByRole("button", { name: "Save changes" }));
+    await u.click(await screen.findByRole("button", { name: "Save to current version" }));
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/7"));
-    expect(server.writes()[0]).toMatchObject({ method: "PATCH", body: { title: "Best Chili", categories: [3], tags: ["beef"] } });
+    expect(server.writes()[0]).toMatchObject({ method: "PATCH", body: { title: "Best Chili", categories: [3], tags: ["beef"], version: "current" } });
+  });
+});
+
+describe("saving changes with recipe versioning", () => {
+  const edit = async (over: Record<string, unknown> = {}) => {
+    const server = fakeServer({ ...lists, "GET /api/recipes/7": () => recipeJson(over), "PATCH /api/recipes/7": (body) => recipeJson({ title: body.title }) });
+    const u = userEvent.setup();
+    window.location.hash = "#/recipes/7/edit";
+    render(<RecipeEditor id={7} />);
+    await screen.findByLabelText("Name");
+    return { server, u };
+  };
+
+  it("asks: save to the current version, or as a new one", async () => {
+    const { server, u } = await edit();
+    await u.type(screen.getByLabelText("Ingredients"), "\n1 tsp salt");
+    await u.click(screen.getByRole("button", { name: "Save changes" }));
+    const ask = await screen.findByRole("dialog", { name: "Save your changes" });
+    expect(ask).toHaveTextContent("Save changes to the current version, or save them as a new version?");
+    expect(server.writes()).toHaveLength(0);
+    await u.click(within(ask).getByRole("button", { name: "Save as new version" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/7"));
+    expect(server.writes()[0].body).toMatchObject({ version: "new" });
+  });
+
+  it("cancel goes back to the form and saves nothing", async () => {
+    const { server, u } = await edit();
+    await u.type(screen.getByLabelText("Name"), "!");
+    await u.click(screen.getByRole("button", { name: "Save changes" }));
+    await u.click(within(await screen.findByRole("dialog", { name: "Save your changes" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Save your changes" })).toBeNull();
+    expect(server.writes()).toHaveLength(0);
+    expect(screen.getByLabelText("Name")).toHaveValue("Weeknight Chili!");
+  });
+
+  it("only tags, categories or collections changed: saved straight away (they aren't in versions)", async () => {
+    const { server, u } = await edit();
+    await u.click(screen.getByRole("button", { name: "Dinner" }));
+    await u.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(server.writes()).toHaveLength(1));
+    expect(screen.queryByRole("dialog", { name: "Save your changes" })).toBeNull();
+    expect(server.writes()[0].body.version).toBeUndefined();
+  });
+
+  it("versioning off: saved straight away", async () => {
+    const { server, u } = await edit({ versioning: false });
+    await u.type(screen.getByLabelText("Name"), "!");
+    await u.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(server.writes()).toHaveLength(1));
+    expect(screen.queryByRole("dialog", { name: "Save your changes" })).toBeNull();
+    expect(server.writes()[0].body.version).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import { ingredientsText, parseMinutes, parseServings, stepsText, type Collectio
 import { clearUnsaved, useUnsavedGuard } from "../../unsavedGuard";
 import { BackIcon, CloseIcon } from "../Icons";
 import { RecipeImage } from "./RecipeList";
+import { Popup } from "../Popup";
 
 interface Form {
   title: string;
@@ -45,6 +46,9 @@ const fromRecipe = (r: Recipe): Form => ({
   collections: r.collections.map((c) => c.id),
 });
 
+// The parts of a recipe kept in its versions (tags, categories, collections, photo and source aren't)
+const VERSIONED: (keyof Form)[] = ["title", "description", "servings", "yieldText", "prepMinutes", "cookMinutes", "totalMinutes", "ingredients", "steps", "notes"];
+
 const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2.5 outline-none focus:border-action focus:ring-2 focus:ring-action/15";
 const labelText = "text-sm font-semibold text-subtle";
 const card = "rounded-2xl bg-container p-5 sm:p-6";
@@ -58,6 +62,9 @@ export default function RecipeEditor({ id }: { id?: number }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [versioning, setVersioning] = useState(false);
+  // Saving changes with versioning on: what to send while asking "current or new version?"
+  const [asking, setAsking] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     void api<TagInfo[]>("GET", "/api/categories").then(setCategories);
@@ -67,6 +74,7 @@ export default function RecipeEditor({ id }: { id?: number }) {
       api<Recipe>("GET", `/api/recipes/${id}`)
         .then((r) => {
           const f = fromRecipe(r);
+          setVersioning(!!r.versioning);
           setForm(f);
           setStart(f);
         })
@@ -123,8 +131,20 @@ export default function RecipeEditor({ id }: { id?: number }) {
       categories: form.categories,
       collections: form.collections,
     };
+    // An edit to what versions keep: ask whether it goes into the current version or a new one
+    if (id && versioning && VERSIONED.some((k) => form[k] !== start[k])) {
+      setBusy(false);
+      setAsking(body);
+      return;
+    }
+    await send(body);
+  };
+
+  const send = async (body: Record<string, unknown>, version?: "current" | "new") => {
+    setBusy(true);
+    setAsking(null);
     try {
-      const r = await api<Recipe>(id ? "PATCH" : "POST", id ? `/api/recipes/${id}` : "/api/recipes", body);
+      const r = await api<Recipe>(id ? "PATCH" : "POST", id ? `/api/recipes/${id}` : "/api/recipes", version ? { ...body, version } : body);
       setStart(form); // saved: leaving is fine now
       clearUnsaved("recipe-editor");
       window.location.hash = id ? `#/recipes/${r.id}` : `#/recipes/${r.id}?added=1`; // new: the page offers an AI check
@@ -281,6 +301,25 @@ export default function RecipeEditor({ id }: { id?: number }) {
           {error && <span role="alert" className="text-error">{error}</span>}
         </div>
       </form>
+      {asking && (
+        <Popup title="Save your changes" onClose={() => setAsking(null)}>
+          <div className="p-6">
+            <p>Save changes to the current version, or save them as a new version?</p>
+            <p className="mt-2 text-sm text-subtle">A new version keeps the recipe as it was in Version history, so you can go back to it.</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button type="button" onClick={() => void send(asking, "new")} className="rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed">
+                Save as new version
+              </button>
+              <button type="button" onClick={() => void send(asking, "current")} className="rounded border border-line px-5 py-2.5 font-semibold hover:bg-pressed">
+                Save to current version
+              </button>
+              <button type="button" onClick={() => setAsking(null)} className="px-2 py-2.5 font-semibold text-subtle hover:underline">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Popup>
+      )}
     </Frame>
   );
 }

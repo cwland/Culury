@@ -206,3 +206,49 @@ describe("recipe tabs", () => {
   });
 });
 
+describe("version history actions", () => {
+  const versions = (active: number) => [
+    { number: 2, source: "edit", summary: "Changed the title", active: active === 2, createdAt: "2026-10-31T22:20:00.000Z", by: "Cory" },
+    { number: 1, source: "created", summary: "Added", active: active === 1, createdAt: "2026-10-30T12:00:00.000Z", by: "Cory" },
+  ];
+  const history = async (more: Record<string, any> = {}) => {
+    let active = 2;
+    let gone = false;
+    const s = server(on, recipeJson({ title: "Texas Chili" }), {
+      "GET /api/recipes/7/versions": () => versions(active).filter((v) => !(gone && v.number === 1)),
+      "POST /api/recipes/7/versions/1/activate": () => ((active = 1), recipeJson({ title: "Weeknight Chili", updatedAt: "2026-10-31T23:00:00.000Z" })),
+      "DELETE /api/recipes/7/versions/1": () => ((gone = true), { status: 204 }),
+      ...more,
+    });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("tab", { name: "Version history" }));
+    await screen.findByRole("list", { name: "Versions" });
+    return { s, u, item: (n: number) => screen.getAllByRole("listitem").find((li) => li.textContent?.startsWith(`v${n}`))! };
+  };
+
+  it("the active version has no Set active or Delete", async () => {
+    const { item } = await history();
+    expect(within(item(2)).queryByRole("button")).toBeNull();
+    expect(within(item(1)).getByRole("button", { name: "Set active" })).toBeInTheDocument();
+    expect(within(item(1)).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("Set active makes the recipe that version", async () => {
+    const { s, u, item } = await history();
+    await u.click(within(item(1)).getByRole("button", { name: "Set active" }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Weeknight Chili"));
+    await waitFor(() => expect(item(1)).toHaveTextContent("Active"));
+    expect(s.writes().map((w) => `${w.method} ${w.path}`)).toEqual(["POST /api/recipes/7/versions/1/activate"]);
+  });
+
+  it("Delete asks first, then removes it", async () => {
+    const { s, u, item } = await history();
+    await u.click(within(item(1)).getByRole("button", { name: "Delete" }));
+    const ask = await screen.findByRole("dialog", { name: "Delete v1?" });
+    await u.click(within(ask).getByRole("button", { name: "Delete v1" }));
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+    expect(s.writes().map((w) => `${w.method} ${w.path}`)).toEqual(["DELETE /api/recipes/7/versions/1"]);
+  });
+});
+

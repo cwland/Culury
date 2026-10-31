@@ -301,7 +301,7 @@ export default function RecipeView({ id }: { id: number }) {
       )}
       {tab === "history" && r.versioning && (
         <div role="tabpanel" id="panel-history" aria-labelledby="tab-history" className="mt-4">
-          <VersionHistory recipeId={r.id} reloadKey={r.updatedAt} />
+          <VersionHistory recipeId={r.id} reloadKey={r.updatedAt} onActivated={setR} />
         </div>
       )}
 

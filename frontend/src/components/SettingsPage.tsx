@@ -1,6 +1,7 @@
 import { FeatureSwitch } from "./FeatureSwitch";
 import ThemePicker from "./ThemePicker";
 import OrganizeSettings from "./OrganizeSettings";
+import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
 import { UpdatesSettings } from "./UpdateBar";
 import { useEffect, useState } from "react";
 import DataSettings from "./DataSettings";
@@ -77,7 +78,12 @@ export default function SettingsPage() {
             <ThemePicker />
           </>
         )}
-        {tab === "recipes" && <OrganizeSettings />}
+        {tab === "recipes" && (
+          <>
+            {owner && <RecipeVersionSwitch />}
+            <OrganizeSettings />
+          </>
+        )}
         {tab === "household" && <HouseholdSettings />}
         {tab === "security" && (
           <>
