@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash } from "../Icons";
+import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, CopyIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, UndoIcon, WandIcon } from "../Icons";
+import { useAiStatus } from "../../ai";
+import EnhanceWizard from "./EnhanceWizard";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
 import AddToListDialog from "../grocery/AddToListDialog";
@@ -22,6 +24,11 @@ export default function RecipeView({ id }: { id: number }) {
   const [shopping, setShopping] = useState(false);
   const [sharing, setSharing] = useState(false);
   const prefs = useCookPrefs(id);
+  const ai = useAiStatus();
+  // Just added (typed in or imported): offer an AI check once
+  const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
+  const [enhancing, setEnhancing] = useState(false);
+  const [undoError, setUndoError] = useState("");
 
   useEffect(() => {
     setR(null);
@@ -46,6 +53,14 @@ export default function RecipeView({ id }: { id: number }) {
     const copy = await api<Recipe>("POST", `/api/recipes/${r.id}/duplicate`);
     window.location.hash = `#/recipes/${copy.id}/edit`;
   };
+  const undoAi = async () => {
+    setUndoError("");
+    try {
+      setR(await api<Recipe>("POST", `/api/recipes/${r.id}/enhance/undo`));
+    } catch (e) {
+      setUndoError((e as Error).message);
+    }
+  };
   const remove = async () => {
     await api("DELETE", `/api/recipes/${r.id}`);
     window.location.hash = "#/recipes";
@@ -65,6 +80,32 @@ export default function RecipeView({ id }: { id: number }) {
         <p role="status" className="mb-3 rounded-lg bg-success-subtle px-4 py-3 text-success">
           Imported. Give it a quick look, and <a href={`#/recipes/${r.id}/edit`} className="font-semibold underline">edit</a> anything that came through wrong.
           {/[?&]imported=warn/.test(window.location.hash) && " The photo couldn't be saved here, so it's shown from the site."}
+        </p>
+      )}
+      {ai.enhance && offer && (
+        <section aria-label="AI check offer" className="mb-3 flex flex-wrap items-center gap-3 rounded-lg bg-brand-subtle px-4 py-3">
+          <WandIcon className="size-5 shrink-0 text-action" />
+          <p className="min-w-0 flex-1">Check this recipe with AI? It can fill gaps in the steps, catch ingredient mistakes, estimate nutrition and suggest categories and tags.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setOffer(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-subtle hover:underline">
+              Not now
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOffer(false);
+                setEnhancing(true);
+              }}
+              className="rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              Check with AI
+            </button>
+          </div>
+        </section>
+      )}
+      {undoError && (
+        <p role="alert" className="mb-3 rounded-lg bg-error-subtle px-4 py-3 text-error">
+          {undoError}
         </p>
       )}
       {/* Header: photo, name, the facts, and what you can do with it */}
@@ -132,6 +173,16 @@ export default function RecipeView({ id }: { id: number }) {
             <a href={`#/recipes/${r.id}/edit`} className={smallButton}>
               <EditIcon /> Edit
             </a>
+            {ai.enhance && (
+              <button type="button" onClick={() => setEnhancing(true)} className={smallButton}>
+                <WandIcon /> AI check
+              </button>
+            )}
+            {r.aiSnapshotAt && (
+              <button type="button" onClick={() => void undoAi()} className={smallButton}>
+                <UndoIcon /> Undo AI changes
+              </button>
+            )}
             <button type="button" onClick={() => void duplicate()} className={smallButton}>
               <CopyIcon /> Duplicate
             </button>
@@ -202,6 +253,16 @@ export default function RecipeView({ id }: { id: number }) {
         <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} onChange={(nutrition) => setR({ ...r, nutrition })} />
       </div>
 
+      {enhancing && (
+        <EnhanceWizard
+          recipe={r}
+          onClose={() => setEnhancing(false)}
+          onApplied={(updated) => {
+            setR(updated);
+            setEnhancing(false);
+          }}
+        />
+      )}
       {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : {}) }] }} onClose={() => setShopping(false)} />}
       {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}

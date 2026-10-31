@@ -25,7 +25,7 @@ describe("adding a recipe by hand", () => {
     await u.type(screen.getByLabelText("Ingredients"), "2 cups flour{Enter}2 eggs");
     await u.click(await screen.findByRole("button", { name: "Breakfast" }));
     await u.click(screen.getByRole("button", { name: "Save recipe" }));
-    await waitFor(() => expect(window.location.hash).toBe("#/recipes/42"));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/42?added=1"));
     expect(server.writes()).toEqual([
       {
         method: "POST",

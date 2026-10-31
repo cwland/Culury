@@ -127,7 +127,7 @@ export default function RecipeEditor({ id }: { id?: number }) {
       const r = await api<Recipe>(id ? "PATCH" : "POST", id ? `/api/recipes/${id}` : "/api/recipes", body);
       setStart(form); // saved: leaving is fine now
       clearUnsaved("recipe-editor");
-      window.location.hash = `#/recipes/${r.id}`;
+      window.location.hash = id ? `#/recipes/${r.id}` : `#/recipes/${r.id}?added=1`; // new: the page offers an AI check
     } catch (err) {
       if (err instanceof ApiError && err.details) {
         setErrors(Object.fromEntries(err.details.map((d) => [d.path, d.message])));
