@@ -115,3 +115,38 @@ describe("helpers", () => {
     expect(["192.168.1.20", "10.0.0.5", "93.184.216.34", "2606:4700::1"].map(blockedAddress)).toEqual([false, false, false, false]);
   });
 });
+
+describe("schema.org as real sites write it", () => {
+  const base = { "@type": "Recipe", name: "Pie", recipeIngredient: ["1 crust"], recipeInstructions: ["Bake."] };
+  it("Yoast: the picture is a reference to an ImageObject elsewhere in the @graph", () => {
+    const html = page({
+      "@context": "https://schema.org",
+      "@graph": [
+        { "@type": "ImageObject", "@id": "https://blog.test/pie/#primaryimage", url: "https://blog.test/wp-content/pie.jpg", width: 1200 },
+        { ...base, image: { "@id": "https://blog.test/pie/#primaryimage" } },
+      ],
+    });
+    expect(recipeFromJsonLd(html, "https://blog.test/pie/")!.imageUrl).toBe("https://blog.test/wp-content/pie.jpg");
+  });
+  it("the recipe is the mainEntity of a WebPage", () => {
+    expect(recipeFromJsonLd(page({ "@type": "WebPage", mainEntity: base }), "https://x.test/")!.title).toBe("Pie");
+  });
+  it("the script is wrapped in CDATA comments", () => {
+    const html = `<script type="application/ld+json">/*<![CDATA[*/ ${JSON.stringify(base)} /*]]>*/</script>`;
+    expect(recipeFromJsonLd(html, "https://x.test/")!.title).toBe("Pie");
+  });
+  it("a raw line break inside a string (invalid JSON some sites send)", () => {
+    const html = `<script type="application/ld+json">{"@type":"Recipe","name":"Pie","recipeIngredient":["1 crust"],"recipeInstructions":["Bake until
+golden."]}</script>`;
+    expect(recipeFromJsonLd(html, "https://x.test/")!.steps).toEqual(["Bake until golden."]);
+  });
+  it("HTML entities in ingredients and steps", () => {
+    const r = recipeFromJsonLd(page({ ...base, recipeIngredient: ["&frac12; cup sugar", "1 cup flour &amp; more"], recipeInstructions: [{ "@type": "HowToStep", text: "<p>Heat to 350&deg;F &ndash; then bake.</p>" }] }), "https://x.test/")!;
+    expect(r.ingredients).toEqual(["½ cup sugar", "1 cup flour & more"]);
+    expect(r.steps).toEqual(["Heat to 350°F – then bake."]);
+  });
+  it("a brine that takes a day and a yield given as a range", () => {
+    const r = recipeFromJsonLd(page({ ...base, totalTime: "P1DT2H", recipeYield: "6-8 servings" }), "https://x.test/")!;
+    expect(r).toMatchObject({ totalMinutes: 1560, servings: 6, yieldText: "6-8 servings" });
+  });
+});

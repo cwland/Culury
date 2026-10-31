@@ -48,7 +48,13 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
 
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res: Response;
+  try {
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch {
+    // offline, server restarting, Wi-Fi dropped: the browser only says "Failed to fetch"
+    throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
+  }
 
   if (res.status === 401 && !path.startsWith("/api/auth/")) {
     setToken(null);

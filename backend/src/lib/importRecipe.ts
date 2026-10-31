@@ -158,7 +158,8 @@ export function recipeFromJsonLd(html: string, pageUrl: string): ImportedRecipe 
   const $ = cheerio.load(html);
   for (const el of $('script[type="application/ld+json"]').toArray()) {
     let data: unknown;
-    const raw = $(el).contents().text().trim();
+    // some sites wrap it: /*<![CDATA[*/ {...} /*]]>*/
+    const raw = $(el).contents().text().trim().replace(/^\/\*\s*<!\[CDATA\[\s*\*\/|\/\*\s*\]\]>\s*\*\/$/g, "").trim();
     try {
       data = JSON.parse(raw);
     } catch {
@@ -170,6 +171,13 @@ export function recipeFromJsonLd(html: string, pageUrl: string): ImportedRecipe 
     }
     const r = findRecipe(data);
     if (!r) continue;
+    // Yoast and others point at the picture by @id: { "@id": "…#primaryimage" } is an ImageObject elsewhere
+    const ref = r.image && typeof r.image === "object" && !Array.isArray(r.image) ? (r.image as Record<string, unknown>)["@id"] : undefined;
+    if (ref && !(r.image as Record<string, unknown>).url) {
+      const graph = [(data as Record<string, unknown>)?.["@graph"] ?? data].flat() as Record<string, unknown>[];
+      const node = graph.find((n) => n && typeof n === "object" && n["@id"] === ref);
+      if (node) r.image = node;
+    }
     const title = plain(r.name) || plain(r.headline);
     const ingredients = [r.recipeIngredient ?? r.ingredients].flat().map(plain).filter(Boolean);
     if (!title || !ingredients.length) continue;

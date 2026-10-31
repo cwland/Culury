@@ -143,7 +143,8 @@ export default function RecipeEditor({ id }: { id?: number }) {
 
   return (
     <Frame id={id}>
-      <form onSubmit={save} className="flex flex-col gap-4" noValidate>
+      {/* Enter in a one-line box (Name, Servings…) moves on instead of saving a half-typed recipe */}
+      <form onSubmit={save} onKeyDown={(e) => e.key === "Enter" && e.target instanceof HTMLInputElement && e.preventDefault()} className="flex flex-col gap-4" noValidate>
         <section className={card}>
           <h1 className="text-2xl font-semibold">{id ? "Edit recipe" : "New recipe"}</h1>
           <label className="mt-4 block">

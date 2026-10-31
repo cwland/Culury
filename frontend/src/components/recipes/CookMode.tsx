@@ -98,7 +98,8 @@ export default function CookMode({ id }: { id: number }) {
   const done = step >= steps.length && steps.length > 0;
   const current = steps[Math.min(step, steps.length - 1)];
 
-  useEffect(() => writeProgress(id, { step, checked: [...checked] }), [id, step, checked]);
+  // Finished: the next time starts fresh at step 1
+  useEffect(() => writeProgress(id, done ? { step: 0, checked: [] } : { step, checked: [...checked] }), [id, step, checked, done]);
 
   const go = useCallback((to: number) => setStep(Math.max(0, Math.min(to, steps.length))), [steps.length]);
   const exit = useCallback(() => {
@@ -227,7 +228,7 @@ export default function CookMode({ id }: { id: number }) {
                 <h2 className="mt-4 text-3xl font-bold">All done. Enjoy!</h2>
                 <p className="mt-2 text-subtle">{r.title}</p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
-                  <button type="button" onClick={() => go(0)} className="rounded-lg border border-line bg-container px-4 py-2.5 font-semibold">
+                  <button type="button" onClick={() => (go(0), setChecked(new Set()))} className="rounded-lg border border-line bg-container px-4 py-2.5 font-semibold">
                     Start over
                   </button>
                   <button
