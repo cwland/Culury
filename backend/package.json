@@ -32,6 +32,7 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.10.1",
     "openid-client": "^6.8.8",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
     "sharp": "^0.34.5",
@@ -44,7 +45,6 @@
     "@types/nodemailer": "^6.4.24",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "pdf-lib": "^1.17.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"

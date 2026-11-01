@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, downloadFile, getToken } from "../../api";
 import { Popup } from "../Popup";
+import { EXPORT_FORMATS } from "../../exportFormats";
 
 // Open a server page (with the sign-in) in a new tab and print it: the print dialog's
 // "Save as PDF" makes the PDF. The tab is opened first, so the click isn't treated as a pop-up.
@@ -58,16 +59,20 @@ export default function ShareDialog({ recipe, onClose }: { recipe: { id: number;
           </button>
           {msg && <p role={msg.ok ? "status" : "alert"} className={msg.ok ? "text-success" : "text-error"}>{msg.text}</p>}
         </form>
-        <div className="grid gap-2 border-t border-line pt-4 sm:grid-cols-2">
-          <button type="button" className={other} onClick={() => void printPage(`/api/recipes/${recipe.id}/print`).catch((e) => setMsg({ ok: false, text: (e as Error).message }))}>
-            <strong>Print or save as PDF</strong>
-            <span className="text-sm text-subtle">A clean page; choose “Save as PDF” to keep a file</span>
-          </button>
-          <button type="button" className={other} onClick={() => void downloadFile(`/api/recipes/${recipe.id}/jsonld`).catch((e) => setMsg({ ok: false, text: (e as Error).message }))}>
-            <strong>Download recipe file</strong>
-            <span className="text-sm text-subtle">schema.org JSON-LD, which other recipe apps import</span>
-          </button>
-        </div>
+        <section aria-label="Download" className="flex flex-col gap-2 border-t border-line pt-4">
+          <h3 className="font-bold">Download</h3>
+          <div className="flex flex-wrap gap-2">
+            {EXPORT_FORMATS.map((f) => (
+              <button key={f.id} type="button" title={f.hint} onClick={() => void downloadFile(`/api/recipes/${recipe.id}/export?format=${f.id}`).catch((e) => setMsg({ ok: false, text: (e as Error).message }))} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed">
+                {f.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-subtle">The recipe's notes come along in these; the public link's downloads leave them out.</p>
+        </section>
+        <button type="button" className="-mt-2 self-start text-sm font-semibold text-subtle hover:underline" onClick={() => void printPage(`/api/recipes/${recipe.id}/print`).catch((e) => setMsg({ ok: false, text: (e as Error).message }))}>
+          Print it
+        </button>
       </div>
     </Popup>
   );

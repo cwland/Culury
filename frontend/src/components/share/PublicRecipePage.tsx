@@ -4,6 +4,7 @@ import { formatMinutes, siteName, type Ingredient, type Nutrition, type Step } f
 import { NutritionFacts } from "../recipes/NutritionCard";
 import { ScaleControls } from "../recipes/ScaleControls";
 import { ClockIcon, LinkOutIcon, Logo } from "../Icons";
+import { EXPORT_FORMATS } from "../../exportFormats";
 
 // /share/rcp_…: a recipe someone shared, for anyone with the link. No sign-in, nothing to change;
 // it scales and switches units like the recipe page (just for whoever is looking).
@@ -164,6 +165,20 @@ export default function PublicRecipePage({ token }: { token: string }) {
           </section>
         )}
       </div>
+      <section aria-label="Download" className="mt-4 rounded-2xl bg-container p-5 sm:p-6">
+        <h2 className="text-xl font-semibold">Download</h2>
+        <p className="mt-1 text-sm text-subtle">Keep a copy, or bring it into your own recipe app.</p>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {EXPORT_FORMATS.map((f) => (
+            <li key={f.id} className="rounded-xl border border-line px-4 py-3">
+              <a href={`/api/public/share/${token}/export?format=${f.id}`} download className="font-semibold text-link hover:underline">
+                {f.name}
+              </a>
+              <p className="mt-0.5 text-xs text-subtle">{f.hint}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
       <p className="mt-6 text-center text-sm text-muted">Shared from Culury, a self-hosted recipe manager.</p>
     </div>
   );

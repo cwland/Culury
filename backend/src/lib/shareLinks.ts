@@ -29,11 +29,16 @@ export async function newShareToken(db: Db, id: number) {
 
 // The recipe behind a link, as the public page shows it: the recipe itself, nothing about the
 // household (no ids, who added it, ratings, private or recipe notes, collections)
-export async function publicRecipe(db: Db, token: string) {
+// The recipe behind a working link (unknown, replaced, or links off: not found)
+export async function recipeIdForToken(db: Db, token: string) {
   if (!TOKEN.test(token) || !(await isOn(db, "publicLinks"))) throw notFound("Recipe");
   const [row] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.shareToken, token));
   if (!row) throw notFound("Recipe");
-  const r = await loadRecipe(db, row.id, null);
+  return row.id;
+}
+
+export async function publicRecipe(db: Db, token: string) {
+  const r = await loadRecipe(db, await recipeIdForToken(db, token), null);
   return {
     title: r.title,
     description: r.description,

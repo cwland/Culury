@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { asc, eq } from "drizzle-orm";
 import { groceryItems, groceryLists, users } from "../db/schema.js";
@@ -10,7 +10,8 @@ import { isoDay, planEmail } from "../lib/reminders.js";
 import { userOf } from "./recipes.js";
 import { isOn } from "../lib/features.js";
 import { logEvent } from "../lib/appLog.js";
-import { newShareToken, publicRecipe, sharePath, shareTokenOf } from "../lib/shareLinks.js";
+import { newShareToken, publicRecipe, recipeIdForToken, sharePath, shareTokenOf } from "../lib/shareLinks.js";
+import { exportRecipe, FORMATS, type ExportFormat } from "../lib/exports.js";
 
 // Sharing: a recipe by email, as a printable page (save as PDF), or as schema.org JSON-LD; the
 // grocery list by email; and each person's daily meal plan email.
@@ -62,6 +63,27 @@ export default async function shareRoutes(app: FastifyInstance) {
     const { token } = z.object({ token: z.string().max(64) }).parse(req.params);
     reply.header("Cache-Control", "no-store").header("X-Robots-Tag", "noindex");
     return publicRecipe(db, token);
+  });
+
+  // ---------- downloads: PDF, JSON-LD, Paprika, Meal-Master, CookML ----------
+  const formatOf = (q: unknown) =>
+    z
+      .object({ format: z.enum(Object.keys(FORMATS) as [ExportFormat, ...ExportFormat[]], { error: `Choose a format: ${Object.keys(FORMATS).join(", ")}` }) })
+      .parse(q).format;
+  const sendFile = async (reply: FastifyReply, id: number, format: ExportFormat, opts: { notes: boolean }) => {
+    const r = await loadRecipe(db, id, null);
+    const appUrl = (await mail.active())?.config.appUrl ?? null;
+    const file = await exportRecipe({ ...r, notes: opts.notes ? r.notes : null }, format, { appUrl, photoDir: app.photos.dir });
+    return reply.type(file.type).header("Content-Disposition", `attachment; filename="${file.filename}"`).send(file.body);
+  };
+  // From the app: the recipe's notes come along
+  app.get("/api/recipes/:id/export", async (req, reply) => sendFile(reply, idParam.parse(req.params).id, formatOf(req.query), { notes: true }));
+  // From a share link (no sign-in): never the notes
+  app.get("/api/public/share/:token/export", async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(64) }).parse(req.params);
+    const format = formatOf(req.query);
+    reply.header("Cache-Control", "no-store").header("X-Robots-Tag", "noindex");
+    return sendFile(reply, await recipeIdForToken(db, token), format, { notes: false });
   });
 
   // ---------- a recipe ----------

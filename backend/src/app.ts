@@ -108,6 +108,7 @@ const PUBLIC_ROUTES = new Set([
   "GET /api/photos/:name",
   "GET /api/health",
   "GET /api/public/share/:token", // a recipe's read-only share link
+  "GET /api/public/share/:token/export", // …and its downloads
   "GET /api/auth/status",
   "POST /api/auth/setup",
   "POST /api/auth/login",

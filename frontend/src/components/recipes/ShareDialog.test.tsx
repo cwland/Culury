@@ -41,3 +41,18 @@ describe("the recipe's public link (Share)", () => {
     expect(within(box).queryByRole("button", { name: "Copy link" })).toBeNull();
   });
 });
+
+describe("downloads (Share)", () => {
+  it("every format, from the app", async () => {
+    const got: string[] = [];
+    fakeServer({ "GET /api/recipes/7/share-link": () => A, "GET /api/recipes/7/export": (_b, path) => (got.push(path), new Response("file", { headers: { "content-disposition": 'attachment; filename="chili.pdf"' } })) });
+    const u = userEvent.setup();
+    URL.createObjectURL ??= () => "blob:x";
+    URL.revokeObjectURL ??= () => {};
+    render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
+    const box = await screen.findByRole("region", { name: "Download" });
+    expect(within(box).getAllByRole("button").map((b) => b.textContent)).toEqual(["PDF", "JSON-LD", "Paprika", "Meal-Master", "CookML"]);
+    await u.click(within(box).getByRole("button", { name: "Paprika" }));
+    await waitFor(() => expect(got).toEqual(["/api/recipes/7/export?format=paprika"]));
+  });
+});

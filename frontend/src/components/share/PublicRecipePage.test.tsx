@@ -73,6 +73,21 @@ describe("a shared recipe", () => {
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("175°C");
   });
 
+  it("downloads: PDF, JSON-LD, Paprika, Meal-Master, CookML, straight from the link", async () => {
+    fakeServer({ [`GET /api/public/share/${TOKEN}`]: () => shared });
+    render(<PublicRecipePage token={TOKEN} />);
+    const menu = await screen.findByRole("region", { name: "Download" });
+    const links = within(menu).getAllByRole("link");
+    expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["PDF", `/api/public/share/${TOKEN}/export?format=pdf`],
+      ["JSON-LD", `/api/public/share/${TOKEN}/export?format=jsonld`],
+      ["Paprika", `/api/public/share/${TOKEN}/export?format=paprika`],
+      ["Meal-Master", `/api/public/share/${TOKEN}/export?format=mealmaster`],
+      ["CookML", `/api/public/share/${TOKEN}/export?format=cookml`],
+    ]);
+    for (const a of links) expect(a).toHaveAttribute("download");
+  });
+
   it("a link that's been turned off or replaced says so", async () => {
     fakeServer({ [`GET /api/public/share/${TOKEN}`]: () => ({ status: 404, json: { error: "Recipe not found" } }) });
     render(<PublicRecipePage token={TOKEN} />);
