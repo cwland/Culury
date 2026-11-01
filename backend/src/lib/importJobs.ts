@@ -6,6 +6,8 @@ import type { AiService } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { fetchUrl, type FetchOptions } from "./fetchPage.js";
 import { BlockedError, detectBlock } from "./blocked.js";
+import { copiesMessage, findSavedCopy } from "./savedCopies.js";
+import { isOn } from "./features.js";
 import { AiError } from "./ai.js";
 import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromPhotos, recipeFromText, recipeWithAi, type ImportedRecipe } from "./importRecipe.js";
 import type { JobQueue, JobRow } from "./jobs.js";
@@ -83,52 +85,99 @@ async function alreadySaved(d: Deps, url: string, recipeId: number): Promise<Job
   return { duplicateOf: recipeId };
 }
 
+interface Read {
+  r: ImportedRecipe;
+  how: JobResult["how"];
+  info: ReturnType<typeof pageInfo>;
+  sourceUrl: string;
+  savedCopy?: JobResult["savedCopy"];
+  why?: string; // the site kept it from us: why (for the log)
+}
+
+// Blocked, and no saved copy either (a plain Error, so it isn't remembered twice)
+class CopyError extends Error {
+  constructor(
+    message: string,
+    public blocked: BlockedError,
+  ) {
+    super(message);
+  }
+}
+
+// The recipe on a page (the real one or a saved copy): schema.org data, else the AI on its text.
+// A security check page, or a paywall where no recipe was found, is a BlockedError.
+async function readPage(ai: AiService, html: string, pageUrl: string) {
+  const info = pageInfo(html, pageUrl);
+  const found = recipeFromJsonLd(html, pageUrl);
+  if (found) return { r: found, how: "schema.org" as const, info };
+  const host = new URL(pageUrl).hostname;
+  const check = detectBlock(200, html);
+  if (check?.reason === "captcha") throw new BlockedError(check, host); // nothing for the AI to read
+  const text = [info.title && `Title: ${info.title}`, info.description && `Summary: ${info.description}`, info.videoDescription && `Video description:\n${info.videoDescription}`, info.text && `Page text:\n${info.text}`].filter(Boolean).join("\n\n");
+  try {
+    return { r: await recipeWithAi(ai, text, `This is from ${pageUrl}.`), how: "ai" as const, info };
+  } catch (e) {
+    // No recipe found (or AI off): if the page shows a paywall, that's the reason to give
+    const paywall = e instanceof AiError ? detectBlock(200, html, { noRecipe: true }) : null;
+    if (paywall?.reason === "paywall") throw new BlockedError(paywall, host);
+    throw e;
+  }
+}
+
 export function registerImportJobs(queue: JobQueue, d: Deps) {
-  // A link: schema.org data on the page, or AI on the page's text (or a video's description)
+  // A link: schema.org data on the page, or AI on the page's text (or a video's description).
+  // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
+  // archive is tried next, unless that's switched off in Settings › Recipes.
   queue.handle("import-url", async (job) => {
     const { url, force } = job.payload as { url: string; force?: boolean };
+    const remember = (result: JobResult) => d.db.update(jobs).set({ result }).where(eq(jobs.id, job.id));
     try {
       if (!force) {
         const dup = await findDuplicate(d.db, url);
         if (dup) return alreadySaved(d, url, dup);
       }
-      const page = await fetchUrl(url, d.fetchOptions);
-      if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
-      const html = page.body.toString("utf8");
-      const info = pageInfo(html, page.url);
-      const sourceUrl = info.canonical && new URL(info.canonical).hostname === new URL(page.url).hostname ? info.canonical : page.url;
-      if (!force && sourceUrl !== url) {
-        const dup = await findDuplicate(d.db, sourceUrl);
-        if (dup) return alreadySaved(d, url, dup);
-      }
-      const found = recipeFromJsonLd(html, page.url);
-      let r: ImportedRecipe;
-      let how: JobResult["how"];
-      if (found) {
-        r = found;
-        how = "schema.org";
-      } else {
-        const host = new URL(page.url).hostname;
-        // A security check that came back as a normal page: nothing for the AI to read
-        const check = detectBlock(200, html);
-        if (check?.reason === "captcha") throw new BlockedError(check, host);
-        const text = [info.title && `Title: ${info.title}`, info.description && `Summary: ${info.description}`, info.videoDescription && `Video description:\n${info.videoDescription}`, info.text && `Page text:\n${info.text}`].filter(Boolean).join("\n\n");
-        try {
-          r = await recipeWithAi(d.ai, text, `This is from ${page.url}.`);
-        } catch (e) {
-          // No recipe found (or AI off): if the page shows a paywall, that's the reason to give
-          const paywall = e instanceof AiError ? detectBlock(200, html, { noRecipe: true }) : null;
-          if (paywall?.reason === "paywall") throw new BlockedError(paywall, host);
-          throw e;
+      let read: Read;
+      try {
+        const page = await fetchUrl(url, d.fetchOptions);
+        if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
+        const html = page.body.toString("utf8");
+        const info = pageInfo(html, page.url);
+        const sourceUrl = info.canonical && new URL(info.canonical).hostname === new URL(page.url).hostname ? info.canonical : page.url;
+        if (!force && sourceUrl !== url) {
+          const dup = await findDuplicate(d.db, sourceUrl);
+          if (dup) return alreadySaved(d, url, dup);
         }
-        how = "ai";
+        read = { ...(await readPage(d.ai, html, page.url)), sourceUrl };
+      } catch (e) {
+        if (!(e instanceof BlockedError)) throw e;
+        if (!(await isOn(d.db, "savedCopies"))) throw e;
+        // Kept from us: look for a saved copy (saying which archive, for the import window)
+        const blocked = { ...e.block, url };
+        const { found, tried } = await findSavedCopy(url, d.fetchOptions ?? {}, async (copy) => {
+          try {
+            return await readPage(d.ai, copy.html, copy.pageUrl);
+          } catch (err) {
+            if (err instanceof BlockedError || err instanceof AiError) return null; // nothing to read there
+            throw err;
+          }
+        }, (from) => remember({ blocked, trying: from }).then(() => {}));
+        if (!found) {
+          await remember({ blocked, savedCopies: tried });
+          throw new CopyError(`${e.message} ${copiesMessage(tried)}`, e);
+        }
+        const original = new URL(url).hostname;
+        const canonical = found.recipe.info.canonical;
+        read = { ...found.recipe, sourceUrl: canonical && /^https?:/.test(canonical) && new URL(canonical).hostname === original ? canonical : url, savedCopy: { from: found.copy.from, url: found.copy.url, ...(found.copy.date ? { date: found.copy.date } : {}) }, why: e.message };
       }
-      const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName }, job, how);
-      await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${how === "ai" ? " with AI" : ""}`, detail: result.warnings?.join(" ") ?? url });
+      const { r, how, info, sourceUrl, savedCopy } = read;
+      const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName ?? (savedCopy ? new URL(url).hostname.replace(/^www\./, "") : undefined) }, job, how);
+      if (savedCopy) result.savedCopy = savedCopy;
+      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : how === "ai" ? " with AI" : "";
+      await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${from}`, detail: [read.why, result.warnings?.join(" ")].filter(Boolean).join(" ") || url });
       return result;
     } catch (e) {
-      // Kept from us: remember why, so the import window can offer a saved copy or another way in
-      if (e instanceof BlockedError) await d.db.update(jobs).set({ result: { blocked: { ...e.block, url } } }).where(eq(jobs.id, job.id));
+      // Kept from us, no saved copy looked for: remember why, for the import window
+      if (e instanceof BlockedError) await remember({ blocked: { ...e.block, url } });
       await logEvent(d.db, { category: "import", level: "warning", source: url.slice(0, 200), event: "Couldn't import a recipe", detail: (e as Error).message });
       throw e;
     }

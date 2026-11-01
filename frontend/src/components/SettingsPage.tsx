@@ -2,6 +2,7 @@ import { FeatureSwitch } from "./FeatureSwitch";
 import ThemePicker from "./ThemePicker";
 import OrganizeSettings from "./OrganizeSettings";
 import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
+import { SavedCopiesSwitch } from "./SavedCopiesSwitch";
 import { UpdatesSettings } from "./UpdateBar";
 import { useEffect, useState } from "react";
 import DataSettings from "./DataSettings";
@@ -96,6 +97,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
       return (
         <>
           {owner && <RecipeVersionSwitch />}
+          {owner && <SavedCopiesSwitch />}
           <OrganizeSettings />
         </>
       );

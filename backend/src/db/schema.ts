@@ -380,6 +380,9 @@ export interface JobResult {
   unchanged?: number; // import-improve: the AI had nothing to change
   failed?: { title: string; reason: string }[]; // import-improve: couldn't be improved
   stopped?: boolean; // import-improve: stopped before the end
+  savedCopy?: { from: string; url: string; date?: string }; // import-url: read from a web archive's copy
+  savedCopies?: { from: string; outcome: "none" | "captcha" | "failed" | "no-recipe"; link?: string }[]; // import-url (failed): the archives tried
+  trying?: string; // import-url (running): the archive being asked now
   blocked?: { reason: "captcha" | "paywall" | "refused" | "rate-limited" | "unavailable"; by?: string; url: string }; // import-url (failed): why the site kept it from us
 }
 

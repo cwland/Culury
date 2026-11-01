@@ -9,7 +9,8 @@ import { apiKeys, appSettings } from "../db/schema.js";
 //  - aiEnhance: no "Check this recipe with AI?" and no AI check (only matters while AI is on)
 //  - autoNutrition: nutrition isn't worked out by itself after imports and ingredient changes
 //  - recipeVersions: no versions are made and edits save without asking (on from the start)
-export const FEATURES = ["ai", "apiKeys", "aiEnhance", "autoNutrition", "recipeVersions"] as const;
+//  - savedCopies: a blocked link import doesn't look for a saved copy in web archives (on from the start)
+export const FEATURES = ["ai", "apiKeys", "aiEnhance", "autoNutrition", "recipeVersions", "savedCopies"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type Features = Record<Feature, boolean>;
 
@@ -18,7 +19,7 @@ async function defaults(db: Db): Promise<Features> {
   const rows = await db.select({ key: appSettings.key }).from(appSettings);
   const has = new Set(rows.map((r) => r.key));
   const [{ n }] = await db.select({ n: count() }).from(apiKeys);
-  return { ai: has.has("ai"), apiKeys: n > 0, aiEnhance: has.has("ai"), autoNutrition: has.has("ai"), recipeVersions: true };
+  return { ai: has.has("ai"), apiKeys: n > 0, aiEnhance: has.has("ai"), autoNutrition: has.has("ai"), recipeVersions: true, savedCopies: true };
 }
 
 async function saved(db: Db): Promise<Partial<Features>> {

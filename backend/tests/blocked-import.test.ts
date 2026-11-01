@@ -10,6 +10,7 @@ afterAll(async () => t.close());
 beforeEach(async () => {
   await t.reset();
   await t.login();
+  await t.api("PUT", "/api/settings/features", { savedCopies: false }); // saved copies: archive-fallback.test.ts
 });
 
 const fixture = (name: string) => fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");

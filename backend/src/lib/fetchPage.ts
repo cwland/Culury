@@ -17,6 +17,7 @@ export interface FetchOptions {
   maxBytes?: number;
   timeoutMs?: number;
   accept?: string;
+  userAgent?: string; // archives: say who we are (they turn away apps dressed as a browser)
 }
 
 export class FetchError extends Error {}
@@ -67,7 +68,7 @@ export async function fetchUrl(url: string, opts: FetchOptions = {}): Promise<{ 
       const u = await checkUrl(current, resolve);
       let res: Response;
       try {
-        res = await fetchImpl(u.toString(), { headers: { ...HEADERS, accept: opts.accept ?? "text/html,application/xhtml+xml,*/*;q=0.8" }, redirect: "manual", signal: controller.signal });
+        res = await fetchImpl(u.toString(), { headers: { ...HEADERS, ...(opts.userAgent ? { "user-agent": opts.userAgent } : {}), accept: opts.accept ?? "text/html,application/xhtml+xml,*/*;q=0.8" }, redirect: "manual", signal: controller.signal });
       } catch (e) {
         throw new FetchError(controller.signal.aborted ? "The site took too long to answer" : `Couldn't reach ${u.hostname} (${(e as Error).message})`);
       }
