@@ -90,57 +90,7 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
               The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Re-analyze them with AI, or edit them (the buttons at the top)." : "Edit them to match (the pencil at the top)."}
             </p>
           )}
-          {value.servingSize && (
-            <p className="mt-3 flex justify-between gap-3 font-semibold">
-              <span>Serving size</span>
-              <span>{value.servingSize}</span>
-            </p>
-          )}
-          <div className="mt-3 border-y-[6px] border-ink py-2">
-            <div className="flex items-end justify-between">
-              <span className="text-lg font-black">Calories</span>
-              <span className="text-3xl font-black">{value.calories === null ? "–" : Math.round(value.calories)}</span>
-            </div>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th className="sr-only">Nutrient</th>
-                <th className="py-1 text-right text-xs font-semibold text-muted">% Daily Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ROWS.map((r) => {
-                const v = (value[r.key] ?? null) as number | null;
-                // Like a US label: "Includes 10 g added sugars", under total sugars (only when known)
-                if (r.key === "addedSugar") {
-                  if (v === null) return null;
-                  return (
-                    <tr key={r.key} className="border-t border-line">
-                      <td className="py-1.5 pl-8">Includes {fmt(v)} g added sugars</td>
-                      <td className="py-1.5 text-right font-semibold">{Math.round((v / 50) * 100)}%</td>
-                    </tr>
-                  );
-                }
-                return (
-                  <tr key={r.key} className="border-t border-line">
-                    <td className={`py-1.5 ${r.indent ? "pl-4" : "font-semibold"}`}>
-                      {r.label} <span className="font-normal">{v === null ? "–" : `${fmt(v)} ${r.unit}`}</span>
-                    </td>
-                    <td className="py-1.5 text-right font-semibold">{v !== null && r.dv ? `${Math.round((v / r.dv) * 100)}%` : ""}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {points !== null && (
-            <p className="mt-3 flex items-center justify-between rounded-lg bg-page px-3 py-2 text-sm">
-              <span title="Worked out from calories, saturated fat, sugar (only added sugar, when it's known) and protein, the way points-based diet plans do. Approximate, not any program's official number.">
-                Points <span className="text-subtle">(estimate)</span>
-              </span>
-              <strong className="text-lg">{points}</strong>
-            </p>
-          )}
+          <NutritionFacts value={value} />
           <p className="mt-3 text-xs text-muted">
             {SOURCE[value.source]}
             {value.servings ? `, for ${value.servings} servings` : ""}. {value.note}
@@ -204,5 +154,66 @@ function EditNutrition({ value, onClose, onSave }: { value: Nutrition | null; on
         </div>
       </div>
     </Popup>
+  );
+}
+
+// The label itself (read-only): serving size, calories, the nutrients with % Daily Value, points.
+// The recipe page's card and the public share page both show it.
+export function NutritionFacts({ value }: { value: Nutrition }) {
+  const points = pointsEstimate(value);
+  return (
+    <>
+      {value.servingSize && (
+        <p className="mt-3 flex justify-between gap-3 font-semibold">
+          <span>Serving size</span>
+          <span>{value.servingSize}</span>
+        </p>
+      )}
+      <div className="mt-3 border-y-[6px] border-ink py-2">
+        <div className="flex items-end justify-between">
+          <span className="text-lg font-black">Calories</span>
+          <span className="text-3xl font-black">{value.calories === null ? "–" : Math.round(value.calories)}</span>
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="sr-only">Nutrient</th>
+            <th className="py-1 text-right text-xs font-semibold text-muted">% Daily Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ROWS.map((r) => {
+            const v = (value[r.key] ?? null) as number | null;
+            // Like a US label: "Includes 10 g added sugars", under total sugars (only when known)
+            if (r.key === "addedSugar") {
+              if (v === null) return null;
+              return (
+                <tr key={r.key} className="border-t border-line">
+                  <td className="py-1.5 pl-8">Includes {fmt(v)} g added sugars</td>
+                  <td className="py-1.5 text-right font-semibold">{Math.round((v / 50) * 100)}%</td>
+                </tr>
+              );
+            }
+            return (
+              <tr key={r.key} className="border-t border-line">
+                <td className={`py-1.5 ${r.indent ? "pl-4" : "font-semibold"}`}>
+                  {r.label} <span className="font-normal">{v === null ? "–" : `${fmt(v)} ${r.unit}`}</span>
+                </td>
+                <td className="py-1.5 text-right font-semibold">{v !== null && r.dv ? `${Math.round((v / r.dv) * 100)}%` : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {points !== null && (
+        <p className="mt-3 flex items-center justify-between rounded-lg bg-page px-3 py-2 text-sm">
+          <span title="Worked out from calories, saturated fat, sugar (only added sugar, when it's known) and protein, the way points-based diet plans do. Approximate, not any program's official number.">
+            Points <span className="text-subtle">(estimate)</span>
+          </span>
+          <strong className="text-lg">{points}</strong>
+        </p>
+      )}
+    </>
   );
 }

@@ -4,6 +4,7 @@ import OrganizeSettings from "./OrganizeSettings";
 import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
 import { SavedCopiesSwitch } from "./SavedCopiesSwitch";
 import { SendToCulury } from "./SendToCulury";
+import { PublicLinksSwitch } from "./PublicLinksSwitch";
 import { UpdatesSettings } from "./UpdateBar";
 import { useEffect, useState } from "react";
 import DataSettings from "./DataSettings";
@@ -99,6 +100,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
         <>
           {owner && <RecipeVersionSwitch />}
           {owner && <SavedCopiesSwitch />}
+          {owner && <PublicLinksSwitch />}
           <SendToCulury />
           <OrganizeSettings />
         </>

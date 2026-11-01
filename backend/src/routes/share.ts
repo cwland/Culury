@@ -8,6 +8,9 @@ import { loadRecipe } from "../lib/recipes.js";
 import { fileName, groceryEmail, recipeEmail, recipeJsonLd, recipePrintPage } from "../lib/share.js";
 import { isoDay, planEmail } from "../lib/reminders.js";
 import { userOf } from "./recipes.js";
+import { isOn } from "../lib/features.js";
+import { logEvent } from "../lib/appLog.js";
+import { newShareToken, publicRecipe, sharePath, shareTokenOf } from "../lib/shareLinks.js";
 
 // Sharing: a recipe by email, as a printable page (save as PDF), or as schema.org JSON-LD; the
 // grocery list by email; and each person's daily meal plan email.
@@ -35,6 +38,31 @@ export default async function shareRoutes(app: FastifyInstance) {
     .max(1000)
     .transform((s) => s.split(/[,;\s]+/).filter(Boolean))
     .pipe(z.array(z.string().email("That doesn't look like an email address")).min(1).max(10, "Up to 10 people at a time"));
+
+  // ---------- public share links ----------
+  // The link's full address: the app's address from Settings › Email, else the one this was asked on
+  const linkTo = async (req: FastifyRequest, token: string) => {
+    const appUrl = (await mail.active())?.config.appUrl;
+    const base = appUrl ? appUrl.replace(/\/+$/, "") : `${req.protocol}://${req.host}`;
+    return { path: sharePath(token), url: `${base}${sharePath(token)}`, on: await isOn(db, "publicLinks") };
+  };
+  const shareLink = async (req: FastifyRequest) => linkTo(req, (await shareTokenOf(db, idParam.parse(req.params).id)).token);
+  app.get("/api/recipes/:id/share-link", shareLink);
+  app.post("/api/recipes/:id/share-link", shareLink); // every recipe already has one: this fetches it
+
+  // New link: the old one stops working (for a link that spread further than meant)
+  app.post("/api/recipes/:id/share-link/new", async (req) => {
+    const r = await newShareToken(db, idParam.parse(req.params).id);
+    await logEvent(db, { category: "import", level: "info", source: "Sharing", event: `New share link for "${r.title}" (the old one stopped working)` });
+    return linkTo(req, r.token);
+  });
+
+  // The public page's recipe: no sign-in (see PUBLIC_ROUTES)
+  app.get("/api/public/share/:token", async (req, reply) => {
+    const { token } = z.object({ token: z.string().max(64) }).parse(req.params);
+    reply.header("Cache-Control", "no-store").header("X-Robots-Tag", "noindex");
+    return publicRecipe(db, token);
+  });
 
   // ---------- a recipe ----------
   app.get("/api/recipes/:id/jsonld", async (req, reply) => {

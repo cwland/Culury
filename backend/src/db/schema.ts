@@ -201,6 +201,8 @@ export const recipes = pgTable(
     id: serial("id").primaryKey(),
     title: text("title").notNull(),
     description: text("description"),
+    // The public read-only link (/share/<token>): random, made for every recipe; New link replaces it
+    shareToken: text("share_token").notNull().unique().default(sql`'rcp_' || replace(gen_random_uuid()::text, '-', '')`),
     ingredients: jsonb("ingredients").$type<Ingredient[]>().notNull().default([]),
     steps: jsonb("steps").$type<Step[]>().notNull().default([]),
     servings: integer("servings"), // how many it makes, for scaling
