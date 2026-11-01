@@ -65,26 +65,26 @@ export function ScaleControls({ servings, factor, setFactor, units, setUnits, le
     <div className="flex flex-wrap items-center gap-2">
       {servings ? (
         <div className={group} role="group" aria-label="Servings">
-          <button type="button" aria-label="Fewer servings" disabled={now! <= 1} onClick={() => setFactor((now! - 1) / servings)} className={step}>
+          <button type="button" aria-label="Fewer servings" title="Fewer servings" disabled={now! <= 1} onClick={() => setFactor((now! - 1) / servings)} className={step}>
             −
           </button>
           <span className="min-w-[6.5rem] px-1 text-center text-sm font-semibold" aria-live="polite">
             {now} serving{now === 1 ? "" : "s"}
             {factor !== 1 && <span className="block text-[11px] font-normal text-muted">recipe makes {servings}</span>}
           </span>
-          <button type="button" aria-label="More servings" onClick={() => setFactor((now! + 1) / servings)} className={step}>
+          <button type="button" aria-label="More servings" title="More servings" onClick={() => setFactor((now! + 1) / servings)} className={step}>
             +
           </button>
         </div>
       ) : (
         <div className={group} role="group" aria-label="Recipe size">
-          <button type="button" aria-label="Make less" disabled={smaller === undefined} onClick={() => smaller !== undefined && setFactor(smaller)} className={step}>
+          <button type="button" aria-label="Make less" title="Make less" disabled={smaller === undefined} onClick={() => smaller !== undefined && setFactor(smaller)} className={step}>
             −
           </button>
           <span className="min-w-[3.5rem] px-1 text-center text-sm font-semibold" aria-live="polite">
             {sizeLabel(factor)}
           </span>
-          <button type="button" aria-label="Make more" disabled={bigger === undefined} onClick={() => bigger !== undefined && setFactor(bigger)} className={step}>
+          <button type="button" aria-label="Make more" title="Make more" disabled={bigger === undefined} onClick={() => bigger !== undefined && setFactor(bigger)} className={step}>
             +
           </button>
         </div>

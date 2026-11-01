@@ -41,7 +41,7 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
           {initialsOf(user)}
         </button>
       ) : (
-        <button onClick={() => setOpen((o) => !o)} aria-label="Account menu" aria-haspopup="menu" aria-expanded={open} className={`flex flex-col items-center text-xs ${open ? "text-primary" : "text-subtle"}`}>
+        <button onClick={() => setOpen((o) => !o)} aria-label="Account menu" title="Account menu" aria-haspopup="menu" aria-expanded={open} className={`flex flex-col items-center text-xs ${open ? "text-primary" : "text-subtle"}`}>
           <UserIcon />
           Account
         </button>

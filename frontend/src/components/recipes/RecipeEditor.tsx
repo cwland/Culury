@@ -367,7 +367,7 @@ function TagInput({ tags, known, onChange }: { tags: string[]; known: string[]; 
         {tags.map((t) => (
           <span key={t} className="flex items-center gap-1 rounded-full bg-container px-2.5 py-1 text-sm">
             #{t}
-            <button type="button" aria-label={`Remove tag ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className="text-muted hover:text-error">
+            <button type="button" aria-label={`Remove tag ${t}`} title={`Remove tag ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className="text-muted hover:text-error">
               <CloseIcon className="size-3.5" />
             </button>
           </span>

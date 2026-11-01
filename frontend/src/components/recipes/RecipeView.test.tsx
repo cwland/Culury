@@ -133,15 +133,14 @@ describe("recipe page header", () => {
     expect(await screen.findByRole("dialog", { name: "Delete this recipe?" })).toBeInTheDocument();
   });
 
-  it("two buttons: Organize and Improve with AI; nothing else", async () => {
+  it("the buttons: Add to grocery list, Organize and Improve with AI; nothing else", async () => {
     server(on);
     render(<RecipeView id={7} />);
     const h = await header();
     const row = within(h).getByRole("group", { name: "Recipe actions" });
-    expect(within(row).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual(["Organize", "Improve with AI"]);
+    expect(within(row).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual(["Add to grocery list", "Organize", "Improve with AI"]);
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
     expect(screen.queryByRole("link", { name: /^Edit$/ })).toBeNull();
-    expect(within(h).queryByRole("button", { name: /Add to grocery list/ })).toBeNull();
   });
 
   it("favorite and pin are icons by the name, with hover text", async () => {
@@ -168,11 +167,28 @@ describe("recipe page header", () => {
     expect(within(pills).getAllByRole("link").map((a) => a.textContent)).toEqual(["Quick Meals", "#beef", "#spicy"]);
   });
 
-  it("Add to grocery list is in the Ingredients area", async () => {
+  it("Ingredients: the pencil sits right after the heading; Add to grocery list isn't here", async () => {
     server(on);
     render(<RecipeView id={7} />);
     const ing = await screen.findByRole("region", { name: "Ingredients" });
-    expect(within(ing).getByRole("button", { name: /Add to grocery list/ })).toBeInTheDocument();
+    expect(within(ing).queryByRole("button", { name: /Add to grocery list/ })).toBeNull();
+    const heading = within(ing).getByRole("heading", { name: "Ingredients" });
+    expect(heading.nextElementSibling).toBe(within(ing).getByRole("button", { name: "Edit ingredients" }));
+    expect(heading.className).not.toMatch(/mr-auto/);
+  });
+
+  it("every button that's only an icon has hover text", async () => {
+    server(on, recipeJson({ tags: ["beef"], nutrition: { calories: 410, fat: 20, saturatedFat: 7, carbs: 30, fiber: 6, sugar: 14, protein: 33, sodium: 640, source: "ai", servings: 4 } }));
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await screen.findByRole("region", { name: "Recipe" });
+    const check = () => {
+      const bare = [...document.querySelectorAll("button, a[href]")].filter((b) => (b.textContent ?? "").replace(/\s/g, "").length <= 1 && !b.getAttribute("title"));
+      expect(bare.map((b) => b.getAttribute("aria-label") ?? b.outerHTML.slice(0, 80))).toEqual([]);
+    };
+    check();
+    await u.click(screen.getByRole("tab", { name: "Nutrition" }));
+    check();
   });
 
   it("Organize: categories, collections and tags in one panel, saved together on Done", async () => {

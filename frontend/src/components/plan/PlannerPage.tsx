@@ -96,13 +96,13 @@ export default function PlannerPage() {
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="mr-auto text-2xl font-semibold">Meal plan</h1>
             <div className="flex items-center gap-1 rounded-lg bg-container p-1">
-              <button type="button" aria-label="Previous week" onClick={() => setStart(addDays(start, -7))} className="rounded-md p-2 hover:bg-pressed">
+              <button type="button" aria-label="Previous week" title="Previous week" onClick={() => setStart(addDays(start, -7))} className="rounded-md p-2 hover:bg-pressed">
                 <ChevronLeft />
               </button>
               <span className="min-w-44 text-center font-semibold" aria-live="polite">
                 {weekLabel(start)}
               </span>
-              <button type="button" aria-label="Next week" onClick={() => setStart(addDays(start, 7))} className="rounded-md p-2 hover:bg-pressed">
+              <button type="button" aria-label="Next week" title="Next week" onClick={() => setStart(addDays(start, 7))} className="rounded-md p-2 hover:bg-pressed">
                 <ChevronRight />
               </button>
             </div>
@@ -196,7 +196,7 @@ export default function PlannerPage() {
                           {list.map((e, i) => (
                             <EntryCard key={e.id} e={e} index={i} onOpen={() => setOpen(e)} compact />
                           ))}
-                          <button type="button" onClick={() => setAdding({ date: d, slot: s.id })} aria-label={`Add to ${dayName(d, "long")} ${s.name}`} className="self-start rounded-lg px-2 py-1.5 text-sm font-semibold text-link">
+                          <button type="button" onClick={() => setAdding({ date: d, slot: s.id })} aria-label={`Add to ${dayName(d, "long")} ${s.name}`} title={`Add to ${dayName(d, "long")} ${s.name}`} className="self-start rounded-lg px-2 py-1.5 text-sm font-semibold text-link">
                             + Add
                           </button>
                         </div>
@@ -240,7 +240,7 @@ function Cell({ date, slot, today: isToday, onAdd, children }: { date: string; s
     <td ref={setNodeRef} className={`group h-24 border-b border-l border-line p-1.5 transition ${isOver ? "bg-active" : isToday ? "bg-pressed/50" : ""}`}>
       <div className="flex flex-col gap-1.5">
         {children}
-        <button type="button" onClick={onAdd} aria-label="Add a meal" className="flex h-7 items-center justify-center rounded-lg text-muted opacity-0 transition hover:bg-pressed hover:text-action focus:opacity-100 group-hover:opacity-100">
+        <button type="button" onClick={onAdd} aria-label="Add a meal" title="Add a meal" className="flex h-7 items-center justify-center rounded-lg text-muted opacity-0 transition hover:bg-pressed hover:text-action focus:opacity-100 group-hover:opacity-100">
           <PlusIcon className="size-4" />
         </button>
       </div>

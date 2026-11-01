@@ -274,7 +274,7 @@ function ServiceCard({
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        aria-label={`Reorder ${d.name}`}
+        aria-label={`Reorder ${d.name}`} title={`Reorder ${d.name}`}
         className="absolute left-1.5 top-4 flex h-8 w-5 cursor-grab touch-none items-center justify-center text-muted hover:text-ink active:cursor-grabbing"
       >
         <GripIcon />
@@ -285,6 +285,8 @@ function ServiceCard({
         onClick={() => setCollapsed(!collapsed)}
         aria-expanded={!collapsed}
         aria-label={
+          collapsed ? `Show ${d.name} settings` : `Hide ${d.name} settings`
+        } title={
           collapsed ? `Show ${d.name} settings` : `Hide ${d.name} settings`
         }
         className="absolute left-1 top-12 flex size-6 items-center justify-center rounded text-subtle hover:bg-page hover:text-ink"
@@ -409,7 +411,7 @@ function ServiceCard({
               <button
                 type="button"
                 onClick={() => setShowKey((v) => !v)}
-                aria-label={showKey ? "Hide API key" : "Show API key"}
+                aria-label={showKey ? "Hide API key" : "Show API key"} title={showKey ? "Hide API key" : "Show API key"}
                 aria-pressed={showKey}
                 className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-subtle hover:text-ink"
               >
@@ -506,7 +508,7 @@ function ServiceCard({
                 type="button"
                 disabled={index === 0}
                 onClick={() => onMove(index - 1)}
-                aria-label={`Move ${d.name} up`}
+                aria-label={`Move ${d.name} up`} title={`Move ${d.name} up`}
                 className="rounded px-2 py-1 text-subtle hover:bg-page disabled:opacity-30"
               >
                 ↑
@@ -515,7 +517,7 @@ function ServiceCard({
                 type="button"
                 disabled={index === count - 1}
                 onClick={() => onMove(index + 1)}
-                aria-label={`Move ${d.name} down`}
+                aria-label={`Move ${d.name} down`} title={`Move ${d.name} down`}
                 className="rounded px-2 py-1 text-subtle hover:bg-page disabled:opacity-30"
               >
                 ↓

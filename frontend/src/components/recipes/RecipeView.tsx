@@ -285,6 +285,11 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
 
           {/* What you can do with it */}
           <div role="group" aria-label="Recipe actions" className="flex flex-wrap gap-2 pt-5">
+            {r.ingredients.length > 0 && (
+              <button type="button" onClick={() => setShopping(true)} className={smallButton}>
+                <GroceryIcon className="size-4" /> Add to grocery list
+              </button>
+            )}
             <button type="button" onClick={() => setOrganizing(true)} className={smallButton}>
               <TagIcon /> Organize
             </button>
@@ -344,14 +349,9 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
         <div role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe">
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <section aria-label="Ingredients" className={`${card} self-start`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="mr-auto text-xl font-bold">Ingredients</h2>
+              <div className="flex items-center gap-1">
+                <h2 className="text-xl font-bold">Ingredients</h2>
                 {editing !== "ingredients" && pencil("ingredients", "Edit ingredients")}
-                {r.ingredients.length > 0 && (
-                  <button type="button" onClick={() => setShopping(true)} className={smallButton}>
-                    <GroceryIcon className="size-4" /> Add to grocery list
-                  </button>
-                )}
               </div>
               {editing === "ingredients" ? (
                 <form onSubmit={saveSection} className="mt-3">
@@ -387,7 +387,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
             </section>
 
             <section aria-label="Steps" className={card}>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
                 <h2 className="text-xl font-bold">Steps</h2>
                 {editing !== "steps" && pencil("steps", "Edit steps")}
               </div>
@@ -406,7 +406,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <section aria-label="Recipe notes" className={card}>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
                 <h2 className="text-xl font-bold">Notes</h2>
                 {editing !== "notes" && pencil("notes", "Edit notes")}
               </div>
@@ -570,7 +570,7 @@ function Stars({ value, onChange }: { value: number | null; onChange: (v: number
           type="button"
           role="radio"
           aria-checked={value === n}
-          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          aria-label={`${n} star${n === 1 ? "" : "s"}`} title={`${n} star${n === 1 ? "" : "s"}`}
           onMouseEnter={() => setHover(n)}
           onClick={() => onChange(value === n ? null : n)}
           className={`p-0.5 ${n <= shown ? "text-warning" : "text-strong"}`}
@@ -660,7 +660,7 @@ function Substitutions({ recipeId, list, onChange }: { recipeId: number; list: S
                 {s.note && <span className="block text-sm text-subtle">{s.note}</span>}
                 <span className="block text-xs text-muted">{new Date(s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
               </span>
-              <button type="button" aria-label={`Remove ${s.original} → ${s.replacement}`} onClick={() => void remove(s.id)} className="rounded p-1.5 text-muted hover:bg-error-subtle hover:text-error">
+              <button type="button" aria-label={`Remove ${s.original} → ${s.replacement}`} title={`Remove ${s.original} → ${s.replacement}`} onClick={() => void remove(s.id)} className="rounded p-1.5 text-muted hover:bg-error-subtle hover:text-error">
                 <Trash />
               </button>
             </li>

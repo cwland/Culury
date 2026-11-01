@@ -73,7 +73,7 @@ export default function PantryPage() {
           <form onSubmit={add} className="flex flex-col gap-2 rounded-2xl bg-container p-3">
             <div className="flex gap-2">
               <input aria-label="Add to the pantry" value={text} onChange={(e) => setText(e.target.value)} placeholder="Add: 2 lb rice, eggs, olive oil…" className="min-w-0 flex-1 rounded-xl border border-line bg-page px-4 py-3 outline-none focus:border-action focus:ring-2 focus:ring-action/15" />
-              <button type="submit" disabled={!text.trim()} aria-label="Add" className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-white disabled:opacity-50">
+              <button type="submit" disabled={!text.trim()} aria-label="Add" title="Add" className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-white disabled:opacity-50">
                 <PlusIcon />
               </button>
             </div>

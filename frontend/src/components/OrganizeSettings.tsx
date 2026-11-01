@@ -81,10 +81,10 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
           <li key={it.id} className="flex items-center gap-2 py-2">
             {reorder && (
               <span className="flex flex-col">
-                <button type="button" aria-label={`Move ${it.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
+                <button type="button" aria-label={`Move ${it.name} up`} title={`Move ${it.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
                   <ChevronUp />
                 </button>
-                <button type="button" aria-label={`Move ${it.name} down`} disabled={i === items.length - 1} onClick={() => move(i, i + 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
+                <button type="button" aria-label={`Move ${it.name} down`} title={`Move ${it.name} down`} disabled={i === items.length - 1} onClick={() => move(i, i + 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
                   <ChevronDown />
                 </button>
               </span>
@@ -100,7 +100,7 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
             </a>
             <button
               type="button"
-              aria-label={confirmId === it.id ? `Confirm delete ${it.name}` : `Delete ${it.name}`}
+              aria-label={confirmId === it.id ? `Confirm delete ${it.name}` : `Delete ${it.name}`} title={confirmId === it.id ? `Confirm delete ${it.name}` : `Delete ${it.name}`}
               onClick={() => (confirmId === it.id ? void run(() => api("DELETE", `${path}/${it.id}`)) : setConfirmId(it.id))}
               onBlur={() => setConfirmId(null)}
               className={`shrink-0 rounded px-2 py-1.5 text-sm font-semibold ${confirmId === it.id ? "bg-error text-white" : "text-muted hover:bg-error-subtle hover:text-error"}`}
@@ -151,15 +151,15 @@ function MealSlots() {
         {s.slots.map((slot, i) => (
           <li key={slot.id} className="flex items-center gap-2 py-2">
             <span className="flex flex-col">
-              <button type="button" aria-label={`Move ${slot.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="text-muted hover:text-ink disabled:opacity-30">
+              <button type="button" aria-label={`Move ${slot.name} up`} title={`Move ${slot.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="text-muted hover:text-ink disabled:opacity-30">
                 <ChevronUp />
               </button>
-              <button type="button" aria-label={`Move ${slot.name} down`} disabled={i === s.slots.length - 1} onClick={() => move(i, i + 1)} className="text-muted hover:text-ink disabled:opacity-30">
+              <button type="button" aria-label={`Move ${slot.name} down`} title={`Move ${slot.name} down`} disabled={i === s.slots.length - 1} onClick={() => move(i, i + 1)} className="text-muted hover:text-ink disabled:opacity-30">
                 <ChevronDown />
               </button>
             </span>
             <InlineText value={slot.name} ariaLabel={`Rename ${slot.name}`} onSave={(v) => void save({ slots: s.slots.map((x) => (x.id === slot.id ? { ...x, name: v } : x)) })} className="w-full flex-1 font-medium" />
-            <button type="button" aria-label={`Remove ${slot.name}`} disabled={s.slots.length === 1} onClick={() => void save({ slots: s.slots.filter((x) => x.id !== slot.id) })} className="rounded px-2 py-1.5 text-muted hover:bg-error-subtle hover:text-error disabled:opacity-30">
+            <button type="button" aria-label={`Remove ${slot.name}`} title={`Remove ${slot.name}`} disabled={s.slots.length === 1} onClick={() => void save({ slots: s.slots.filter((x) => x.id !== slot.id) })} className="rounded px-2 py-1.5 text-muted hover:bg-error-subtle hover:text-error disabled:opacity-30">
               <Trash />
             </button>
           </li>

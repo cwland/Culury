@@ -98,7 +98,7 @@ export default function GroceryPage() {
             placeholder="Add items: eggs, 2 lb chicken thighs, milk…"
             className="min-w-0 flex-1 rounded-xl border border-line bg-container px-4 py-3 text-lg outline-none focus:border-action focus:ring-2 focus:ring-action/15"
           />
-          <button type="submit" disabled={!text.trim()} aria-label="Add" className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-xl bg-primary text-white disabled:opacity-50">
+          <button type="submit" disabled={!text.trim()} aria-label="Add" title="Add" className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-xl bg-primary text-white disabled:opacity-50">
             <PlusIcon />
           </button>
         </div>
@@ -175,7 +175,7 @@ function ItemRow({ i, onToggle, onEdit }: { i: GroceryItem; onToggle: () => void
           {(i.note || i.sources.length > 0) && <span className="block truncate text-xs text-muted">{[i.note, i.sources.length ? `for ${i.sources.map((s) => s.title).join(", ")}` : ""].filter(Boolean).join(" · ")}</span>}
         </span>
       </button>
-      <button type="button" onClick={onEdit} aria-label={`Edit ${i.name}`} className="self-stretch px-4 text-muted hover:text-ink">
+      <button type="button" onClick={onEdit} aria-label={`Edit ${i.name}`} title={`Edit ${i.name}`} className="self-stretch px-4 text-muted hover:text-ink">
         ⋯
       </button>
     </li>

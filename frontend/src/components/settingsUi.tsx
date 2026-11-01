@@ -34,7 +34,7 @@ export function Toggle({ label, checked, disabled, onChange, text }: { label: st
       <button
         type="button"
         role="switch"
-        aria-label={label}
+        aria-label={label} title={label}
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}

@@ -35,10 +35,10 @@ export default function TimerTray() {
                   {running ? "Pause" : "Go"}
                 </button>
               )}
-              <button type="button" onClick={() => addTime(t.id, 60)} className="rounded-lg bg-white/15 px-2 py-1 text-xs font-semibold hover:bg-white/25" aria-label={`Add a minute to ${t.label}`}>
+              <button type="button" onClick={() => addTime(t.id, 60)} className="rounded-lg bg-white/15 px-2 py-1 text-xs font-semibold hover:bg-white/25" aria-label={`Add a minute to ${t.label}`} title={`Add a minute to ${t.label}`}>
                 +1
               </button>
-              <button type="button" onClick={() => dismissTimer(t.id)} aria-label={`${t.rang ? "Dismiss" : "Cancel"} ${t.label}`} className="rounded-lg p-1 hover:bg-white/20">
+              <button type="button" onClick={() => dismissTimer(t.id)} aria-label={`${t.rang ? "Dismiss" : "Cancel"} ${t.label}`} title={`${t.rang ? "Dismiss" : "Cancel"} ${t.label}`} className="rounded-lg p-1 hover:bg-white/20">
                 <CloseIcon className="size-4" />
               </button>
             </div>

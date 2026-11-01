@@ -17,7 +17,7 @@ export function Popup({ title, onClose, wide, tall, children }: { title: string;
       <div role="dialog" aria-modal="true" aria-label={title} className={`flex max-h-[94vh] w-full flex-col overflow-hidden rounded-t-2xl bg-container shadow-[0_12px_40px_rgba(31,36,38,0.3)] sm:rounded-2xl ${wide ? "max-w-[52rem]" : "max-w-[28rem]"} ${tall ? "h-[85vh]" : ""}`}>
         <header className="relative flex items-center justify-center bg-page px-12 py-5">
           <h2 className="text-xl font-bold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1.5 text-subtle hover:bg-container/70 hover:text-ink">
+          <button onClick={onClose} aria-label="Close" title="Close" className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1.5 text-subtle hover:bg-container/70 hover:text-ink">
             <CloseIcon className="size-5" />
           </button>
         </header>

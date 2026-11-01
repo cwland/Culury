@@ -195,7 +195,7 @@ export default function CookMode({ id }: { id: number }) {
     <div role="dialog" aria-modal="true" aria-label={`Cooking ${r.title}`} className="fixed inset-0 z-[60] flex flex-col bg-page pt-[env(safe-area-inset-top)]">
       {/* Top bar */}
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-container px-2 sm:px-4">
-        <button type="button" onClick={exit} aria-label="Leave Cook Mode" className="rounded-lg p-2 text-subtle hover:bg-pressed hover:text-ink">
+        <button type="button" onClick={exit} aria-label="Leave Cook Mode" title="Leave Cook Mode" className="rounded-lg p-2 text-subtle hover:bg-pressed hover:text-ink">
           <CloseIcon className="size-6" />
         </button>
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{r.title}</h1>
@@ -301,7 +301,7 @@ export default function CookMode({ id }: { id: number }) {
           <div role="dialog" aria-label="Ingredients" className="max-h-[85vh] overflow-y-auto rounded-t-2xl bg-container p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xl font-bold">Ingredients</h2>
-              <button type="button" onClick={() => setDrawer(false)} aria-label="Close ingredients" className="rounded-lg p-2 hover:bg-pressed">
+              <button type="button" onClick={() => setDrawer(false)} aria-label="Close ingredients" title="Close ingredients" className="rounded-lg p-2 hover:bg-pressed">
                 <CloseIcon className="size-5" />
               </button>
             </div>

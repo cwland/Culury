@@ -91,7 +91,7 @@ export default function ThemePicker() {
           type="button"
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label={`Theme: ${theme.name}`}
+          aria-label={`Theme: ${theme.name}`} title={`Theme: ${theme.name}`}
           onClick={() => setOpen((o) => !o)}
           className="flex w-full items-center gap-3 rounded border border-muted/50 bg-container px-3 py-2.5 text-left outline-none focus:border-action focus:ring-2 focus:ring-action/15"
         >

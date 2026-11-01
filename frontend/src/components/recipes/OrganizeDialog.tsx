@@ -101,7 +101,7 @@ export function OrganizeDialog({ recipe, onClose, onSaved }: { recipe: Recipe; o
             {tags.map((t) => (
               <li key={t} className="flex items-center gap-1 rounded-full bg-brand-subtle py-1 pl-3 pr-1 text-sm font-semibold text-action">
                 #{t}
-                <button type="button" aria-label={`Remove ${t}`} onClick={() => setTags(tags.filter((x) => x !== t))} className="flex size-5 items-center justify-center rounded-full hover:bg-action/15">
+                <button type="button" aria-label={`Remove ${t}`} title={`Remove ${t}`} onClick={() => setTags(tags.filter((x) => x !== t))} className="flex size-5 items-center justify-center rounded-full hover:bg-action/15">
                   ×
                 </button>
               </li>

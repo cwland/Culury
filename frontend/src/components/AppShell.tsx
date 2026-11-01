@@ -91,7 +91,7 @@ export default function AppShell() {
           <a
             key={p.id}
             href={`#/${p.id}`}
-            aria-label={p.label}
+            aria-label={p.label} title={p.label}
             aria-current={page === p.id ? "page" : undefined}
             className={`flex flex-col items-center text-xs ${page === p.id ? "text-action" : "text-subtle"}`}
           >

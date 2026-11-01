@@ -284,7 +284,7 @@ export function ApiKeys() {
             <button
               onClick={() => (confirmId === k.id ? revoke(k.id) : setConfirmId(k.id))}
               onBlur={() => setConfirmId(null)}
-              aria-label={confirmId === k.id ? `Confirm revoke ${k.name}` : `Revoke ${k.name}`}
+              aria-label={confirmId === k.id ? `Confirm revoke ${k.name}` : `Revoke ${k.name}`} title={confirmId === k.id ? `Confirm revoke ${k.name}` : `Revoke ${k.name}`}
               className={`rounded px-3 py-1.5 text-sm font-semibold ${confirmId === k.id ? "bg-error text-white" : "text-error hover:bg-error-subtle"}`}
             >
               {confirmId === k.id ? "Revoke for good?" : "Revoke"}
