@@ -9,6 +9,7 @@ import { cleanTag, loadRecipe, nutritionInput, refreshSearch, saveRecipe, type R
 import { AiError } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { notFound } from "./errors.js";
+import { tidyIngredientLine } from "./ingredients.js";
 
 // AI Enhance: the AI checks a recipe (fills gaps in the steps, catches ingredient mistakes,
 // estimates nutrition, suggests categories and tags). Checking saves nothing: the person picks
@@ -53,7 +54,7 @@ Rules:
 - Steps marked DETAILED (fill gaps only, "stepMode": "filled"): keep the recipe's own wording. Change a step only to fix a mistake or add a missing detail (a time, a temperature, a doneness cue, a missing step). Keep every step; lines starting with "# " are headings, keep them.
 - Steps marked BRIEF (expand them, "stepMode": "expanded"): rewrite them as full instructions a home cook can follow. Group them under short headings, each its own line starting with "# " (for example "# Prep and Season", "# Sear the Pork Chops", "# Build the Pan Sauce"). Each step starts with a short label and a colon ("Pat dry: ...", "Deglaze: ..."), then says how and why: pan and heat level, visual and doneness cues, times, resting, scraping up browned bits. Keep every action and the cook's own numbers; add detail, don't drop anything. Never number the lines.
 - Food safety: if a doneness temperature is below the USDA safe minimum (pork 145°F, poultry 165°F, ground meat 160°F), use the safe one and say so in stepChanges.
-- Ingredients: one per line, as written. Add an ingredient only if the steps use it and it's missing. Never change a quantity without saying why in ingredientChanges.
+- Ingredients: one per line, as written, but with amounts as numbers ("1 lb ground beef", not "One pound of ground beef"). Add an ingredient only if the steps use it and it's missing. Never change a quantity without saying why in ingredientChanges.
 - Nutrition is for ONE serving: grams, except calories (kcal) and sodium (mg), from standard food tables (USDA). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like. "servingSize": how much one serving is, like "About 1½ cups (340 g)". "note": one short sentence on what you assumed.
 - Categories: choose from the household's categories. Suggest a new one only if none fits.
 - Tags: lowercase, short. Reuse the household's existing tags rather than near-duplicates. Keep the recipe's tags unless one is wrong.
@@ -135,7 +136,7 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
 
   // Instructions: numbering the AI may have kept is dropped
   const sSteps = textList(json.steps, 300, 10000)?.map((s) => s.replace(/^(?:step\s*)?\d+[.)]\s+/i, "")) ?? null;
-  const sIngredients = textList(json.ingredients, 500, 1000)?.map((s) => s.replace(/^[-•*]\s+/, "")) ?? null;
+  const sIngredients = textList(json.ingredients, 500, 1000)?.map((s) => tidyIngredientLine(s.replace(/^[-•*]\s+/, ""))) ?? null;
 
   // Nutrition: only an estimate with calories counts
   let sNutrition: Nutrition | null = null;

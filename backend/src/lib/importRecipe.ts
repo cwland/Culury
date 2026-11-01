@@ -236,7 +236,7 @@ export function pageInfo(html: string, pageUrl: string) {
 
 const SYSTEM = `You turn recipe text into JSON. Reply with JSON only, in this shape:
 {"isRecipe": true, "title": "", "description": "", "ingredients": ["1 cup flour", "For the sauce:", "2 tbsp butter"], "steps": ["Heat the oven to 350°F.", "Mix..."], "servings": 4, "yieldText": "", "prepMinutes": 10, "cookMinutes": 20, "totalMinutes": 30, "tags": ["vegetarian"]}
-Rules: copy ingredient lines with their amounts as written, one per line; a heading line ends with ":". Steps are the method in order, without numbers. Leave out stories, ads, comments and nutrition. Use null for anything not given; never invent amounts or times. "tags": up to 5 short lowercase words (cuisine, diet, main ingredient). If the text has no recipe, reply {"isRecipe": false}.`;
+Rules: copy ingredient lines as written, one per line, but write amounts as numbers ("1 lb ground beef", not "One pound of ground beef"; "1/2 cup", not "half a cup"); a heading line ends with ":". Steps are the method in order, without numbers. Leave out stories, ads, comments and nutrition. Use null for anything not given; never invent amounts or times. "tags": up to 5 short lowercase words (cuisine, diet, main ingredient). If the text has no recipe, reply {"isRecipe": false}.`;
 
 export async function recipeWithAi(ai: AiService, text: string, hint?: string): Promise<ImportedRecipe> {
   const active = await ai.active();

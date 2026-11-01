@@ -11,6 +11,7 @@ import type { Photos } from "./photos.js";
 import { createRecipe, saveRecipe } from "./recipes.js";
 import { recipeAdded } from "./nutrition.js";
 import { firstVersion } from "./versions.js";
+import { tidyIngredientLine } from "./ingredients.js";
 
 interface Deps {
   db: Db;
@@ -49,7 +50,7 @@ async function store(d: Deps, r: ImportedRecipe & { notes?: string | null }, job
   const input = createRecipe.parse({
     title: r.title.slice(0, 300),
     description: r.description?.slice(0, 5000) ?? null,
-    ingredients: r.ingredients.slice(0, 500).map((i) => i.slice(0, 1000)),
+    ingredients: r.ingredients.slice(0, 500).map((i) => tidyIngredientLine(i.slice(0, 1000))), // "One pound of…" -> "1 lb…"
     steps: r.steps.slice(0, 300).map((s) => (typeof s === "string" ? s.slice(0, 10000) : { section: s.section.slice(0, 200) })),
     servings: r.servings ?? null,
     yieldText: r.yieldText ?? null,

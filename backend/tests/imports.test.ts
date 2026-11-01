@@ -45,6 +45,23 @@ describe("importing a link", () => {
     expect((await t.api("GET", "/api/logs?category=import")).body[0]).toMatchObject({ level: "info", event: 'Imported "Texas Chili"' });
   });
 
+  it("amounts written in words come in as numbers, so they scale", async () => {
+    t.web.pages["https://example.test/squash"] = { body: ld({ name: "Spaghetti Squash Bake", recipeIngredient: ["One medium spaghetti squash, about 2 to 3 lbs", "One pound of ground Italian sausage", "6 tbsp olive oil"], recipeInstructions: ["Roast."] }) };
+    const job = await importUrl("https://example.test/squash");
+    const r = (await t.api("GET", `/api/recipes/${job.result.recipeId}`)).body;
+    expect(r.ingredients.map((i: any) => i.raw)).toEqual(["1 medium spaghetti squash, about 2 to 3 lbs", "1 lb ground Italian sausage", "6 tbsp olive oil"]);
+    expect(r.ingredients[1]).toMatchObject({ quantity: 1, unit: "lb", name: "ground Italian sausage" });
+  });
+
+  it("the AI is told to write amounts as numbers", async () => {
+    await turnOnAi();
+    t.web.pages["https://example.test/plain"] = { body: "<html><body><h1>Soup</h1><p>One onion. Simmer.</p></body></html>" };
+    t.ai.respond = aiReply({ isRecipe: true, title: "Soup", ingredients: ["One onion"], steps: ["Simmer."] });
+    const job = await importUrl("https://example.test/plain");
+    expect(t.ai.calls[0].body.messages[0].content).toMatch(/amounts as numbers/i);
+    expect((await t.api("GET", `/api/recipes/${job.result.recipeId}`)).body.ingredients[0].raw).toBe("1 onion");
+  });
+
   it("knows a page it already has, unless you insist", async () => {
     t.web.pages["https://seriouseats.com/texas-chili"] = { body: ld({ ...chili, image: undefined }) };
     t.web.pages["https://www.seriouseats.com/texas-chili/#comments"] = t.web.pages["https://seriouseats.com/texas-chili"];

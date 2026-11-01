@@ -53,6 +53,15 @@ describe("asking AI to check a recipe", () => {
     expect(after.tags).toEqual(["spicy"]);
   });
 
+  it("ingredient amounts it writes in words come back as numbers; it's told to use numbers", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = () => reply({ ...full, ingredients: ["One pound of chicken", "1 onion"] });
+    const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
+    expect(e.ingredients.suggested).toEqual(["1 lb chicken", "1 onion"]);
+    expect(t.ai.calls[0].body.messages[0].content).toMatch(/amounts as numbers/i);
+  });
+
   it("a section the AI leaves out shows no changes", async () => {
     await aiOn();
     const r = await chili();
