@@ -10,6 +10,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.13.0",
+    date: "2026-10-31",
+    title: "PDF imports and a step-by-step AI review",
+    changes: [
+      "Import PDFs: a single recipe or a whole cookbook, from From a file or From a photo. Pages with text are read in parts; scanned pages are sent to your AI as pictures. Reading a PDF needs AI.",
+      "Improve with AI is now a wizard: one screen at a time (ingredients, instructions, nutrition, categories and tags), the recipe's name always at the top, and a summary of your choices before Save. It opens by itself after you import a recipe.",
+      "After a file brings in several recipes, choose Review one by one (the wizard goes through each, remembers where you got to, and you can stop any time) or Improve all automatically (the AI fixes them all in the background, with a progress page, a Stop button and a list of any it couldn't do). Every original stays as v1 in its Version history.",
+      "Settings › Data › Wipe all recipes: removes every recipe with its versions, photos, tags, collections and meal plan entries, for a clean slate. Type DELETE to confirm; a backup is saved first.",
+      "Icons have hover text, Add to grocery list is back with the buttons in front of Organize, and the edit pencils sit right next to Ingredients, Steps and Notes.",
+    ],
+  },
+  {
     version: "0.12.0",
     date: "2026-10-31",
     title: "A tidier recipe page, edited in place",
