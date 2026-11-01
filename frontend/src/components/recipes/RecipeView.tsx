@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
-import { formatMinutes, listAddress, siteName, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
+import { formatMinutes, ingredientsText, listAddress, parseMinutes, parseServings, siteName, stepsText, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
 import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
 import { OrganizeDialog } from "./OrganizeDialog";
+import { SectionButtons, useSectionSave } from "./SectionSave";
 import { useLive } from "../../live";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
@@ -17,10 +18,36 @@ import { StepText } from "./StepText";
 import { ingredientLine, recipeUnits, type Units } from "../../cooking";
 
 const card = "rounded-2xl bg-container p-5 sm:p-6";
+const inputClass = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 font-normal text-ink outline-none focus:border-action focus:ring-2 focus:ring-action/15";
+
+// ---------- editing in place ----------
+type Section = "details" | "ingredients" | "steps" | "notes";
+const str = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
+// The text boxes for a section, filled from the recipe
+function draftOf(r: Recipe, section: Section): Record<string, string> {
+  if (section === "ingredients") return { ingredients: ingredientsText(r.ingredients) };
+  if (section === "steps") return { steps: stepsText(r.steps) };
+  if (section === "notes") return { notes: str(r.notes) };
+  return { title: r.title, description: str(r.description), servings: str(r.servings), yieldText: str(r.yieldText), prepMinutes: str(r.prepMinutes), cookMinutes: str(r.cookMinutes), totalMinutes: str(r.totalMinutes), sourceName: str(r.sourceName), sourceUrl: str(r.sourceUrl) };
+}
+// What to send for a section (or what's wrong with it)
+function bodyOf(section: Section, d: Record<string, string>): { body: Record<string, unknown> } | { errors: Record<string, string> } {
+  if (section !== "details") return { body: { [section]: d[section] } };
+  const errors: Record<string, string> = {};
+  if (!d.title.trim()) errors.title = "Give the recipe a name";
+  const servings = parseServings(d.servings);
+  if (servings === undefined) errors.servings = "Servings should be a number. Put things like “2 loaves” in Makes.";
+  const minutes = Object.fromEntries((["prepMinutes", "cookMinutes", "totalMinutes"] as const).map((k) => [k, parseMinutes(d[k])]));
+  for (const [k, v] of Object.entries(minutes)) if (v === undefined) errors[k] = "Use minutes or a time like 1 hr 15 min";
+  if (Object.keys(errors).length) return { errors };
+  return { body: { title: d.title.trim(), description: d.description, servings, yieldText: d.yieldText, ...minutes, sourceName: d.sourceName, sourceUrl: d.sourceUrl } };
+}
+
 const iconButton = "flex size-9 shrink-0 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink";
 const smallButton = "flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed";
 
-export default function RecipeView({ id }: { id: number }) {
+// startEditing: opened from an old "edit" link, so the details are ready to edit
+export default function RecipeView({ id, startEditing }: { id: number; startEditing?: boolean }) {
   const [r, setR] = useState<Recipe | null>(null);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -32,6 +59,11 @@ export default function RecipeView({ id }: { id: number }) {
   const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
   const [organizing, setOrganizing] = useState(false);
+  // Editing in place: one section at a time, with its text while it's being edited
+  const [editing, setEditing] = useState<Section | null>(startEditing ? "details" : null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
+  const saver = useSectionSave(r, (updated) => setR(updated));
   const [tab, setTab] = useState<"recipe" | "nutrition" | "history">("recipe");
 
   useEffect(() => {
@@ -70,6 +102,46 @@ export default function RecipeView({ id }: { id: number }) {
     window.location.hash = "#/recipes";
   };
 
+  const startEdit = (section: Section) => {
+    saver.clear();
+    setDraftErrors({});
+    setDraft(draftOf(r, section));
+    setEditing(section);
+  };
+  const stopEdit = () => {
+    saver.clear();
+    setDraftErrors({});
+    setEditing(null);
+  };
+  // Save the section being edited (nothing changed: just close it)
+  const saveSection = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    const out = bodyOf(editing, draft);
+    if ("errors" in out) return setDraftErrors(out.errors);
+    setDraftErrors({});
+    const before = bodyOf(editing, draftOf(r, editing));
+    if (!("errors" in before) && JSON.stringify(before.body) === JSON.stringify(out.body)) return stopEdit();
+    saver.save(out.body, () => setEditing(null));
+  };
+  const field = (key: string, label: string, opts: { area?: boolean; rows?: number; hint?: string } = {}) => (
+    <label className="block">
+      <span className="text-sm font-semibold text-subtle">{label}</span>
+      {opts.area ? (
+        <textarea aria-label={label} rows={opts.rows ?? 4} value={draft[key] ?? ""} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className={inputClass} />
+      ) : (
+        <input aria-label={label} value={draft[key] ?? ""} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className={inputClass} />
+      )}
+      {(draftErrors[key] || saver.fieldErrors[key]) && <span className="mt-1 block text-sm text-error">{draftErrors[key] || saver.fieldErrors[key]}</span>}
+      {opts.hint && <span className="mt-1 block text-xs text-muted">{opts.hint}</span>}
+    </label>
+  );
+  const pencil = (section: Section, label: string) => (
+    <button type="button" aria-label={label} title={label} onClick={() => startEdit(section)} className={iconButton}>
+      <EditIcon />
+    </button>
+  );
+
   const times = [
     ["Prep", r.prepMinutes],
     ["Cook", r.cookMinutes],
@@ -82,7 +154,7 @@ export default function RecipeView({ id }: { id: number }) {
     <Shell>
       {imported && (
         <p role="status" className="mb-3 rounded-lg bg-success-subtle px-4 py-3 text-success">
-          Imported. Give it a quick look, and <a href={`#/recipes/${r.id}/edit`} className="font-semibold underline">edit</a> anything that came through wrong.
+          Imported. Give it a quick look, and use the pencils to fix anything that came through wrong.
           {/[?&]imported=warn/.test(window.location.hash) && " The photo couldn't be saved here, so it's shown from the site."}
         </p>
       )}
@@ -138,9 +210,7 @@ export default function RecipeView({ id }: { id: number }) {
           <div className="mt-1 flex items-start gap-2">
             <h1 className="text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
             <div className="mt-1 flex shrink-0 items-center">
-              <a href={`#/recipes/${r.id}/edit`} aria-label="Edit details" title="Edit details" className={iconButton}>
-                <EditIcon />
-              </a>
+              {editing !== "details" && pencil("details", "Edit details")}
               <button type="button" aria-pressed={r.me.favorite} aria-label={r.me.favorite ? "Favorite" : "Add to favorites"} title={r.me.favorite ? "Favorite (click to remove)" : "Add to favorites"} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${iconButton} ${r.me.favorite ? "text-warning" : ""}`}>
                 <StarIcon filled={r.me.favorite} className="size-5" />
               </button>
@@ -149,33 +219,56 @@ export default function RecipeView({ id }: { id: number }) {
               </button>
             </div>
           </div>
-          {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
+          {editing === "details" ? (
+            <form aria-label="Recipe details" onSubmit={saveSection} className="mt-3 flex flex-col gap-3">
+              {field("title", "Name")}
+              {field("description", "Description", { area: true, rows: 3 })}
+              <div className="grid grid-cols-2 gap-3">
+                {field("servings", "Servings")}
+                {field("yieldText", "Makes", { hint: "Like “24 cookies” or “2 loaves”" })}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {field("prepMinutes", "Prep time")}
+                {field("cookMinutes", "Cook time")}
+                {field("totalMinutes", "Total time")}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {field("sourceName", "Source")}
+                {field("sourceUrl", "Link to the original")}
+              </div>
+              <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
+            </form>
+          ) : (
+            <>
+            {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
 
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            {times.map(([label, m]) => (
-              <span key={label} className="flex items-center gap-1.5">
-                <ClockIcon className="size-4 text-muted" />
-                <span className="text-subtle">{label}</span> <strong>{formatMinutes(m)}</strong>
-              </span>
-            ))}
-            {(r.servings || r.yieldText) && (
-              <span className="flex items-center gap-1.5">
-                <ServingsIcon className="size-4 text-muted" />
-                <strong>{r.yieldText || `${r.servings} servings`}</strong>
-              </span>
-            )}
-          </div>
-          {source && (
-            <p className="mt-3 text-sm text-subtle">
-              From{" "}
-              {r.sourceUrl ? (
-                <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 font-semibold text-link hover:underline">
-                  {source} <LinkOutIcon className="size-3.5" />
-                </a>
-              ) : (
-                <strong>{source}</strong>
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              {times.map(([label, m]) => (
+                <span key={label} className="flex items-center gap-1.5">
+                  <ClockIcon className="size-4 text-muted" />
+                  <span className="text-subtle">{label}</span> <strong>{formatMinutes(m)}</strong>
+                </span>
+              ))}
+              {(r.servings || r.yieldText) && (
+                <span className="flex items-center gap-1.5">
+                  <ServingsIcon className="size-4 text-muted" />
+                  <strong>{r.yieldText || `${r.servings} servings`}</strong>
+                </span>
               )}
-            </p>
+            </div>
+            {source && (
+              <p className="mt-3 text-sm text-subtle">
+                From{" "}
+                {r.sourceUrl ? (
+                  <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 font-semibold text-link hover:underline">
+                    {source} <LinkOutIcon className="size-3.5" />
+                  </a>
+                ) : (
+                  <strong>{source}</strong>
+                )}
+              </p>
+            )}
+            </>
           )}
 
           <div className="mt-4 flex items-center gap-3">
@@ -244,50 +337,82 @@ export default function RecipeView({ id }: { id: number }) {
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <section aria-label="Ingredients" className={`${card} self-start`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xl font-bold">Ingredients</h2>
+                <h2 className="mr-auto text-xl font-bold">Ingredients</h2>
+                {editing !== "ingredients" && pencil("ingredients", "Edit ingredients")}
                 {r.ingredients.length > 0 && (
                   <button type="button" onClick={() => setShopping(true)} className={smallButton}>
                     <GroceryIcon className="size-4" /> Add to grocery list
                   </button>
                 )}
               </div>
-              {r.ingredients.some((i) => i.quantity || i.unit) && (
-                <div className="mt-3">
-                  <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
-                </div>
-              )}
-              {r.ingredients.length ? (
-                <ul className="mt-3">
-                  {r.ingredients.map((i, n) =>
-                    i.section ? (
-                      <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
-                        {i.section}
-                      </li>
-                    ) : (
-                      <li key={n} className="border-b border-line py-2 last:border-0">
-                        <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
-                      </li>
-                    )
-                  )}
-                </ul>
+              {editing === "ingredients" ? (
+                <form onSubmit={saveSection} className="mt-3">
+                  {field("ingredients", "Ingredients", { area: true, rows: Math.max(8, (draft.ingredients ?? "").split("\n").length + 1), hint: "One per line. A line ending in “:” is a heading (“For the sauce:”)." })}
+                  <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
+                </form>
               ) : (
-                <p className="mt-2 text-subtle">No ingredients yet.</p>
+                <>
+                {r.ingredients.some((i) => i.quantity || i.unit) && (
+                  <div className="mt-3">
+                    <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
+                  </div>
+                )}
+                {r.ingredients.length ? (
+                  <ul className="mt-3">
+                    {r.ingredients.map((i, n) =>
+                      i.section ? (
+                        <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
+                          {i.section}
+                        </li>
+                      ) : (
+                        <li key={n} className="border-b border-line py-2 last:border-0">
+                          <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
+                        </li>
+                      )
+                    )}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-subtle">No ingredients yet.</p>
+                )}
+                </>
               )}
             </section>
 
             <section aria-label="Steps" className={card}>
-              <h2 className="text-xl font-bold">Steps</h2>
-              {r.steps.length ? <Steps steps={r.steps} units={prefs.units} recipe={r} /> : <p className="mt-2 text-subtle">No steps yet.</p>}
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-bold">Steps</h2>
+                {editing !== "steps" && pencil("steps", "Edit steps")}
+              </div>
+              {editing === "steps" ? (
+                <form onSubmit={saveSection} className="mt-3">
+                  {field("steps", "Steps", { area: true, rows: 14, hint: "A blank line between steps. A line starting with “# ” is a heading." })}
+                  <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
+                </form>
+              ) : r.steps.length ? (
+                <Steps steps={r.steps} units={prefs.units} recipe={r} />
+              ) : (
+                <p className="mt-2 text-subtle">No steps yet.</p>
+              )}
             </section>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {r.notes && (
-              <section aria-label="Recipe notes" className={card}>
+            <section aria-label="Recipe notes" className={card}>
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-bold">Notes</h2>
+                {editing !== "notes" && pencil("notes", "Edit notes")}
+              </div>
+              {editing === "notes" ? (
+                <form onSubmit={saveSection} className="mt-3">
+                  {field("notes", "Notes", { area: true, rows: 5, hint: "Everyone in your household sees these." })}
+                  <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
+                </form>
+              ) : r.notes ? (
                 <p className="mt-2 whitespace-pre-line">{r.notes}</p>
-              </section>
-            )}
+              ) : (
+                <p className="mt-2 text-subtle">No notes yet.</p>
+              )}
+            </section>
             <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
             <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
           </div>
@@ -319,6 +444,7 @@ export default function RecipeView({ id }: { id: number }) {
       )}
       {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : prefs.factor !== 1 ? { scale: prefs.factor } : {}) }] }} onClose={() => setShopping(false)} />}
+      {saver.askPopup}
       {organizing && <OrganizeDialog recipe={r} onClose={() => setOrganizing(false)} onSaved={(updated) => setR(updated)} />}
       {confirmDelete && (
         <Popup title="Delete this recipe?" onClose={() => setConfirmDelete(false)}>

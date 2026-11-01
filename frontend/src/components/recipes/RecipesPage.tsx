@@ -20,7 +20,8 @@ export default function RecipesPage() {
 
   if (route.view === "away") return null;
   if (route.view === "recipe") return <RecipeView key={route.id} id={route.id} />;
-  if (route.view === "edit") return <RecipeEditor key={`edit-${route.id}`} id={route.id} />;
+  // (the edit screen is gone: an old edit link opens the recipe with its details ready to edit)
+  if (route.view === "edit") return <RecipeView key={`edit-${route.id}`} id={route.id} startEditing />;
   if (route.view === "cook") return <CookMode key={`cook-${route.id}`} id={route.id} />;
   if (route.view === "new") return <RecipeEditor key="new" />;
   return <RecipeList params={route.params} />;

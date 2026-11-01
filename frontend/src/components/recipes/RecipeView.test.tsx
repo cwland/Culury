@@ -140,12 +140,6 @@ describe("recipe page header", () => {
     expect(s.writes().map((w) => w.body)).toEqual([{ favorite: true }, { pinned: true }]);
   });
 
-  it("a pencil by the name edits the details", async () => {
-    server(on);
-    render(<RecipeView id={7} />);
-    const h = await header();
-    expect(within(h).getByRole("link", { name: "Edit details" })).toHaveAttribute("href", "#/recipes/7/edit");
-  });
 
   it("tags and collections show as pills under the buttons, in the header", async () => {
     server(on, recipeJson({ tags: ["beef", "spicy"], collections: [{ id: 2, name: "Quick Meals" }] }));
@@ -351,6 +345,124 @@ describe("scaled amounts go to the grocery list", () => {
     await u.click(await screen.findByRole("button", { name: "Make more" }));
     await u.click(screen.getByRole("button", { name: /Add to grocery list/ }));
     await waitFor(() => expect(previewBody(s)).toEqual({ recipes: [{ recipeId: 7, scale: 2 }] }));
+  });
+});
+
+describe("editing in place", () => {
+  const editable = (recipe: Record<string, unknown> = {}, more: Record<string, any> = {}) =>
+    server(on, recipeJson(recipe), { "PATCH /api/recipes/7": (body: any) => recipeJson({ ...recipe, ...patched(body) }), ...more });
+  // what the server would send back after a PATCH (enough for these tests)
+  const patched = (b: any) => ({
+    ...(b.title !== undefined && { title: b.title }),
+    ...(b.notes !== undefined && { notes: b.notes }),
+    ...(b.servings !== undefined && { servings: b.servings }),
+    ...(b.ingredients !== undefined && { ingredients: String(b.ingredients).split("\n").map((raw: string) => ({ raw })) }),
+    ...(b.steps !== undefined && { steps: String(b.steps).split(/\n\n+/).map((text: string) => ({ text })) }),
+  });
+  const writes = (s: ReturnType<typeof server>) => s.writes().filter((w) => w.method === "PATCH");
+
+  it("Ingredients: the pencil opens just that list; saving asks about the version", async () => {
+    const s = editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const ing = await screen.findByRole("region", { name: "Ingredients" });
+    await u.click(within(ing).getByRole("button", { name: "Edit ingredients" }));
+    const box = within(ing).getByRole("textbox", { name: "Ingredients" });
+    expect(box).toHaveValue("1 lb ground beef\n2 tbsp chili powder");
+    expect(screen.getByRole("region", { name: "Steps" })).not.toContainElement(screen.queryByRole("textbox", { name: "Steps" })); // the rest isn't being edited
+    await u.type(box, "\n1 tsp salt");
+    await u.click(within(ing).getByRole("button", { name: "Save" }));
+    const ask = await screen.findByRole("dialog", { name: "Save your changes" });
+    await u.click(within(ask).getByRole("button", { name: "Save as new version" }));
+    await waitFor(() => expect(writes(s)).toHaveLength(1));
+    expect(writes(s)[0].body).toEqual({ ingredients: "1 lb ground beef\n2 tbsp chili powder\n1 tsp salt", version: "new" });
+    await waitFor(() => expect(within(ing).queryByRole("textbox")).toBeNull());
+    expect(ing).toHaveTextContent("1 tsp salt");
+  });
+
+  it("Cancel puts it back and saves nothing", async () => {
+    const s = editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const ing = await screen.findByRole("region", { name: "Ingredients" });
+    await u.click(within(ing).getByRole("button", { name: "Edit ingredients" }));
+    await u.type(within(ing).getByRole("textbox", { name: "Ingredients" }), "\nnope");
+    await u.click(within(ing).getByRole("button", { name: "Cancel" }));
+    expect(within(ing).queryByRole("textbox")).toBeNull();
+    expect(ing).not.toHaveTextContent("nope");
+    expect(writes(s)).toHaveLength(0);
+  });
+
+  it("Steps: saved straight away when versioning is off", async () => {
+    const s = editable({ versioning: false });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const steps = await screen.findByRole("region", { name: "Steps" });
+    await u.click(within(steps).getByRole("button", { name: "Edit steps" }));
+    const box = within(steps).getByRole("textbox", { name: "Steps" });
+    expect(box).toHaveValue("Brown the beef.\n\nSimmer for 30 minutes.");
+    await u.clear(box);
+    await u.type(box, "Brown the beef well.");
+    await u.click(within(steps).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writes(s)).toHaveLength(1));
+    expect(screen.queryByRole("dialog", { name: "Save your changes" })).toBeNull();
+    expect(writes(s)[0].body).toEqual({ steps: "Brown the beef well." });
+    await waitFor(() => expect(steps).toHaveTextContent("Brown the beef well."));
+  });
+
+  it("Notes: there's always a place for them, with a pencil", async () => {
+    const s = editable({ notes: null });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const notes = await screen.findByRole("region", { name: "Recipe notes" });
+    expect(notes).toHaveTextContent("No notes yet.");
+    await u.click(within(notes).getByRole("button", { name: "Edit notes" }));
+    await u.type(within(notes).getByRole("textbox", { name: "Notes" }), "Freezes well.");
+    await u.click(within(notes).getByRole("button", { name: "Save" }));
+    await u.click(await screen.findByRole("button", { name: "Save to current version" }));
+    await waitFor(() => expect(writes(s)[0].body).toEqual({ notes: "Freezes well.", version: "current" }));
+    await waitFor(() => expect(notes).toHaveTextContent("Freezes well."));
+  });
+
+  it("the details pencil by the name: name, description, servings, times and source, right there", async () => {
+    const s = editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const h = await screen.findByRole("region", { name: "Recipe" });
+    await u.click(within(h).getByRole("button", { name: "Edit details" }));
+    const form = within(h).getByRole("form", { name: "Recipe details" });
+    expect(within(form).getByLabelText("Name")).toHaveValue("Weeknight Chili");
+    expect(within(form).getByLabelText("Servings")).toHaveValue("4");
+    expect(within(form).getByLabelText("Prep time")).toHaveValue("10");
+    await u.clear(within(form).getByLabelText("Name"));
+    await u.type(within(form).getByLabelText("Name"), "Texas Chili");
+    await u.clear(within(form).getByLabelText("Servings"));
+    await u.type(within(form).getByLabelText("Servings"), "6");
+    await u.click(within(form).getByRole("button", { name: "Save" }));
+    await u.click(await screen.findByRole("button", { name: "Save as new version" }));
+    await waitFor(() => expect(writes(s)).toHaveLength(1));
+    expect(writes(s)[0].body).toMatchObject({ title: "Texas Chili", servings: 6, prepMinutes: 10, cookMinutes: 40, version: "new" });
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Texas Chili"));
+  });
+
+  it("details: a servings or time it can't read says so, and saves nothing", async () => {
+    const s = editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const h = await screen.findByRole("region", { name: "Recipe" });
+    await u.click(within(h).getByRole("button", { name: "Edit details" }));
+    const form = within(h).getByRole("form", { name: "Recipe details" });
+    await u.clear(within(form).getByLabelText("Prep time"));
+    await u.type(within(form).getByLabelText("Prep time"), "soon");
+    await u.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await within(form).findByText(/Use minutes or a time like 1 hr 15 min/)).toBeInTheDocument();
+    expect(writes(s)).toHaveLength(0);
+  });
+
+  it("an old edit link opens the recipe with its details ready to edit", async () => {
+    server(on);
+    render(<RecipeView id={7} startEditing />);
+    expect(await screen.findByRole("form", { name: "Recipe details" })).toBeInTheDocument();
   });
 });
 
