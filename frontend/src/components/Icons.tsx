@@ -8,6 +8,7 @@ import {
   Copy,
   Ellipsis,
   Undo2,
+  Tag,
   WandSparkles,
   ExternalLink,
   FolderPlus,
@@ -74,6 +75,7 @@ export const CopyIcon = icon(Copy, "size-4", 1.8);
 export const MoreIcon = icon(Ellipsis, "size-4", 2);
 export const WandIcon = icon(WandSparkles, "size-4", 1.8);
 export const UndoIcon = icon(Undo2, "size-4", 1.8);
+export const TagIcon = icon(Tag, "size-4", 1.8);
 export const LinkOutIcon = icon(ExternalLink, "size-4", 1.8);
 export const CollectionAddIcon = icon(FolderPlus, "size-4", 1.8);
 export const EditIcon = icon(Pencil, "size-4", 1.8);

@@ -327,7 +327,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
   const lower = (xs: string[]) => new Set(xs.map((x) => x.toLowerCase()));
 
   return (
-    <Popup title="AI check" onClose={onClose} wide tall>
+    <Popup title="Improve with AI" onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
         {error && (
