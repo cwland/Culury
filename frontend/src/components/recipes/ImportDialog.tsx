@@ -201,13 +201,14 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
           </div>
         </form>
 
-        <Status job={job} error={error} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} />
+        <Status job={job} error={error} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance} />
       </div>
     </Popup>
   );
 }
 
-function Status({ job, error, onRetry, onForce, onClose }: { job: ImportJob | null; error: string; onRetry: () => void; onForce: () => void; onClose: () => void }) {
+// canReview: Improve with AI is on, so a file's recipes can be reviewed one by one
+function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: ImportJob | null; error: string; onRetry: () => void; onForce: () => void; onClose: () => void; canReview?: boolean }) {
   if (error) return <p role="alert" className="mt-4 rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p>;
   if (!job) return null;
   if (job.status === "queued" || job.status === "running")
@@ -237,6 +238,17 @@ function Status({ job, error, onRetry, onForce, onClose }: { job: ImportJob | nu
               ))}
             </ul>
           </details>
+        )}
+        {canReview && (job.result.recipeIds?.length ?? 0) > 1 && (
+          <div className="mt-3 rounded-lg bg-container p-3">
+            <p className="font-semibold">Improve them with AI?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <a href={`#/recipes/review/${job.id}`} onClick={onClose} className="rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+                Review one by one
+              </a>
+            </div>
+            <p className="mt-2 text-sm text-subtle">Each recipe's original is kept as v1 in its Version history.</p>
+          </div>
         )}
         <a href="#/recipes" onClick={onClose} className="mt-2 inline-block font-semibold text-link hover:underline">
           See your recipes

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMinutes, parseServings, pointsEstimate, type Nutrition } from "./recipes";
+import { parseMinutes, parseServings, pointsEstimate, recipeRoute, type Nutrition } from "./recipes";
 
 describe("editor numbers", () => {
   it("servings", () => {
@@ -38,6 +38,14 @@ describe("points estimate", () => {
   it("uses total sugar when added sugar isn't known", () => {
     expect(pointsEstimate(n({ addedSugar: null }))).toBe(pointsEstimate(n({ addedSugar: undefined })));
     expect(pointsEstimate(n({ addedSugar: null }))).toBe(12);
+  });
+});
+
+describe("recipe addresses", () => {
+  it("#/recipes/review/31: reviewing what import 31 brought in", () => {
+    window.location.hash = "#/recipes/review/31";
+    expect(recipeRoute()).toEqual({ view: "review", job: 31 });
+    window.location.hash = "";
   });
 });
 

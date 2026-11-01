@@ -4,6 +4,7 @@ import RecipeList from "./RecipeList";
 import RecipeView from "./RecipeView";
 import RecipeEditor from "./RecipeEditor";
 import CookMode from "./CookMode";
+import ReviewImport from "./ReviewImport";
 
 // #/recipes (the list), #/recipes/12 (a recipe), #/recipes/12/edit, #/recipes/new
 export default function RecipesPage() {
@@ -16,7 +17,7 @@ export default function RecipesPage() {
   // (braces: scrollTo returns a promise in newer browsers, and an effect may only return a cleanup function)
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [route.view, "id" in route ? route.id : 0]);
+  }, [route.view, "id" in route ? route.id : "job" in route ? route.job : 0]);
 
   if (route.view === "away") return null;
   if (route.view === "recipe") return <RecipeView key={route.id} id={route.id} />;
@@ -24,5 +25,6 @@ export default function RecipesPage() {
   if (route.view === "edit") return <RecipeView key={`edit-${route.id}`} id={route.id} startEditing />;
   if (route.view === "cook") return <CookMode key={`cook-${route.id}`} id={route.id} />;
   if (route.view === "new") return <RecipeEditor key="new" />;
+  if (route.view === "review") return <ReviewImport key={`review-${route.job}`} job={route.job} />;
   return <RecipeList params={route.params} />;
 }

@@ -246,7 +246,8 @@ function Part({ title, badge, changes, use, onUse, original, suggested }: { titl
 // time (ingredients, instructions, nutrition, categories and tags: only parts with changes), each
 // with the original beside the AI's version, and ends on a summary with Save. Only the parts you
 // keep the AI's version of are saved; what the recipe was stays in the version history.
-export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void }) {
+// position and onStop: reviewing an import's recipes one by one ("Recipe 3 of 42", Stop reviewing)
+export default function EnhanceWizard({ recipe, onClose, onApplied, position, onStop }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void; position?: { n: number; of: number }; onStop?: () => void }) {
   const [e, setE] = useState<Enhancement | null>(null);
   const [error, setError] = useState("");
   const [applyError, setApplyError] = useState("");
@@ -393,7 +394,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
         {e && parts.length > 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-action">
-              Improve with AI · Step {Math.min(at, parts.length) + 1} of {total}
+              {position ? `Recipe ${position.n} of ${position.of} · ` : ""}Improve with AI · Step {Math.min(at, parts.length) + 1} of {total}
             </p>
             <div className="flex gap-1" aria-hidden>
               {Array.from({ length: total }, (_, i) => (
@@ -462,6 +463,11 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
               <button type="button" onClick={onClose} className="px-2 py-2 font-semibold text-subtle hover:underline">
                 Skip
               </button>
+              {onStop && (
+                <button type="button" onClick={onStop} className="px-2 py-2 font-semibold text-subtle hover:underline">
+                  Stop reviewing
+                </button>
+              )}
               <span className="ml-auto" />
               {at > 0 && (
                 <button type="button" onClick={() => setAt(at - 1)} className={`${button} border border-line hover:bg-page`}>

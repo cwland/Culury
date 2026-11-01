@@ -84,3 +84,34 @@ describe("PDFs", () => {
   });
 });
 
+describe("after importing many recipes", () => {
+  beforeEach(() => forgetAiStatus());
+  const done = (ai: object) =>
+    fakeServer({
+      "GET /api/ai/status": () => ai,
+      "POST /api/recipes/import/file": () => ({ status: 202, json: job({}) }),
+      "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", imported: 3, skipped: 0, recipeIds: [5, 6, 7], problems: [] } }),
+    });
+  const run = async () => {
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "My Recipes.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    return screen.findByRole("status", { name: "Import finished" }, { timeout: 4000 });
+  };
+
+  it("offers to review them one by one with AI; the originals are kept", async () => {
+    done({ ready: true, photos: false, enhance: true });
+    const status = await run();
+    expect(within(status).getByRole("link", { name: "Review one by one" })).toHaveAttribute("href", "#/recipes/review/31");
+    expect(status).toHaveTextContent("Each recipe's original is kept as v1 in its Version history.");
+  });
+
+  it("with AI Enhance off there's nothing to offer", async () => {
+    done({ ready: true, photos: false, enhance: false });
+    const status = await run();
+    expect(within(status).queryByRole("link", { name: "Review one by one" })).toBeNull();
+  });
+});
+
