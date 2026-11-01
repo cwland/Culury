@@ -15,6 +15,8 @@ const apiTarget = process.env.API_PROXY_TARGET ?? `http://localhost:${apiPort ??
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Two pages: the app, and the Send to Culury relay (receive.html, see src/receiveRelay.ts)
+  build: { rollupOptions: { input: { main: new URL("./index.html", import.meta.url).pathname, receive: new URL("./receive.html", import.meta.url).pathname } } },
   define: { __APP_VERSION__: JSON.stringify(version) },
   // Screen tests run in a pretend browser (jsdom); pure-logic tests don't need one
   test: { environment: "jsdom", setupFiles: ["./src/test/setup.ts"] },

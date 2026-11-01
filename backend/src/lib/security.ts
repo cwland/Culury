@@ -44,7 +44,9 @@ export function securityHeaders(app: FastifyInstance) {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
     reply.header("Referrer-Policy", "same-origin");
-    reply.header("Cross-Origin-Opener-Policy", "same-origin");
+    // Except the Send to Culury relay page: a recipe site's tab opens it and hands it the page,
+    // which this header would stop (the app it passes the page to keeps it)
+    if (req.url.split("?")[0] !== "/receive.html") reply.header("Cross-Origin-Opener-Policy", "same-origin");
     reply.header("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), screen-wake-lock=(self)");
     if (!req.url.startsWith("/api/")) reply.header("Content-Security-Policy", CSP);
     // HTTPS (directly or through a reverse proxy that says so): browsers stay on HTTPS

@@ -129,7 +129,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
   // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
   // archive is tried next, unless that's switched off in Settings › Recipes.
   queue.handle("import-url", async (job) => {
-    const { url, force } = job.payload as { url: string; force?: boolean };
+    const { url, force, html: sent } = job.payload as { url: string; force?: boolean; html?: string };
     const remember = (result: JobResult) => d.db.update(jobs).set({ result }).where(eq(jobs.id, job.id));
     try {
       if (!force) {
@@ -138,7 +138,8 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
       }
       let read: Read;
       try {
-        const page = await fetchUrl(url, d.fetchOptions);
+        // Sent from your browser (Send to Culury): that page, not a fetch
+        const page = sent ? { url, contentType: "text/html", body: Buffer.from(sent, "utf8") } : await fetchUrl(url, d.fetchOptions);
         if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
         const html = page.body.toString("utf8");
         const info = pageInfo(html, page.url);
@@ -150,7 +151,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         read = { ...(await readPage(d.ai, html, page.url)), sourceUrl };
       } catch (e) {
         if (!(e instanceof BlockedError)) throw e;
-        if (!(await isOn(d.db, "savedCopies"))) throw e;
+        if (sent || !(await isOn(d.db, "savedCopies"))) throw e; // you had the page open: no archives
         // Kept from us: look for a saved copy (saying which archive, for the import window)
         const blocked = { ...e.block, url };
         const { found, tried } = await findSavedCopy(url, d.fetchOptions ?? {}, async (copy) => {
@@ -172,7 +173,11 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
       const { r, how, info, sourceUrl, savedCopy } = read;
       const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName ?? (savedCopy ? new URL(url).hostname.replace(/^www\./, "") : undefined) }, job, how);
       if (savedCopy) result.savedCopy = savedCopy;
-      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : how === "ai" ? " with AI" : "";
+      if (sent) {
+        result.sent = true;
+        await d.db.update(jobs).set({ payload: sql`${jobs.payload} - 'html'` }).where(eq(jobs.id, job.id)); // imported: the copy isn't needed
+      }
+      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
       await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${from}`, detail: [read.why, result.warnings?.join(" ")].filter(Boolean).join(" ") || url });
       return result;
     } catch (e) {

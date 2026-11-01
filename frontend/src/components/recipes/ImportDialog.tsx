@@ -51,13 +51,14 @@ export const firstLink = (s: string) => s.match(/https?:\/\/[^\s"'<>]+/)?.[0] ??
 
 // Add a recipe from a link or pasted text. The import runs on the server; this shows its progress
 // and opens the recipe when it's in.
-export default function ImportDialog({ initial, onClose }: { initial?: string; onClose: () => void }) {
-  const startLink = initial ? firstLink(initial) : null;
+// page: sent from your browser (Send to Culury), imported straight away
+export default function ImportDialog({ initial, page, onClose }: { initial?: string; page?: { url: string; html: string }; onClose: () => void }) {
+  const startLink = page ? null : initial ? firstLink(initial) : null;
   const [tab, setTab] = useState<"link" | "text" | "photo" | "file">(initial && !startLink ? "text" : "link");
   const ai = useAiStatus();
   const [files, setFiles] = useState<File[]>([]);
   const [recipeFile, setRecipeFile] = useState<File | null>(null);
-  const [url, setUrl] = useState(startLink ?? "");
+  const [url, setUrl] = useState(page?.url ?? startLink ?? "");
   const [text, setText] = useState(initial && !startLink ? initial : "");
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState("");
@@ -114,11 +115,11 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
   };
   // Shared from another app: start right away
   useEffect(() => {
-    if (startLink && !started.current) {
+    if ((startLink || page) && !started.current) {
       started.current = true;
-      void start({ url: startLink });
+      void start(page ? { url: page.url, html: page.html } : { url: startLink });
     }
-  }, [startLink]);
+  }, [startLink, page]);
 
   const busy = !!job && (job.status === "queued" || job.status === "running");
   const tabClass = (on: boolean) => `-mb-px flex-1 border-b-[3px] px-4 py-2.5 text-sm font-semibold ${on ? "border-primary text-ink" : "border-transparent text-subtle hover:text-ink"}`;

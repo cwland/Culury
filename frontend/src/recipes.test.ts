@@ -47,6 +47,8 @@ describe("recipe addresses", () => {
     expect(recipeRoute()).toEqual({ view: "review", job: 31 });
     window.location.hash = "#/recipes/improving/40";
     expect(recipeRoute()).toEqual({ view: "improving", job: 40 });
+    window.location.hash = "#/recipes/receive";
+    expect(recipeRoute()).toEqual({ view: "receive" });
     window.location.hash = "";
   });
 });

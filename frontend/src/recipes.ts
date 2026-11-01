@@ -161,13 +161,14 @@ export const ingredientsText = (list: Ingredient[]) => list.map((i) => (i.sectio
 export const stepsText = (list: Step[]) => list.map((s) => (s.section ? `# ${s.section}` : s.text)).join("\n\n");
 
 // Recipes page addresses: #/recipes, #/recipes?tag=x, #/recipes/12, #/recipes/12/edit, #/recipes/12/cook, #/recipes/new, #/recipes/review/31, #/recipes/improving/40
-export type RecipeRoute = { view: "away" } | { view: "list"; params: URLSearchParams } | { view: "recipe"; id: number } | { view: "edit"; id: number } | { view: "cook"; id: number } | { view: "new" } | { view: "review"; job: number } | { view: "improving"; job: number };
+export type RecipeRoute = { view: "away" } | { view: "list"; params: URLSearchParams } | { view: "recipe"; id: number } | { view: "edit"; id: number } | { view: "cook"; id: number } | { view: "new" } | { view: "review"; job: number } | { view: "improving"; job: number } | { view: "receive" };
 export function recipeRoute(): RecipeRoute {
   const [path, query] = window.location.hash.replace(/^#\/?/, "").split("?");
   const parts = path.split("/").filter(Boolean); // ["recipes", "12", "edit"]
   if (parts[0] !== "recipes") return { view: "away" }; // leaving for another section
   if (parts[1] === "new") return { view: "new" };
   if (parts[1] === "review" && Number(parts[2]) > 0) return { view: "review", job: Number(parts[2]) }; // #/recipes/review/31: an import's recipes, one by one
+  if (parts[1] === "receive") return { view: "receive" }; // #/recipes/receive: a page from the Send to Culury bookmark
   if (parts[1] === "improving" && Number(parts[2]) > 0) return { view: "improving", job: Number(parts[2]) }; // #/recipes/improving/40: a batch of AI improvements at work
   const id = Number(parts[1]);
   if (id > 0) return parts[2] === "edit" ? { view: "edit", id } : parts[2] === "cook" ? { view: "cook", id } : { view: "recipe", id };

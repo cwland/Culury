@@ -15,21 +15,24 @@ export default async function importRoutes(app: FastifyInstance) {
   // Import a recipe from a link, or from pasted text. Runs in the background: the answer is the
   // job (check GET /api/imports/:id). "wait": up to that many seconds for it to finish first,
   // handy for iOS Shortcuts and scripts. "force": import even if this page is already saved.
-  app.post("/api/recipes/import", async (req, reply) => {
+  // html: the page itself, sent from your browser (Send to Culury), read instead of fetching url
+  app.post("/api/recipes/import", { bodyLimit: 9 * 1024 * 1024 }, async (req, reply) => {
     const body = z
       .object({
         url: z.string().trim().max(2000).optional(),
         text: z.string().trim().max(50000).optional(),
+        html: z.string().max(8 * 1024 * 1024).optional(),
         force: z.boolean().optional(),
         wait: z.number().int().min(0).max(60).optional(),
       })
       .strict()
       .refine((b) => !!b.url !== !!b.text, "Send a link (url) or pasted text (text)")
+      .refine((b) => !b.html || !!b.url, "A page sent from your browser needs its link (url) too")
       .parse(req.body);
     if (body.url && !/^https?:\/\/\S+$/i.test(body.url)) throw new HttpError(400, "That doesn't look like a web address (it should start with https://)");
     if (body.text && body.text.length < 20) throw new HttpError(400, "Paste the whole recipe (title, ingredients and steps)");
     const job = body.url
-      ? await queue.enqueue("import-url", { url: body.url, force: !!body.force }, userOf(req))
+      ? await queue.enqueue("import-url", { url: body.url, force: !!body.force, ...(body.html ? { html: body.html } : {}) }, userOf(req))
       : await queue.enqueue("import-text", { text: body.text! }, userOf(req));
     const done = body.wait ? await queue.wait(job.id, body.wait * 1000) : job;
     const finished = done && (done.status === "done" || done.status === "failed");
