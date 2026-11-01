@@ -256,7 +256,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
   app.post("/api/grocery/preview", async (req) => {
     const body = z
       .union([
-        z.object({ recipes: z.array(z.object({ recipeId: z.number().int().positive(), servings: z.number().positive().max(1000).nullable().optional() })).min(1).max(100) }).strict(),
+        z.object({ recipes: z.array(z.object({ recipeId: z.number().int().positive(), servings: z.number().positive().max(1000).nullable().optional(), scale: z.number().positive().max(50).optional() })).min(1).max(100) }).strict(),
         z.object({ from: isoDate, to: isoDate }).strict(),
       ])
       .parse(req.body);
@@ -270,7 +270,8 @@ export default async function groceryRoutes(app: FastifyInstance) {
     for (const w of wanted) {
       const r = found.find((x) => x.id === w.recipeId);
       if (!r) continue;
-      const factor = w.servings && r.servings ? w.servings / r.servings : 1;
+      // servings: a size in servings (recipes that say how many); scale: 2× for those that don't
+      const factor = w.servings && r.servings ? w.servings / r.servings : "scale" in w && w.scale ? w.scale : 1;
       for (const ing of r.ingredients) {
         if (ing.section) continue;
         const q = ing.quantity ? round((ing.quantityMax ?? ing.quantity) * factor) : null;

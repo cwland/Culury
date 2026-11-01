@@ -252,3 +252,28 @@ describe("version history actions", () => {
   });
 });
 
+describe("scaled amounts go to the grocery list", () => {
+  const lists = { "GET /api/grocery/lists": () => [{ id: 1, name: "Groceries", itemCount: 0 }], "POST /api/grocery/preview": () => ({ lines: [] }) };
+  const previewBody = (s: { sent: { path: string; body: any }[] }) => s.sent.find((x) => x.path === "/api/grocery/preview")?.body;
+
+  it("a recipe with a serving count: the servings you chose", async () => {
+    const s = server(on, recipeJson({ servings: 4 }), lists);
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "More servings" }));
+    await u.click(await screen.findByRole("button", { name: "More servings" }));
+    await u.click(screen.getByRole("button", { name: /Add to grocery list/ }));
+    await waitFor(() => expect(previewBody(s)).toEqual({ recipes: [{ recipeId: 7, servings: 6 }] }));
+  });
+
+  it("a recipe without one: the size you chose (2×)", async () => {
+    const s = server(on, recipeJson({ servings: null, yieldText: "24 cookies" }), lists);
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "Make more" }));
+    await u.click(await screen.findByRole("button", { name: "Make more" }));
+    await u.click(screen.getByRole("button", { name: /Add to grocery list/ }));
+    await waitFor(() => expect(previewBody(s)).toEqual({ recipes: [{ recipeId: 7, scale: 2 }] }));
+  });
+});
+

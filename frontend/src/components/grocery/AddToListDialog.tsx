@@ -3,7 +3,7 @@ import { api } from "../../api";
 import { AISLE_NAMES, AISLE_ORDER, itemAmount, type GroceryList, type PreviewLine } from "../../recipes";
 import { Popup } from "../Popup";
 
-type Source = { recipes: { recipeId: number; servings?: number }[] } | { from: string; to: string };
+type Source = { recipes: { recipeId: number; servings?: number; scale?: number }[] } | { from: string; to: string };
 
 // "Add to grocery list": what the recipe(s) need, added up. Things in the pantry start unticked
 // (staples always), so you only buy what you don't have.

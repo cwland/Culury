@@ -319,7 +319,7 @@ export default function RecipeView({ id }: { id: number }) {
         />
       )}
       {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
-      {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : {}) }] }} onClose={() => setShopping(false)} />}
+      {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : prefs.factor !== 1 ? { scale: prefs.factor } : {}) }] }} onClose={() => setShopping(false)} />}
       {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}
       {confirmDelete && (
         <Popup title="Delete this recipe?" onClose={() => setConfirmDelete(false)}>

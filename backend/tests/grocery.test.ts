@@ -127,6 +127,12 @@ describe("recipes onto the list", () => {
     const p = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: r.id, servings: 2 }] })).body;
     expect(p.lines.map((l: any) => [l.name, l.quantity])).toEqual([["flour", 1], ["eggs", 1]]);
   });
+
+  it("a recipe with no serving count, scaled (2× as many cookies): twice the amounts", async () => {
+    const r = (await t.api("POST", "/api/recipes", { title: "Cookies", yieldText: "24 cookies", ingredients: "2 cups flour\n1 egg" })).body;
+    const p = (await t.api("POST", "/api/grocery/preview", { recipes: [{ recipeId: r.id, scale: 2 }] })).body;
+    expect(p.lines.map((l: any) => [l.name, l.quantity])).toEqual([["flour", 4], ["egg", 2]]);
+  });
 });
 
 describe("pantry", () => {
