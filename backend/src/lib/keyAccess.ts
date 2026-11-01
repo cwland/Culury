@@ -17,7 +17,7 @@ export const KEY_ACCESS_LABELS: Record<KeyAccess, string> = {
 };
 
 // Never open to a key, whatever its access: secrets, sign-in, key management, restore
-const NEVER = ["/api/settings", "/api/keys", "/api/auth", "/api/profile", "/api/import", "/api/dev", "/api/household"];
+const NEVER = ["/api/settings", "/api/keys", "/api/auth", "/api/profile", "/api/import", "/api/wipe", "/api/dev", "/api/household"];
 // Only for admin keys
 const ADMIN_ONLY = ["/api/logs", "/api/backups", "/api/export", "/api/updates"];
 

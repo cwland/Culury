@@ -96,7 +96,7 @@ export const defaultDataDir = path.resolve(path.dirname(fileURLToPath(import.met
 export const defaultBackupDir = path.join(process.env.DATA_DIR || defaultDataDir, "backups");
 
 // Only the owner (not other household members) can use these
-const OWNER_ONLY = ["/api/settings/email", "/api/settings/ai", "/api/settings/features", "/api/settings/oauth", "/api/keys", "/api/logs", "/api/backups", "/api/export", "/api/import", "/api/updates/check", "/api/updates/settings", "/api/household/members"];
+const OWNER_ONLY = ["/api/settings/email", "/api/settings/ai", "/api/settings/features", "/api/settings/oauth", "/api/keys", "/api/logs", "/api/backups", "/api/export", "/api/import", "/api/wipe", "/api/updates/check", "/api/updates/settings", "/api/household/members"];
 export function ownerOnly(method: string, path: string) {
   if (path === "/api/household/members" && method === "GET") return false; // everyone can see who's in the household
   return OWNER_ONLY.some((p) => path === p || path.startsWith(p + "/"));

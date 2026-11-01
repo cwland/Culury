@@ -7,6 +7,8 @@ import { BACKUP_NAME, listBackups, pruneBackups, readArchive, restorePhotos, wri
 import { buildExport, importData, importSchema } from "../lib/dataExport.js";
 import { checkBackupKey, type SettingsSection } from "../lib/settingsBackup.js";
 import { HttpError, notFound } from "../lib/errors.js";
+import { wipeRecipes } from "../lib/wipe.js";
+import { logEvent } from "../lib/appLog.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -66,6 +68,18 @@ export default async function exportRoutes(app: FastifyInstance) {
   // ---------- restore ----------
   // Replaces all recipe data with an export/backup file. Must be logged in (not an API key)
   // and pass ?confirm=replace. A safety backup is written first.
+  // Wipe all recipes (owner, signed in; never an API key). A backup is made first.
+  app.post("/api/wipe/recipes", async (req) => {
+    requireLogin(req);
+    const { confirm } = z.object({ confirm: z.string().optional() }).parse(req.body ?? {});
+    if (confirm !== "DELETE") throw new HttpError(400, "Type DELETE to wipe all recipes");
+    const backup = await writeBackup(db, app.backupDir, app.backupSecrets(), app.photos.dir, "before-wipe");
+    const { recipes } = await wipeRecipes(db, app.photos);
+    await logEvent(db, { category: "import", level: "warning", source: "Settings", event: `All recipes wiped (${recipes} recipe${recipes === 1 ? "" : "s"})`, detail: `Backup made first: ${backup.name}` });
+    app.events.emit({ topic: "recipes", by: null });
+    return { recipes, backup: backup.name };
+  });
+
   app.post("/api/import", { bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req) => {
     requireLogin(req);
     const { confirm } = z.object({ confirm: z.string().optional() }).parse(req.query);

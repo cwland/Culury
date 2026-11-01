@@ -5,6 +5,7 @@ import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
 import { UpdatesSettings } from "./UpdateBar";
 import { useEffect, useState } from "react";
 import DataSettings from "./DataSettings";
+import { WipeRecipes } from "./WipeRecipes";
 import EmailSettings from "./EmailSettings";
 import AiSettings from "./AiSettings";
 import ProfileSettings from "./ProfileSettings";
@@ -150,6 +151,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
       return (
         <>
           <DataSettings />
+          <WipeRecipes />
           <UpdatesSettings />
         </>
       );
