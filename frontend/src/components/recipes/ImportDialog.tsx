@@ -17,6 +17,7 @@ export interface ImportJob {
     // a file from another app
     format?: string;
     imported?: number;
+    recipeIds?: number[]; // a file: the recipes added
     skipped?: number;
     problems?: { name: string; reason: string }[];
   } | null;
@@ -48,9 +49,11 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
     return () => clearTimeout(t);
   }, [job]);
   useEffect(() => {
-    if (job?.status === "done" && job.result?.recipeId) {
+    // One recipe (a link, a photo, or a PDF with one recipe in it): open it
+    const one = job?.result?.recipeId ?? (job?.result?.format === "PDF" && job.result.recipeIds?.length === 1 ? job.result.recipeIds[0] : null);
+    if (job?.status === "done" && one) {
       onClose();
-      window.location.hash = `#/recipes/${job.result.recipeId}${job.result.warnings?.length ? "?imported=warn" : "?imported=1"}`;
+      window.location.hash = `#/recipes/${one}${job.result?.warnings?.length ? "?imported=warn" : "?imported=1"}`;
     }
   }, [job, onClose]);
 
@@ -65,11 +68,13 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
   };
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (tab === "file") {
+    // A file, or a PDF chosen on the photo tab (PDFs are read like files: one recipe or many)
+    const pdf = tab === "photo" ? files.find((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) : undefined;
+    if (tab === "file" || pdf) {
       setError("");
       setJob(null);
       try {
-        setJob(await uploadFile<ImportJob>("/api/recipes/import/file", recipeFile!));
+        setJob(await uploadFile<ImportJob>("/api/recipes/import/file", pdf ?? recipeFile!));
       } catch (err) {
         setError((err as Error).message);
       }
@@ -118,25 +123,25 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
         <form onSubmit={submit} className="mt-5">
           {tab === "file" ? (
             <>
-              <p className="text-sm font-semibold text-subtle">A whole collection exported from another recipe app</p>
+              <p className="text-sm font-semibold text-subtle">A collection exported from another recipe app, or a PDF (one recipe or a whole cookbook)</p>
               <label className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-strong bg-page px-4 py-8 text-center hover:border-action">
                 <span className="font-semibold">{recipeFile ? recipeFile.name : "Choose the export file"}</span>
-                <span className="text-sm text-subtle">{recipeFile ? `${Math.max(1, Math.round(recipeFile.size / 1024))} KB` : "Paprika (.paprikarecipes)"}</span>
-                <input type="file" accept=".paprikarecipes,.paprikarecipe" className="sr-only" aria-label="Recipe file" onChange={(e) => setRecipeFile(e.target.files?.[0] ?? null)} />
+                <span className="text-sm text-subtle">{recipeFile ? `${Math.max(1, Math.round(recipeFile.size / 1024))} KB` : "Paprika (.paprikarecipes) or PDF"}</span>
+                <input type="file" accept=".paprikarecipes,.paprikarecipe,.pdf,application/pdf" className="sr-only" aria-label="Recipe file" onChange={(e) => setRecipeFile(e.target.files?.[0] ?? null)} />
               </label>
               <p className="mt-2 text-sm text-subtle">
-                In Paprika: select the recipes (or all), then File › Export, and choose Paprika Recipe Format. Photos, categories, ratings and notes come too. Recipes you already have are skipped.
+                In Paprika: select the recipes (or all), then File › Export, and choose Paprika Recipe Format. Photos, categories, ratings and notes come too. A PDF is read by your AI service, scanned pages included. Recipes you already have are skipped.
               </p>
             </>
           ) : tab === "photo" ? (
             <>
-              <p className="text-sm font-semibold text-subtle">A recipe card, a cookbook page or a screenshot (up to 4 photos of one recipe, in order)</p>
+              <p className="text-sm font-semibold text-subtle">A recipe card, a cookbook page or a screenshot (up to 4 photos of one recipe, in order), or a PDF</p>
               <label className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-strong bg-page px-4 py-8 text-center hover:border-action">
                 <span className="font-semibold">{files.length ? `${files.length} photo${files.length === 1 ? "" : "s"} chosen` : "Take a photo or choose some"}</span>
                 <span className="text-sm text-subtle">{files.length ? files.map((f) => f.name).join(", ") : "Handwriting is fine. Good light and a straight-on shot read best."}</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   multiple
                   className="sr-only"
                   aria-label="Recipe photos"

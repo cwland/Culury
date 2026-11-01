@@ -261,7 +261,7 @@ export async function recipeFromPhotos(ai: AiService, images: AiImage[]): Promis
 }
 
 // The AI's JSON -> a recipe (or why not)
-function aiRecipe(r: Record<string, unknown>, none = "No recipe was found there."): ImportedRecipe {
+export function aiRecipe(r: Record<string, unknown>, none = "No recipe was found there."): ImportedRecipe {
   if (r.isRecipe === false) throw new AiError(none);
   const title = plain(r.title);
   const ingredients = [r.ingredients].flat().map(plain).filter(Boolean);

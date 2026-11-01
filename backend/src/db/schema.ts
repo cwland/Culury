@@ -366,9 +366,10 @@ export interface JobResult {
   recipeId?: number;
   title?: string;
   duplicateOf?: number; // already in your recipes (import again with force to keep both)
-  how?: "schema.org" | "ai" | "text" | "photo" | "file"; // how the recipe was read
+  how?: "schema.org" | "ai" | "text" | "photo" | "file" | "pdf"; // how the recipe was read
   format?: string; // import-file: Paprika, Mealie…
   imported?: number; // import-file: recipes added
+  recipeIds?: number[]; // import-file: the recipes added, in order
   skipped?: number; // import-file: already in your recipes
   problems?: { name: string; reason: string }[]; // import-file: entries that couldn't be used
   warnings?: string[];

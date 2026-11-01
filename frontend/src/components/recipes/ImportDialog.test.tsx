@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetAiStatus } from "../../ai";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ImportDialog from "./ImportDialog";
 import { fakeServer } from "../../test/fakeServer";
@@ -40,6 +41,46 @@ describe("no recent imports list (they're in Settings › Logs)", () => {
     await screen.findByRole("button", { name: "Import" });
     expect(screen.queryByText("Recent imports")).toBeNull();
     expect(server.sent.filter((s) => s.path.startsWith("/api/imports"))).toHaveLength(0);
+  });
+});
+
+describe("PDFs", () => {
+  beforeEach(() => forgetAiStatus());
+  const routes = (more: Record<string, any> = {}) => ({
+    "GET /api/ai/status": () => ({ ready: true, photos: true }),
+    "POST /api/recipes/import/file": () => ({ status: 202, json: job({ source: "chili.pdf", kind: "import-file" }) }),
+    ...more,
+  });
+
+  it("the file tab takes a PDF too (one recipe or a whole cookbook)", async () => {
+    fakeServer(routes());
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    expect(screen.getByLabelText("Recipe file")).toHaveAttribute("accept", expect.stringContaining(".pdf"));
+    expect(screen.getAllByText(/PDF/).length).toBeGreaterThan(0);
+  });
+
+  it("the photo tab takes a PDF too, and sends it to be read as a file", async () => {
+    const server = fakeServer(routes({ "GET /api/imports/31": () => job({ status: "running" }) }));
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(await screen.findByRole("tab", { name: "From a photo" }));
+    expect(screen.getByLabelText("Recipe photos")).toHaveAttribute("accept", expect.stringContaining("application/pdf"));
+    await u.upload(screen.getByLabelText("Recipe photos"), new File([new Uint8Array([37, 80, 68, 70])], "card.pdf", { type: "application/pdf" }));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/import/file"]));
+  });
+
+  it("a PDF with one recipe opens it, like a link would", async () => {
+    window.location.hash = "#/recipes";
+    fakeServer(routes({ "GET /api/imports/31": () => job({ status: "done", result: { format: "PDF", imported: 1, skipped: 0, recipeIds: [5], problems: [] } }) }));
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([37, 80, 68, 70])], "chili.pdf", { type: "application/pdf" }));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/5?imported=1"), { timeout: 4000 });
   });
 });
 

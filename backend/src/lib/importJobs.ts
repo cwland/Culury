@@ -1,5 +1,5 @@
 import { asc, eq, ilike, sql } from "drizzle-orm";
-import { readRecipeFile } from "./fileImport.js";
+import { readRecipeFile, type ReadResult } from "./fileImport.js";
 import type { Db } from "../db/index.js";
 import { categories, recipeUser, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
@@ -12,6 +12,7 @@ import { createRecipe, saveRecipe } from "./recipes.js";
 import { recipeAdded } from "./nutrition.js";
 import { firstVersion } from "./versions.js";
 import { tidyIngredientLine } from "./ingredients.js";
+import { recipesFromPdf } from "./pdfImport.js";
 
 interface Deps {
   db: Db;
@@ -160,7 +161,8 @@ async function sameRecipe(db: Db, r: ImportedRecipe) {
     if (dup) return dup;
   }
   const rows = await db.select({ id: recipes.id, ingredients: recipes.ingredients }).from(recipes).where(sql`lower(${recipes.title}) = ${r.title.toLowerCase()}`);
-  const want = r.ingredients.map((l) => l.trim().toLowerCase()).join("\n");
+  // (as they'd be saved: "Two pounds of chuck" is saved as "2 lb chuck")
+  const want = r.ingredients.map((l) => tidyIngredientLine(l).trim().toLowerCase()).join("\n");
   return rows.find((x) => x.ingredients.map((i) => i.raw.trim().toLowerCase()).join("\n") === want)?.id ?? null;
 }
 
@@ -169,7 +171,12 @@ export function registerFileImport(queue: JobQueue, d: Deps) {
   queue.handle("import-file", async (job) => {
     const { file, name } = job.payload as { file: string; name: string };
     try {
-      const { format, recipes: found, problems } = readRecipeFile(name, await d.photos.readIncoming(file));
+      const data = await d.photos.readIncoming(file);
+      // A PDF is read by AI (one recipe or a whole cookbook); other files are another app's export
+      const pdf = name.toLowerCase().endsWith(".pdf");
+      const { format, recipes: found, problems }: ReadResult = pdf ? { format: "PDF", recipes: await recipesFromPdf(d.ai, data, name), problems: [] } : readRecipeFile(name, data);
+      if (pdf && !found.length) throw new Error(`No recipes were found in ${name}.`);
+      const recipeIds: number[] = [];
       let imported = 0;
       let skipped = 0;
       for (const r of found) {
@@ -179,7 +186,9 @@ export function registerFileImport(queue: JobQueue, d: Deps) {
             continue;
           }
           const imageUrl = r.photo ? await d.photos.save(r.photo).catch(() => null) : r.imageUrl;
-          const result = await store(d, { ...r, imageUrl: imageUrl ?? null }, job, "file", true);
+          // (one recipe from a PDF is treated like a single import: offered the AI check, nutrition after)
+          const result = await store(d, { ...r, imageUrl: imageUrl ?? null }, job, pdf && found.length === 1 ? "pdf" : "file", !pdf);
+          if (result.recipeId) recipeIds.push(result.recipeId);
           if (r.rating && job.createdBy && result.recipeId)
             await d.db
               .insert(recipeUser)
@@ -192,7 +201,7 @@ export function registerFileImport(queue: JobQueue, d: Deps) {
       }
       await d.photos.removeIncoming([file]);
       await logEvent(d.db, { category: "import", level: problems.length ? "warning" : "info", source: name.slice(0, 200), event: `Imported ${imported} recipe${imported === 1 ? "" : "s"} from ${format}`, detail: [skipped && `${skipped} already saved`, problems.length && `${problems.length} couldn't be used`].filter(Boolean).join(", ") || undefined });
-      return { format, imported, skipped, problems: problems.slice(0, 200) };
+      return { format, imported, skipped, recipeIds, problems: problems.slice(0, 200) };
     } catch (e) {
       await logEvent(d.db, { category: "import", level: "warning", source: name.slice(0, 200), event: "Couldn't import a recipe file", detail: (e as Error).message });
       throw e;

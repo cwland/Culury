@@ -88,5 +88,5 @@ export function readRecipeFile(name: string, data: Buffer): ReadResult {
     return readPaprika(Object.entries(files).filter(([n]) => n.toLowerCase().endsWith(".paprikarecipe")));
   }
   if (lower.endsWith(".paprikarecipe")) return readPaprika([[name, new Uint8Array(data)]]);
-  throw new FileImportError(`${name} isn't a recipe file Culury can read. It takes Paprika exports (.paprikarecipes).`);
+  throw new FileImportError(`${name} isn't a recipe file Culury can read. It takes Paprika exports (.paprikarecipes) and PDFs.`);
 }

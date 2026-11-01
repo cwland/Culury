@@ -86,7 +86,7 @@ jobs:
           load: true
           tags: culury:ci
           cache-from: type=gha
-      - name: "Smoke test: the image starts its tools and resizes a photo"
+      - name: "Smoke test: the image starts its tools, resizes a photo and can draw PDF pages"
         run: |
           docker run --rm --entrypoint node culury:ci -e "
             const sharp = require('sharp');
@@ -94,5 +94,10 @@ jobs:
               .then((b) => sharp(b).resize({ width: 1600, height: 1600, fit: 'inside' }).webp().toBuffer())
               .then((w) => sharp(w).metadata())
               .then((m) => { if (m.width !== 1600 || m.format !== 'webp') throw new Error('resize failed'); console.log('sharp ok', m.width, m.format); })
+              .catch((e) => { console.error(e); process.exit(1); });"
+          docker run --rm --entrypoint node culury:ci -e "
+            Promise.all([import('@napi-rs/canvas'), import('pdfjs-dist/legacy/build/pdf.mjs')])
+              .then(([{ createCanvas }]) => { const c = createCanvas(20, 20); c.getContext('2d').fillRect(0, 0, 10, 10); return c.encode('png'); })
+              .then((png) => { if (!png.length) throw new Error('canvas failed'); console.log('pdf drawing ok', png.length); })
               .catch((e) => { console.error(e); process.exit(1); });"
           docker run --rm --entrypoint sh culury:ci -c "test -f dist/index.js && test -f web/index.html && test -d drizzle && echo layout ok"
