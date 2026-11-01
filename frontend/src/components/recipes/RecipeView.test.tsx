@@ -45,13 +45,13 @@ describe("AI Enhance on the recipe page", () => {
     await screen.findByRole("heading", { name: "Weeknight Chili" });
     await waitFor(() => expect(screen.getByRole("button", { name: /Add to favorites/ })).toBeInTheDocument());
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "AI check" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Improve with AI" })).toBeNull();
   });
 
   it("no offer on a recipe that wasn't just added, but the AI check button is there", async () => {
     server(on);
     render(<RecipeView id={7} />);
-    expect(await screen.findByRole("button", { name: "AI check" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Improve with AI" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
   });
 
@@ -61,12 +61,12 @@ describe("AI Enhance on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Check with AI" }));
-    expect(await screen.findByRole("dialog", { name: "AI check" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Improve with AI" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
     await u.click(screen.getByRole("button", { name: "Keep original" }));
-    await u.click(screen.getByRole("button", { name: "AI check" }));
-    expect(await screen.findByRole("dialog", { name: "AI check" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect(await screen.findByRole("dialog", { name: "Improve with AI" })).toBeInTheDocument();
   });
 
   it("after applying AI changes there's no Undo (going back is in the version history)", async () => {
@@ -74,12 +74,11 @@ describe("AI Enhance on the recipe page", () => {
     const s = server(on, recipeJson(), { "POST /api/recipes/7/enhance/apply": () => changed });
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
-    await u.click(await screen.findByRole("button", { name: "AI check" }));
+    await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
     await u.click(await screen.findByRole("button", { name: "Apply selected" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "AI check" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Improve with AI" })).toBeNull());
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent(/Brown the beef well, about 8 minutes/);
-    await u.click(screen.getByRole("button", { name: "More" }));
-    expect(within(screen.getByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent?.trim())).toEqual(["Delete"]);
+    expect(screen.queryByRole("button", { name: /Undo/ })).toBeNull();
     expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply"]);
   });
 });
@@ -95,20 +94,97 @@ describe("expanded steps on the recipe page", () => {
   });
 });
 
-describe("recipe page buttons", () => {
-  it("Start cooking sits on the category line; no Duplicate; Delete is under More", async () => {
+describe("recipe page header", () => {
+  const header = async () => {
+    const h = await screen.findByRole("region", { name: "Recipe" });
+    await within(h).findByRole("button", { name: "Improve with AI" });
+    return h;
+  };
+
+  it("on the category line: Start cooking, then Share and Delete as icons with hover text", async () => {
     server(on);
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
-    await screen.findByRole("heading", { name: "Weeknight Chili" });
-    expect(within(screen.getByText("Dinner").parentElement!).getByRole("link", { name: /Start cooking/ })).toBeInTheDocument(); // on the category line
-    expect(screen.queryByRole("button", { name: /Duplicate/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
-    await u.click(screen.getByRole("button", { name: "More" }));
-    const menu = screen.getByRole("menu");
-    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent?.trim())).toEqual(["Delete"]);
-    await u.click(within(menu).getByRole("menuitem", { name: "Delete" }));
+    await header();
+    const line = screen.getByText("Dinner").parentElement!;
+    expect(within(line).getByRole("link", { name: /Start cooking/ })).toBeInTheDocument();
+    expect(within(line).getByRole("button", { name: "Share" })).toHaveAttribute("title", "Share");
+    expect(within(line).getByRole("button", { name: "Delete recipe" })).toHaveAttribute("title", "Delete recipe");
+    await u.click(within(line).getByRole("button", { name: "Delete recipe" }));
     expect(await screen.findByRole("dialog", { name: "Delete this recipe?" })).toBeInTheDocument();
+  });
+
+  it("two buttons: Organize and Improve with AI; nothing else", async () => {
+    server(on);
+    render(<RecipeView id={7} />);
+    const h = await header();
+    const row = within(h).getByRole("group", { name: "Recipe actions" });
+    expect(within(row).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual(["Organize", "Improve with AI"]);
+    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Edit$/ })).toBeNull();
+    expect(within(h).queryByRole("button", { name: /Add to grocery list/ })).toBeNull();
+  });
+
+  it("favorite and pin are icons by the name, with hover text", async () => {
+    const s = server(on, recipeJson(), { "PUT /api/recipes/7/me": (body: any) => ({ favorite: false, pinned: false, rating: null, notes: null, ...body }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const h = await header();
+    const fav = within(h).getByRole("button", { name: "Add to favorites" });
+    expect(fav).toHaveAttribute("title", "Add to favorites");
+    expect(fav).toHaveAttribute("aria-pressed", "false");
+    expect(fav.textContent?.trim()).toBe("");
+    await u.click(fav);
+    await waitFor(() => expect(within(h).getByRole("button", { name: "Favorite" })).toHaveAttribute("aria-pressed", "true"));
+    await u.click(within(h).getByRole("button", { name: "Pin to top" }));
+    expect(s.writes().map((w) => w.body)).toEqual([{ favorite: true }, { pinned: true }]);
+  });
+
+  it("a pencil by the name edits the details", async () => {
+    server(on);
+    render(<RecipeView id={7} />);
+    const h = await header();
+    expect(within(h).getByRole("link", { name: "Edit details" })).toHaveAttribute("href", "#/recipes/7/edit");
+  });
+
+  it("tags and collections show as pills under the buttons, in the header", async () => {
+    server(on, recipeJson({ tags: ["beef", "spicy"], collections: [{ id: 2, name: "Quick Meals" }] }));
+    render(<RecipeView id={7} />);
+    const h = await header();
+    const pills = within(h).getByRole("list", { name: "Tags and collections" });
+    expect(within(pills).getAllByRole("link").map((a) => a.textContent)).toEqual(["Quick Meals", "#beef", "#spicy"]);
+  });
+
+  it("Add to grocery list is in the Ingredients area", async () => {
+    server(on);
+    render(<RecipeView id={7} />);
+    const ing = await screen.findByRole("region", { name: "Ingredients" });
+    expect(within(ing).getByRole("button", { name: /Add to grocery list/ })).toBeInTheDocument();
+  });
+
+  it("Organize: categories, collections and tags in one panel, saved together on Done", async () => {
+    const s = server(on, recipeJson({ tags: ["beef"], categories: [{ id: 3, name: "Dinner" }], collections: [] }), {
+      "GET /api/tags": () => [{ id: 1, name: "beef", count: 3 }, { id: 2, name: "weeknight", count: 5 }],
+      "GET /api/categories": () => [{ id: 3, name: "Dinner", count: 4 }, { id: 4, name: "Soup", count: 1 }],
+      "GET /api/collections": () => [{ id: 9, name: "Quick Meals", description: null, count: 2, images: [] }],
+      "PATCH /api/recipes/7": (body: any) => recipeJson({ tags: body.tags, categories: [{ id: 3, name: "Dinner" }, { id: 4, name: "Soup" }], collections: [{ id: 9, name: "Quick Meals" }] }),
+    });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const h = await header();
+    await u.click(within(h).getByRole("button", { name: "Organize" }));
+    const dlg = await screen.findByRole("dialog", { name: "Organize" });
+    await u.click(await within(dlg).findByRole("checkbox", { name: "Soup" }));
+    await u.click(within(dlg).getByRole("checkbox", { name: "Quick Meals" }));
+    await u.click(within(dlg).getByRole("button", { name: "weeknight" }));
+    await u.type(within(dlg).getByLabelText("New tag"), "spicy{Enter}");
+    await u.click(within(dlg).getByRole("button", { name: "Remove beef" }));
+    expect(s.writes()).toHaveLength(0); // nothing saved until Done
+    await u.click(within(dlg).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(s.writes()).toHaveLength(1));
+    expect(s.writes()[0]).toMatchObject({ method: "PATCH", path: "/api/recipes/7", body: { categories: [3, 4], collections: [9], tags: ["weeknight", "spicy"] } });
+    expect(s.writes()[0].body.version).toBeUndefined();
+    await waitFor(() => expect(within(screen.getByRole("list", { name: "Tags and collections" })).getAllByRole("link").map((a) => a.textContent)).toEqual(["Quick Meals", "#weeknight", "#spicy"]));
   });
 });
 
@@ -129,7 +205,7 @@ describe("Auto nutrition on the recipe page", () => {
     const s = server(on, recipeJson(), { "POST /api/recipes/7/enhance/skip": () => ({ status: 204 }) });
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
-    await u.click(await screen.findByRole("button", { name: "AI check" }));
+    await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
     await u.click(await screen.findByRole("button", { name: "Keep original" }));
     await waitFor(() => expect(skips(s)).toHaveLength(1));
   });
@@ -224,7 +300,8 @@ describe("version history actions", () => {
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("tab", { name: "Version history" }));
     await screen.findByRole("list", { name: "Versions" });
-    return { s, u, item: (n: number) => screen.getAllByRole("listitem").find((li) => li.textContent?.startsWith(`v${n}`))! };
+    const versionItems = () => within(screen.getByRole("list", { name: "Versions" })).getAllByRole("listitem");
+    return { s, u, versionItems, item: (n: number) => versionItems().find((li) => li.textContent?.startsWith(`v${n}`))! };
   };
 
   it("the active version has no Set active or Delete", async () => {
@@ -243,11 +320,11 @@ describe("version history actions", () => {
   });
 
   it("Delete asks first, then removes it", async () => {
-    const { s, u, item } = await history();
+    const { s, u, item, versionItems } = await history();
     await u.click(within(item(1)).getByRole("button", { name: "Delete" }));
     const ask = await screen.findByRole("dialog", { name: "Delete v1?" });
     await u.click(within(ask).getByRole("button", { name: "Delete v1" }));
-    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+    await waitFor(() => expect(versionItems()).toHaveLength(1));
     expect(s.writes().map((w) => `${w.method} ${w.path}`)).toEqual(["DELETE /api/recipes/7/versions/1"]);
   });
 });

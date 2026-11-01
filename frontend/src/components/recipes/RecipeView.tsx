@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
-import { formatMinutes, listAddress, siteName, type CollectionInfo, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, CollectionAddIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, Trash, WandIcon, MoreIcon } from "../Icons";
+import { formatMinutes, listAddress, siteName, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
+import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
+import { OrganizeDialog } from "./OrganizeDialog";
 import { useLive } from "../../live";
 import { Popup } from "../Popup";
 import { RecipeImage } from "./RecipeList";
@@ -16,13 +17,13 @@ import { StepText } from "./StepText";
 import { ingredientLine, recipeUnits, type Units } from "../../cooking";
 
 const card = "rounded-2xl bg-container p-5 sm:p-6";
+const iconButton = "flex size-9 shrink-0 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink";
 const smallButton = "flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed";
 
 export default function RecipeView({ id }: { id: number }) {
   const [r, setR] = useState<Recipe | null>(null);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [picking, setPicking] = useState(false);
   const [shopping, setShopping] = useState(false);
   const [sharing, setSharing] = useState(false);
   const prefs = useCookPrefs(id);
@@ -30,7 +31,7 @@ export default function RecipeView({ id }: { id: number }) {
   // Just added (typed in or imported): offer an AI check once
   const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
-  const [more, setMore] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const [tab, setTab] = useState<"recipe" | "nutrition" | "history">("recipe");
 
   useEffect(() => {
@@ -114,21 +115,40 @@ export default function RecipeView({ id }: { id: number }) {
         </section>
       )}
       {/* Header: photo, name, the facts, and what you can do with it */}
-      <section className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <section aria-label="Recipe" className="overflow-hidden rounded-2xl bg-container md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <PhotoSlot recipe={r} onChange={(imageUrl) => setR({ ...r, imageUrl })} />
         <div className="flex flex-col p-5 sm:p-7 md:pt-5">
-          {/* The categories on the left, Start cooking on the right */}
-          {(r.categories.length > 0 || r.steps.length > 0) && (
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>
+          {/* The categories on the left; Start cooking, Share and Delete on the right */}
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>
+            <div className="flex shrink-0 items-center gap-1">
               {r.steps.length > 0 && (
-                <a href={`#/recipes/${r.id}/cook`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+                <a href={`#/recipes/${r.id}/cook`} className="mr-1 flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
                   <ChefIcon className="size-4" /> Start cooking
                 </a>
               )}
+              <button type="button" aria-label="Share" title="Share" onClick={() => setSharing(true)} className={iconButton}>
+                <ShareIcon />
+              </button>
+              <button type="button" aria-label="Delete recipe" title="Delete recipe" onClick={() => setConfirmDelete(true)} className={`${iconButton} hover:bg-error-subtle hover:text-error`}>
+                <Trash />
+              </button>
             </div>
-          )}
-          <h1 className="mt-1 text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
+          </div>
+          <div className="mt-1 flex items-start gap-2">
+            <h1 className="text-3xl font-bold leading-tight tracking-tight">{r.title}</h1>
+            <div className="mt-1 flex shrink-0 items-center">
+              <a href={`#/recipes/${r.id}/edit`} aria-label="Edit details" title="Edit details" className={iconButton}>
+                <EditIcon />
+              </a>
+              <button type="button" aria-pressed={r.me.favorite} aria-label={r.me.favorite ? "Favorite" : "Add to favorites"} title={r.me.favorite ? "Favorite (click to remove)" : "Add to favorites"} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${iconButton} ${r.me.favorite ? "text-warning" : ""}`}>
+                <StarIcon filled={r.me.favorite} className="size-5" />
+              </button>
+              <button type="button" aria-pressed={r.me.pinned} aria-label={r.me.pinned ? "Pinned" : "Pin to top"} title={r.me.pinned ? "Pinned to the top (click to unpin)" : "Pin to top"} onClick={() => void setMine({ pinned: !r.me.pinned })} className={`${iconButton} ${r.me.pinned ? "text-action" : ""}`}>
+                <PinIcon filled={r.me.pinned} className="size-5" />
+              </button>
+            </div>
+          </div>
           {r.description && <p className="mt-3 text-subtle">{r.description}</p>}
 
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -162,66 +182,38 @@ export default function RecipeView({ id }: { id: number }) {
             <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
           </div>
 
-          {/* Using it */}
-          <div className="flex flex-wrap gap-2 pt-5">
-            {r.ingredients.length > 0 && (
-              <button type="button" onClick={() => setShopping(true)} className={smallButton}>
-                <GroceryIcon className="size-4" /> Add to grocery list
-              </button>
-            )}
-            <button type="button" aria-pressed={r.me.favorite} onClick={() => void setMine({ favorite: !r.me.favorite })} className={`${smallButton} ${r.me.favorite ? "border-warning/50 text-warning" : ""}`}>
-              <StarIcon filled={r.me.favorite} className="size-4" /> {r.me.favorite ? "Favorite" : "Add to favorites"}
+          {/* What you can do with it */}
+          <div role="group" aria-label="Recipe actions" className="flex flex-wrap gap-2 pt-5">
+            <button type="button" onClick={() => setOrganizing(true)} className={smallButton}>
+              <TagIcon /> Organize
             </button>
-            <button type="button" aria-pressed={r.me.pinned} onClick={() => void setMine({ pinned: !r.me.pinned })} className={`${smallButton} ${r.me.pinned ? "border-action/50 text-action" : ""}`}>
-              <PinIcon filled={r.me.pinned} className="size-4" /> {r.me.pinned ? "Pinned" : "Pin to top"}
-            </button>
-            <button type="button" onClick={() => setPicking(true)} className={smallButton}>
-              <CollectionAddIcon /> Collections
-            </button>
-            <button type="button" onClick={() => setSharing(true)} className={smallButton}>
-              <ShareIcon /> Share
-            </button>
-          </div>
-          {/* Changing it */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <a href={`#/recipes/${r.id}/edit`} className={smallButton}>
-              <EditIcon /> Edit
-            </a>
             {ai.enhance && (
               <button type="button" onClick={() => setEnhancing(true)} className={smallButton}>
-                <WandIcon /> AI check
+                <WandIcon /> Improve with AI
               </button>
             )}
-            <div className="relative">
-              <button type="button" aria-label="More" aria-expanded={more} onClick={() => setMore((m) => !m)} className={smallButton}>
-                <MoreIcon />
-              </button>
-              {more && (
-                <div role="menu" className="absolute left-0 z-30 mt-1 w-56 overflow-hidden rounded-xl bg-container py-1 shadow-[0_8px_28px_rgba(0,0,0,0.16)]" onMouseLeave={() => setMore(false)}>
-                  <button role="menuitem" type="button" onClick={() => (setMore(false), setConfirmDelete(true))} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-error hover:bg-error-subtle">
-                    <Trash /> Delete
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
+          {(r.tags.length > 0 || r.collections.length > 0) && (
+            <ul aria-label="Tags and collections" className="flex flex-wrap gap-2 pt-3">
+              {r.collections.map((c) => (
+                <li key={`c${c.id}`}>
+                  <a href={`#/recipes?collection=${c.id}`} className="block rounded-full bg-brand-subtle px-3 py-1 text-sm font-semibold text-action hover:underline">
+                    {c.name}
+                  </a>
+                </li>
+              ))}
+              {r.tags.map((t) => (
+                <li key={t}>
+                  <a href={`#/recipes?tag=${encodeURIComponent(t)}`} className="block rounded-full bg-page px-3 py-1 text-sm text-subtle hover:text-ink">
+                    #{t}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
-      {(r.tags.length > 0 || r.collections.length > 0) && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {r.collections.map((c) => (
-            <a key={c.id} href={`#/recipes?collection=${c.id}`} className="rounded-full bg-brand-subtle px-3 py-1 text-sm font-semibold text-action hover:underline">
-              {c.name}
-            </a>
-          ))}
-          {r.tags.map((t) => (
-            <a key={t} href={`#/recipes?tag=${encodeURIComponent(t)}`} className="rounded-full bg-container px-3 py-1 text-sm text-subtle hover:text-ink">
-              #{t}
-            </a>
-          ))}
-        </div>
-      )}
 
       {/* Tabs: the recipe itself, its nutrition, and its versions (when versioning is on) */}
       <div role="tablist" aria-label="Recipe sections" className="mt-4 flex gap-1 overflow-x-auto rounded-xl bg-container p-1">
@@ -251,7 +243,14 @@ export default function RecipeView({ id }: { id: number }) {
         <div role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe">
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <section aria-label="Ingredients" className={`${card} self-start`}>
-              <h2 className="text-xl font-bold">Ingredients</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-bold">Ingredients</h2>
+                {r.ingredients.length > 0 && (
+                  <button type="button" onClick={() => setShopping(true)} className={smallButton}>
+                    <GroceryIcon className="size-4" /> Add to grocery list
+                  </button>
+                )}
+              </div>
               {r.ingredients.some((i) => i.quantity || i.unit) && (
                 <div className="mt-3">
                   <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
@@ -320,7 +319,7 @@ export default function RecipeView({ id }: { id: number }) {
       )}
       {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : prefs.factor !== 1 ? { scale: prefs.factor } : {}) }] }} onClose={() => setShopping(false)} />}
-      {picking && <CollectionPicker recipe={r} onClose={() => setPicking(false)} onChange={(collections) => setR({ ...r, collections })} />}
+      {organizing && <OrganizeDialog recipe={r} onClose={() => setOrganizing(false)} onSaved={(updated) => setR(updated)} />}
       {confirmDelete && (
         <Popup title="Delete this recipe?" onClose={() => setConfirmDelete(false)}>
           <div className="p-6">
@@ -538,57 +537,3 @@ function Substitutions({ recipeId, list, onChange }: { recipeId: number; list: S
   );
 }
 
-function CollectionPicker({ recipe, onClose, onChange }: { recipe: Recipe; onClose: () => void; onChange: (c: Recipe["collections"]) => void }) {
-  const [all, setAll] = useState<CollectionInfo[] | null>(null);
-  const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const inIt = new Set(recipe.collections.map((c) => c.id));
-  useEffect(() => {
-    void api<CollectionInfo[]>("GET", "/api/collections").then(setAll);
-  }, []);
-  const toggle = async (c: CollectionInfo) => {
-    if (inIt.has(c.id)) {
-      await api("DELETE", `/api/collections/${c.id}/recipes/${recipe.id}`);
-      onChange(recipe.collections.filter((x) => x.id !== c.id));
-    } else {
-      await api("POST", `/api/collections/${c.id}/recipes`, { recipeId: recipe.id });
-      onChange([...recipe.collections, { id: c.id, name: c.name }]);
-    }
-  };
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    try {
-      const c = await api<CollectionInfo>("POST", "/api/collections", { name });
-      setAll((a) => [...(a ?? []), c]);
-      setName("");
-      await toggle(c);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-  return (
-    <Popup title="Collections" onClose={onClose}>
-      <div className="p-5">
-        {all && all.length === 0 && <p className="text-subtle">No collections yet. Make one below.</p>}
-        <ul className="flex flex-col">
-          {all?.map((c) => (
-            <li key={c.id}>
-              <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-pressed">
-                <input type="checkbox" checked={inIt.has(c.id)} onChange={() => void toggle(c)} className="size-4 accent-action" />
-                <span className="flex-1">{c.name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-        <form onSubmit={create} className="mt-3 flex gap-2 border-t border-line pt-4">
-          <input aria-label="New collection" placeholder="New collection" value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action" />
-          <button type="submit" disabled={!name.trim()} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
-            Add
-          </button>
-        </form>
-        {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
-      </div>
-    </Popup>
-  );
-}
