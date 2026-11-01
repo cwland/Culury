@@ -59,3 +59,13 @@ describe("scaling a recipe", () => {
     expect(screen.getByTestId("reset-slot")).toBeInTheDocument();
   });
 });
+
+describe("units", () => {
+  it("As is, Metric, US: in the same row as the servings (the row only wraps on very narrow phones)", () => {
+    render(<ScaleControls servings={4} factor={1} setFactor={() => {}} units="original" setUnits={() => {}} leans="us" />);
+    const units = screen.getByRole("radiogroup", { name: "Units" });
+    expect(within(units).getAllByRole("radio").map((b) => b.textContent)).toEqual(["As is", "Metric", "US"]);
+    expect(within(units).getByRole("radio", { name: "As is" })).toHaveAttribute("title", "As is (US)");
+    expect(units.parentElement).toBe(screen.getByRole("group", { name: "Servings" }).parentElement);
+  });
+});

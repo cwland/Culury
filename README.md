@@ -192,7 +192,7 @@ A passkey belongs to the address it was added on, and browsers only offer them o
 - **Start cooking** on a recipe opens Cook Mode: one step at a time (Next / Back, swipe, or the arrow keys), with the ingredients as a checklist and the ones the step uses lit up.
 - The screen is kept awake with the Wake Lock API, which browsers only allow on `https://` addresses (and localhost). Over plain `http://` on your LAN it shows "Screen may sleep".
 - Times in steps become timer buttons. Timers live in your browser, keep running across pages and reloads, and ring with a chime, a buzz on phones, and a notification if you allow them.
-- Servings and units (as written, metric, US) are remembered per recipe in your browser. Teaspoons and tablespoons stay as they are; cups, ounces and pounds convert (rounded the way a jug or kitchen scale reads), and oven temperatures in steps switch between °F and °C.
+- Servings and units (As is, Metric, US; on the same line as the servings) are remembered per recipe in your browser. Teaspoons and tablespoons stay as they are; cups, ounces and pounds convert (rounded the way a jug or kitchen scale reads), and oven temperatures in steps switch between °F and °C.
 
 ## Importing recipes
 
