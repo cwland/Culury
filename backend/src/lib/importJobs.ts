@@ -213,7 +213,7 @@ export const jobView = (j: JobRow) => ({
   id: j.id,
   kind: j.kind,
   status: j.status,
-  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : j.kind === "import-file" ? String((j.payload as { name?: string }).name ?? "File") : j.kind === "import-photo" ? (((j.payload as { files?: string[] }).files?.length ?? 1) > 1 ? "Photos" : "Photo") : "Pasted text",
+  source: j.kind === "import-url" ? String((j.payload as { url?: string }).url ?? "") : j.kind === "import-improve" ? String((j.payload as { name?: string }).name ?? "Import") : j.kind === "import-file" ? String((j.payload as { name?: string }).name ?? "File") : j.kind === "import-photo" ? (((j.payload as { files?: string[] }).files?.length ?? 1) > 1 ? "Photos" : "Photo") : "Pasted text",
   result: j.result ?? null,
   error: j.error,
   createdAt: j.createdAt,

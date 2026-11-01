@@ -11,6 +11,7 @@ import { jobView } from "../lib/importJobs.js";
 import { applyEnhancements, applyInput, requireEnhance, suggestEnhancements } from "../lib/enhance.js";
 import { loadRecipe } from "../lib/recipes.js";
 import { userOf } from "./recipes.js";
+import { saveImprovements } from "../lib/improve.js";
 import { afterAiCheck, nutritionWanted } from "../lib/nutrition.js";
 import { changedParts, describeParts, ensureVersions, newVersion, syncActive, versionData } from "../lib/versions.js";
 
@@ -86,17 +87,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(req.params);
     const body = applyInput.parse(req.body ?? {});
     await requireEnhance(db, ai);
-    const [before] = await db.select().from(recipes).where(eq(recipes.id, id));
-    if (before) await ensureVersions(db, id);
-    await applyEnhancements(db, id, body, userOf(req));
-    const [after] = await db.select().from(recipes).where(eq(recipes.id, id));
-    if (before && after) {
-      // New steps or ingredients: a new version. Only nutrition, categories or tags: the active one.
-      const parts = changedParts(versionData(before), versionData(after));
-      if (parts.includes("steps") || parts.includes("ingredients")) await newVersion(db, id, "ai", `AI check: changed ${describeParts(parts)}`, userOf(req));
-      else await syncActive(db, id);
-      await afterAiCheck(app, id, before.ingredients, body.nutrition !== undefined);
-    }
+    await saveImprovements(app, id, body, userOf(req));
     return loadRecipe(db, id, userOf(req));
   });
   // "Not now" on the AI check offer: nutrition it would have estimated is worked out now (Auto nutrition)

@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { jobs, recipes } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { jobView } from "../lib/importJobs.js";
 import { userOf } from "./recipes.js";
+import { requireEnhance } from "../lib/enhance.js";
 
 export default async function importRoutes(app: FastifyInstance) {
   const { db, jobs: queue, photos } = app;
@@ -56,6 +57,28 @@ export default async function importRoutes(app: FastifyInstance) {
     if (!job || !job.kind.startsWith("import-")) throw notFound("Import");
     const again = await queue.enqueue(job.kind, { ...job.payload, ...(force ? { force: true } : {}) }, userOf(req));
     return reply.status(202).send(jobView(again));
+  });
+
+  // Improve every recipe this import brought in with AI, in the background (batch). The answer is
+  // the new job: GET /api/imports/:id shows its progress (total, done, improved, unchanged, failed).
+  app.post("/api/imports/:id/improve", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const job = await queue.get(id);
+    if (!job || !job.kind.startsWith("import-")) throw notFound("Import");
+    const recipeIds = job.result?.recipeIds ?? [];
+    if (!recipeIds.length) throw new HttpError(400, "This import didn't bring in recipes to improve");
+    await requireEnhance(db, app.ai);
+    const batch = await queue.enqueue("import-improve", { importId: id, recipeIds, name: jobView(job).source }, userOf(req));
+    return reply.status(202).send(jobView(batch));
+  });
+
+  // Stop a batch improve after the recipe it's working on
+  app.post("/api/imports/:id/stop", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const job = await queue.get(id);
+    if (!job || job.kind !== "import-improve") throw notFound("Batch");
+    await db.update(jobs).set({ result: sql`coalesce(${jobs.result}, '{}'::jsonb) || '{"stop": true}'::jsonb` }).where(eq(jobs.id, id));
+    return jobView((await queue.get(id))!);
   });
 
   // ---------- photos ----------

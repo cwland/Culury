@@ -5,6 +5,7 @@ import RecipeView from "./RecipeView";
 import RecipeEditor from "./RecipeEditor";
 import CookMode from "./CookMode";
 import ReviewImport from "./ReviewImport";
+import BatchProgress from "./BatchProgress";
 
 // #/recipes (the list), #/recipes/12 (a recipe), #/recipes/12/edit, #/recipes/new
 export default function RecipesPage() {
@@ -26,5 +27,6 @@ export default function RecipesPage() {
   if (route.view === "cook") return <CookMode key={`cook-${route.id}`} id={route.id} />;
   if (route.view === "new") return <RecipeEditor key="new" />;
   if (route.view === "review") return <ReviewImport key={`review-${route.job}`} job={route.job} />;
+  if (route.view === "improving") return <BatchProgress key={`improving-${route.job}`} job={route.job} />;
   return <RecipeList params={route.params} />;
 }

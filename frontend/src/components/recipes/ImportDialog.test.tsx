@@ -91,6 +91,7 @@ describe("after importing many recipes", () => {
       "GET /api/ai/status": () => ai,
       "POST /api/recipes/import/file": () => ({ status: 202, json: job({}) }),
       "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", imported: 3, skipped: 0, recipeIds: [5, 6, 7], problems: [] } }),
+      "POST /api/imports/31/improve": () => ({ status: 202, json: { ...job({}), id: 40, kind: "import-improve" } }),
     });
   const run = async () => {
     const u = userEvent.setup();
@@ -106,6 +107,20 @@ describe("after importing many recipes", () => {
     const status = await run();
     expect(within(status).getByRole("link", { name: "Review one by one" })).toHaveAttribute("href", "#/recipes/review/31");
     expect(status).toHaveTextContent("Each recipe's original is kept as v1 in its Version history.");
+  });
+
+  it("Improve all automatically: says how many AI requests first, then starts and shows the progress", async () => {
+    window.location.hash = "#/recipes";
+    const server = done({ ready: true, photos: false, enhance: true });
+    const improves = () => server.writes().filter((w) => w.path === "/api/imports/31/improve");
+    const status = await run();
+    const u = userEvent.setup();
+    await u.click(within(status).getByRole("button", { name: "Improve all automatically" }));
+    expect(status).toHaveTextContent("This asks your AI 3 times, once per recipe.");
+    expect(improves()).toHaveLength(0); // not until Start
+    await u.click(within(status).getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/improving/40"));
+    expect(improves()).toHaveLength(1);
   });
 
   it("with AI Enhance off there's nothing to offer", async () => {

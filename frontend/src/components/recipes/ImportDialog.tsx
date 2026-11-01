@@ -207,6 +207,61 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
   );
 }
 
+// After a file brought in several recipes: go through them one by one, or let the AI improve them
+// all in the background (it says how many AI requests that takes before it starts)
+function ImproveChoice({ job, count, onClose }: { job: ImportJob; count: number; onClose: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const start = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const batch = await api<ImportJob>("POST", `/api/imports/${job.id}/improve`);
+      onClose();
+      window.location.hash = `#/recipes/improving/${batch.id}`;
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  const button = "rounded-lg px-4 py-2 text-sm font-semibold";
+  return (
+    <div className="mt-3 rounded-lg bg-container p-3">
+      <p className="font-semibold">Improve them with AI?</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <a href={`#/recipes/review/${job.id}`} onClick={onClose} className={`${button} bg-action text-white hover:opacity-90`}>
+          Review one by one
+        </a>
+        <button type="button" onClick={() => setAsking(true)} className={`${button} border border-line hover:bg-pressed`}>
+          Improve all automatically
+        </button>
+      </div>
+      {asking && (
+        <div className="mt-3 rounded-lg border border-line p-3 text-sm">
+          <p>
+            This asks your AI {count} times, once per recipe. On an AI at home that can take a while; on a paid service each request costs a little. It runs in the background, and you can stop it.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" disabled={busy} onClick={() => void start()} className={`${button} bg-action text-white hover:opacity-90 disabled:opacity-60`}>
+              {busy ? "Starting…" : "Start"}
+            </button>
+            <button type="button" onClick={() => setAsking(false)} className={`${button} hover:bg-pressed`}>
+              Cancel
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="mt-2 text-error">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <p className="mt-2 text-sm text-subtle">Each recipe's original is kept as v1 in its Version history.</p>
+    </div>
+  );
+}
+
 // canReview: Improve with AI is on, so a file's recipes can be reviewed one by one
 function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: ImportJob | null; error: string; onRetry: () => void; onForce: () => void; onClose: () => void; canReview?: boolean }) {
   if (error) return <p role="alert" className="mt-4 rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p>;
@@ -239,17 +294,7 @@ function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: Imp
             </ul>
           </details>
         )}
-        {canReview && (job.result.recipeIds?.length ?? 0) > 1 && (
-          <div className="mt-3 rounded-lg bg-container p-3">
-            <p className="font-semibold">Improve them with AI?</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <a href={`#/recipes/review/${job.id}`} onClick={onClose} className="rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-                Review one by one
-              </a>
-            </div>
-            <p className="mt-2 text-sm text-subtle">Each recipe's original is kept as v1 in its Version history.</p>
-          </div>
-        )}
+        {canReview && (job.result.recipeIds?.length ?? 0) > 1 && <ImproveChoice job={job} count={job.result.recipeIds!.length} onClose={onClose} />}
         <a href="#/recipes" onClick={onClose} className="mt-2 inline-block font-semibold text-link hover:underline">
           See your recipes
         </a>

@@ -374,6 +374,12 @@ export interface JobResult {
   problems?: { name: string; reason: string }[]; // import-file: entries that couldn't be used
   warnings?: string[];
   sorted?: number; // sort-aisles: items given an aisle
+  total?: number; // import-improve: recipes to improve
+  done?: number; // import-improve: worked through so far
+  improved?: number; // import-improve: changed by AI
+  unchanged?: number; // import-improve: the AI had nothing to change
+  failed?: { title: string; reason: string }[]; // import-improve: couldn't be improved
+  stopped?: boolean; // import-improve: stopped before the end
 }
 
 export const jobs = pgTable(
