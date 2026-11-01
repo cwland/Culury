@@ -21,35 +21,60 @@ const open = (routes: Record<string, any> = {}) => {
   return { server, onApplied, onClose };
 };
 
-describe("AI Enhance wizard", () => {
-  it("shows original and suggestion side by side for each section", async () => {
+// The review goes one part at a time: this moves to a part by its name
+const goTo = async (u: ReturnType<typeof userEvent.setup>, name: string) => {
+  await screen.findByText(/^Improve with AI · Step/, undefined, { timeout: 3000 }); // (the suggestions are in)
+  for (let i = 0; i < 6 && !screen.queryByRole("region", { name }); i++) await u.click(await screen.findByRole("button", { name: "Next" }, { timeout: 3000 }));
+  return screen.getByRole("region", { name });
+};
+
+describe("Improve with AI, one part at a time", () => {
+  it("the recipe's name is in the header the whole way, with which step it's on", async () => {
+    const u = userEvent.setup();
     open();
-    const steps = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
-    expect(within(steps).getByRole("heading", { name: "Original" })).toBeInTheDocument();
-    expect(within(steps).getByRole("heading", { name: "AI suggestion" })).toBeInTheDocument();
+    const dlg = await screen.findByRole("dialog", { name: "Weeknight Chili" });
+    expect(await within(dlg).findByText("Improve with AI · Step 1 of 5", undefined, { timeout: 3000 })).toBeInTheDocument();
+    await u.click(within(dlg).getByRole("button", { name: "Next" }));
+    expect(within(dlg).getByText("Improve with AI · Step 2 of 5")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Weeknight Chili" })).toBe(dlg);
+  });
+
+  it("ingredients first, then instructions, nutrition, categories and tags: one screen each", async () => {
+    const u = userEvent.setup();
+    open();
+    const ing = await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    expect(screen.queryByRole("region", { name: "Instructions" })).toBeNull();
+    expect(within(ing).getByRole("heading", { name: "Original" })).toBeInTheDocument();
+    expect(within(ing).getByRole("heading", { name: "AI suggestion" })).toBeInTheDocument();
+    expect(within(ing).getByText("1 tsp salt").closest("mark")).not.toBeNull();
+    expect(within(ing).getByText("Added salt.")).toBeInTheDocument();
+    expect(within(ing).getByRole("radio", { name: "Use the AI's version" })).toBeChecked();
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    const steps = screen.getByRole("region", { name: "Instructions" });
     expect(within(steps).getByText("Brown the beef.")).toBeInTheDocument();
     expect(within(steps).getByText("Brown the beef over medium-high heat, about 8 minutes.").closest("mark")).not.toBeNull();
-    expect(within(steps).getAllByText("Simmer for 30 minutes.").every((el) => !el.closest("mark"))).toBe(true);
-    expect(within(steps).getByText("Added how long to brown the beef.")).toBeInTheDocument();
-    const ing = screen.getByRole("region", { name: "Ingredients" });
-    expect(within(ing).getByText("1 tsp salt").closest("mark")).not.toBeNull();
+    await u.click(screen.getByRole("button", { name: "Next" }));
     const nut = screen.getByRole("region", { name: "Nutrition" });
     expect(within(nut).getByText(/none/i)).toBeInTheDocument();
     expect(within(nut).getByText(/410/)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Next" }));
     const org = screen.getByRole("region", { name: "Categories and tags" });
     expect(within(org).getByText("new")).toBeInTheDocument();
     expect(within(org).getByText("beef").closest("s")).not.toBeNull();
-    expect(within(org).getByText("chili").closest("mark")).not.toBeNull();
-    for (const name of ["Instructions", "Ingredients", "Nutrition", "Categories and tags"])
-      expect(within(screen.getByRole("region", { name })).getByRole("checkbox", { name: "Use this" })).toBeChecked();
+    // Back goes back
+    await u.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("region", { name: "Nutrition" })).toBeInTheDocument();
   });
 
-  it("Apply selected sends only the ticked sections", async () => {
+  it("the last screen sums up the choices; Save sends only the parts you kept the AI's version of", async () => {
     const u = userEvent.setup();
     const { server, onApplied } = open();
-    const nut = await screen.findByRole("region", { name: "Nutrition" }, { timeout: 3000 });
-    await u.click(within(nut).getByRole("checkbox", { name: "Use this" }));
-    await u.click(screen.getByRole("button", { name: "Apply selected" }));
+    const nut = await goTo(u, "Nutrition");
+    await u.click(within(nut).getByRole("radio", { name: "Keep the original" }));
+    const summary = await goTo(u, "Save");
+    expect(within(summary).getByRole("list", { name: "Your choices" })).toHaveTextContent(/Ingredients.*AI's version.*Instructions.*AI's version.*Nutrition.*Original.*Categories and tags.*AI's version/);
+    expect(summary).toHaveTextContent("The recipe as it is now stays in Version history.");
+    await u.click(within(summary).getByRole("button", { name: "Save" }));
     await vi.waitFor(() => expect(onApplied).toHaveBeenCalled());
     const body = server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body;
     expect(Object.keys(body).sort()).toEqual(["categories", "ingredients", "steps", "tags"]);
@@ -57,18 +82,42 @@ describe("AI Enhance wizard", () => {
     expect(onApplied.mock.calls[0][0]).toMatchObject({ title: "Applied" });
   });
 
-  it("a section with no changes is unticked and says so", async () => {
-    open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: ["Brown the beef.", "Simmer for 30 minutes."], changes: [], changed: false } }) });
-    const steps = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
-    expect(within(steps).getByText("No changes")).toBeInTheDocument();
-    expect(within(steps).queryByRole("checkbox", { name: "Use this" })).toBeNull();
-  });
-
-  it("Keep original closes without saving anything", async () => {
+  it("keeping the original everywhere: nothing to save, and it says so", async () => {
     const u = userEvent.setup();
     const { server, onClose } = open();
-    await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
-    await u.click(screen.getByRole("button", { name: "Keep original" }));
+    for (const name of ["Ingredients", "Instructions", "Nutrition", "Categories and tags"]) await u.click(within(await goTo(u, name)).getByRole("radio", { name: "Keep the original" }));
+    const summary = await goTo(u, "Save");
+    expect(within(summary).getByRole("button", { name: "Save" })).toBeDisabled();
+    await u.click(within(summary).getByRole("button", { name: "Close without changes" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance"]);
+  });
+
+  it("a part with no changes is skipped", async () => {
+    const u = userEvent.setup();
+    open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: ["Brown the beef.", "Simmer for 30 minutes."], changes: [], changed: false } }) });
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    expect(screen.getByText("Improve with AI · Step 1 of 4")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("region", { name: "Nutrition" })).toBeInTheDocument();
+  });
+
+  it("nothing to change at all: says so, with a Done", async () => {
+    const u = userEvent.setup();
+    const none = { suggested: null, changes: [], changed: false };
+    const { onClose } = open({
+      "POST /api/recipes/7/enhance": () => ({ steps: { ...none, suggested: [] }, ingredients: { ...none, suggested: [] }, nutrition: none, organize: { categories: [], newCategories: [], tags: [], changes: [], changed: false } }),
+    });
+    expect(await screen.findByText("The AI didn't find anything to change. The recipe looks good as it is.", undefined, { timeout: 3000 })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Done" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Skip this recipe (any time) closes without saving anything", async () => {
+    const u = userEvent.setup();
+    const { server, onClose } = open();
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Skip" }));
     expect(onClose).toHaveBeenCalled();
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance"]);
   });
@@ -80,17 +129,17 @@ describe("AI Enhance wizard", () => {
       "POST /api/recipes/7/enhance": () => (++calls === 1 ? { status: 502, json: { error: "OpenRouter's answer couldn't be read. Try again, or try another AI service." } } : suggestion()),
     });
     expect(await screen.findByText(/couldn't be read/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Apply selected" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
     await u.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 })).toBeInTheDocument();
     expect(server.writes().filter((w) => w.path === "/api/recipes/7/enhance")).toHaveLength(2);
   });
 
-  it("a recipe deleted meanwhile: applying shows the message instead of crashing", async () => {
+  it("a recipe deleted meanwhile: saving shows the message instead of crashing", async () => {
     const u = userEvent.setup();
     const { onApplied } = open({ "POST /api/recipes/7/enhance/apply": () => ({ status: 404, json: { error: "Recipe not found" } }) });
-    await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
-    await u.click(screen.getByRole("button", { name: "Apply selected" }));
+    const summary = await goTo(u, "Save");
+    await u.click(within(summary).getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Recipe not found")).toBeInTheDocument();
     expect(onApplied).not.toHaveBeenCalled();
   });
@@ -112,7 +161,7 @@ describe("AI check progress and fuller instructions", () => {
     live.push({ type: "step", text: "Instructions: 1 step filled in or fixed" });
     live.push({ type: "result", enhancement: suggestion() });
     live.end();
-    expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Ingredients" })).toBeInTheDocument();
     // done: the list folds away behind a ">", and opens again on click
     expect(screen.queryByRole("log", { name: "AI check progress" })).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: /What the AI did/ }));
@@ -126,7 +175,7 @@ describe("AI check progress and fuller instructions", () => {
   it("says when brief steps were expanded, with each step's label in bold", async () => {
     const steps = ["# Prep and Season", "Pat dry: Pat the chops dry so they sear well.", "# Sear", "Brown: Sear 3–5 minutes per side."];
     open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: steps, changes: ["Expanded the steps."], changed: true, mode: "expanded" } }) });
-    const sec = await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 });
+    const sec = await goTo(userEvent.setup(), "Instructions");
     expect(within(sec).getByText("Expanded")).toBeInTheDocument();
     expect(within(sec).getByText("Prep and Season")).toBeInTheDocument();
     expect(within(sec).getByText("Pat dry:").tagName).toBe("STRONG");
@@ -165,7 +214,7 @@ describe("a slow AI service", () => {
     live.push({ type: "step", text: "Reading “Weeknight Chili”: 2 ingredients, 2 steps" });
     live.push({ type: "step", text: "Asking Home AI (qwen3-vl:32b)…", waiting: true, skip: { id: "home", name: "Home AI" } });
     await u.click(await screen.findByRole("button", { name: "Skip Home AI" }));
-    expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Ingredients" })).toBeInTheDocument();
     const calls = server.sent.filter((s) => s.path.startsWith("/api/recipes/7/enhance"));
     expect(calls.map((c) => c.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance?skip=home"]);
     expect(calls[0].signal?.aborted).toBe(true); // the first request was stopped
@@ -188,7 +237,7 @@ describe("AI check nutrition", () => {
   it("shows added sugars and the serving size it suggests", async () => {
     const withMore = suggestion({ nutrition: { suggested: { calories: 410, fat: 22, saturatedFat: 8, carbs: 10, fiber: 3, sugar: 2, addedSugar: 1, protein: 33, sodium: 640, source: "ai", servings: 4, servingSize: "About 1 cup", note: null }, changes: [], changed: true } });
     open({ "POST /api/recipes/7/enhance": () => withMore });
-    const nut = await screen.findByRole("region", { name: "Nutrition" }, { timeout: 3000 });
+    const nut = await goTo(userEvent.setup(), "Nutrition");
     expect(within(nut).getByText("Added sugars")).toBeInTheDocument();
     expect(within(nut).getByText("1 g")).toBeInTheDocument();
     expect(within(nut).getByText("Serving size")).toBeInTheDocument();

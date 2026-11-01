@@ -23,8 +23,8 @@ beforeEach(() => {
 });
 
 describe("AI Enhance on the recipe page", () => {
-  it("a newly added recipe offers the AI check when AI Enhance is on", async () => {
-    for (const hash of ["#/recipes/7?added=1", "#/recipes/7?imported=1"]) {
+  it("a recipe just typed in offers the AI check when AI Enhance is on", async () => {
+    for (const hash of ["#/recipes/7?added=1"]) {
       forgetAiStatus();
       window.location.hash = hash;
       server(on);
@@ -36,6 +36,24 @@ describe("AI Enhance on the recipe page", () => {
       expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
       unmount();
     }
+  });
+
+  it("a recipe just imported goes straight into the review (no offer to click)", async () => {
+    window.location.hash = "#/recipes/7?imported=1";
+    server(on);
+    render(<RecipeView id={7} />);
+    expect(await screen.findByRole("dialog", { name: "Weeknight Chili" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Instructions" }, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
+  });
+
+  it("imported with AI Enhance off: no review opens", async () => {
+    window.location.hash = "#/recipes/7?imported=1";
+    server({ ready: true, photos: false, enhance: false });
+    render(<RecipeView id={7} />);
+    await screen.findByRole("heading", { name: "Weeknight Chili", level: 1 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("no offer and no AI check button when AI Enhance is off", async () => {
@@ -61,12 +79,12 @@ describe("AI Enhance on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Check with AI" }));
-    expect(await screen.findByRole("dialog", { name: "Improve with AI" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Weeknight Chili" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
-    await u.click(screen.getByRole("button", { name: "Keep original" }));
+    await u.click(screen.getByRole("button", { name: "Skip" }));
     await u.click(screen.getByRole("button", { name: "Improve with AI" }));
-    expect(await screen.findByRole("dialog", { name: "Improve with AI" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Weeknight Chili" })).toBeInTheDocument();
   });
 
   it("after applying AI changes there's no Undo (going back is in the version history)", async () => {
@@ -75,8 +93,9 @@ describe("AI Enhance on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
-    await u.click(await screen.findByRole("button", { name: "Apply selected" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Improve with AI" })).toBeNull());
+    await u.click(await screen.findByRole("button", { name: "Next" }, { timeout: 3000 }));
+    await u.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Weeknight Chili" })).toBeNull());
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent(/Brown the beef well, about 8 minutes/);
     expect(screen.queryByRole("button", { name: /Undo/ })).toBeNull();
     expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply"]);
@@ -200,7 +219,7 @@ describe("Auto nutrition on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
-    await u.click(await screen.findByRole("button", { name: "Keep original" }));
+    await u.click(await screen.findByRole("button", { name: "Skip" }, { timeout: 3000 }));
     await waitFor(() => expect(skips(s)).toHaveLength(1));
   });
 

@@ -56,8 +56,16 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
   const prefs = useCookPrefs(id);
   const ai = useAiStatus();
   // Just added (typed in or imported): offer an AI check once
-  const [offer, setOffer] = useState(() => /[?&](added|imported)=/.test(window.location.hash));
+  // Typed in: offer the AI check once. Imported: go straight into the review (when AI Enhance is on).
+  const [offer, setOffer] = useState(() => /[?&]added=/.test(window.location.hash));
+  const [reviewImport, setReviewImport] = useState(() => /[?&]imported=/.test(window.location.hash));
   const [enhancing, setEnhancing] = useState(false);
+  useEffect(() => {
+    if (reviewImport && ai.enhance) {
+      setReviewImport(false);
+      setEnhancing(true);
+    }
+  }, [reviewImport, ai.enhance]);
   const [organizing, setOrganizing] = useState(false);
   // Editing in place: one section at a time, with its text while it's being edited
   const [editing, setEditing] = useState<Section | null>(startEditing ? "details" : null);

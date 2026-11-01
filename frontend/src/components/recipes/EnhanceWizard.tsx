@@ -199,60 +199,60 @@ function Chips({ items, mark, strike, isNew }: { items: string[]; mark?: Set<str
   );
 }
 
-// One section: Original on the left, AI suggestion on the right (stacked on a phone)
-function Part({ title, badge, changed, changes, use, onUse, original, suggested }: { title: string; badge?: string; changed: boolean; changes: string[]; use: boolean; onUse: (v: boolean) => void; original: ReactNode; suggested: ReactNode }) {
+// One part of the recipe: Original on the left, AI suggestion on the right (stacked on a phone),
+// what changed, and the choice: the AI's version or the original
+function Part({ title, badge, changes, use, onUse, original, suggested }: { title: string; badge?: string; changes: string[]; use: boolean; onUse: (v: boolean) => void; original: ReactNode; suggested: ReactNode }) {
+  const choice = (on: boolean, label: string) => (
+    <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 font-medium ${use === on ? "border-action bg-brand-subtle" : "border-line hover:bg-page"}`}>
+      <input type="radio" name={`use-${title}`} checked={use === on} onChange={() => onUse(on)} className="size-4 accent-[var(--color-action)]" />
+      {label}
+    </label>
+  );
   return (
-    <section aria-label={title} className="rounded-xl border border-line p-4">
-      <div className="flex items-center justify-between gap-4">
-        <h3 className="flex items-center gap-2 text-lg font-semibold">
-          {title}
-          {changed && badge && <span className="rounded-full bg-brand-subtle px-2 py-0.5 text-xs font-semibold text-action">{badge}</span>}
-        </h3>
-        {changed ? (
-          <label className="flex cursor-pointer items-center gap-2 font-medium">
-            <input type="checkbox" checked={use} onChange={(e) => onUse(e.target.checked)} className="size-5 accent-[var(--color-action)]" />
-            Use this
-          </label>
-        ) : (
-          <span className="text-subtle">No changes</span>
-        )}
+    <section aria-label={title} className="flex flex-col gap-3">
+      <h3 className="flex items-center gap-2 text-xl font-bold">
+        {title}
+        {badge && <span className="rounded-full bg-brand-subtle px-2 py-0.5 text-xs font-semibold text-action">{badge}</span>}
+      </h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border border-line p-3">
+          <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">Original</h4>
+          {original}
+        </div>
+        <div className="rounded-xl border border-action/40 p-3">
+          <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">AI suggestion</h4>
+          {suggested}
+        </div>
       </div>
-      {changed && (
-        <>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <div>
-              <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">Original</h4>
-              {original}
-            </div>
-            <div>
-              <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">AI suggestion</h4>
-              {suggested}
-            </div>
-          </div>
-          {changes.length > 0 && (
-            <div className="mt-3 rounded-lg bg-page p-3">
-              <p className="text-sm font-semibold">What changed</p>
-              <ul className="mt-1 list-disc pl-5 text-sm">
-                {changes.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
+      {changes.length > 0 && (
+        <div className="rounded-lg bg-page p-3">
+          <p className="text-sm font-semibold">What changed</p>
+          <ul className="mt-1 list-disc pl-5 text-sm">
+            {changes.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
       )}
+      <div className="flex flex-wrap gap-2">
+        {choice(true, "Use the AI's version")}
+        {choice(false, "Keep the original")}
+      </div>
     </section>
   );
 }
 
-// AI Enhance: asks the AI to check the recipe (nothing is saved), shows each section side by side,
-// and saves only the sections you keep. What it was before stays in the version history.
+// Improve with AI: asks the AI to check the recipe (nothing is saved yet), then goes one part at a
+// time (ingredients, instructions, nutrition, categories and tags: only parts with changes), each
+// with the original beside the AI's version, and ends on a summary with Save. Only the parts you
+// keep the AI's version of are saved; what the recipe was stays in the version history.
 export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void }) {
   const [e, setE] = useState<Enhancement | null>(null);
   const [error, setError] = useState("");
   const [applyError, setApplyError] = useState("");
   const [busy, setBusy] = useState(false);
   const [use, setUse] = useState<Record<Key, boolean>>({ steps: false, ingredients: false, nutrition: false, organize: false });
+  const [at, setAt] = useState(0); // which screen
 
   const [lines, setLines] = useState<Progress[]>([]);
   const [errorStatus, setErrorStatus] = useState(0);
@@ -280,6 +280,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
         .then((r) => {
           if (mine !== run.current) return;
           setE(r);
+          setAt(0);
           setUse({ steps: r.steps.changed, ingredients: r.ingredients.changed, nutrition: r.nutrition.changed, organize: r.organize.changed });
         })
         .catch((err) => {
@@ -321,57 +322,44 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
     }
   }
 
-  const anyChange = !!e && (e.steps.changed || e.ingredients.changed || e.nutrition.changed || e.organize.changed);
-  const anyTicked = !!e && (["steps", "ingredients", "nutrition", "organize"] as Key[]).some((k) => use[k] && e[k].changed);
   const cats = recipe.categories.map((c) => c.name);
   const lower = (xs: string[]) => new Set(xs.map((x) => x.toLowerCase()));
-
-  return (
-    <Popup title="Improve with AI" onClose={onClose} wide tall>
-      <div className="flex flex-col gap-4 p-5 sm:p-6">
-        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
-        {error && (
-          <div role="alert" className="rounded-xl bg-error-subtle p-4">
-            <p>{error}</p>
-            {/* AI Enhance or AI turned off, or the recipe is gone: asking again won't help */}
-            {errorStatus !== 409 && errorStatus !== 404 && (
-              <button type="button" onClick={() => check(skipped.current)} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
-                Try again
-              </button>
-            )}
-          </div>
-        )}
-        {e && (
-          <>
-            {!anyChange && <p className="rounded-xl bg-page p-4">The AI didn't find anything to change. The recipe looks good as it is.</p>}
+  // The screens: each part with changes, in this order, then Save
+  const parts: { key: Key; title: string; screen: () => ReactNode }[] = !e
+    ? []
+    : ([
+        {
+          key: "ingredients",
+          title: "Ingredients",
+          screen: () => <Part title="Ingredients" changes={e.ingredients.changes} use={use.ingredients} onUse={(v) => setUse({ ...use, ingredients: v })} original={<Lines lines={ingredientLines(recipe)} />} suggested={<Lines lines={e.ingredients.suggested} against={ingredientLines(recipe)} />} />,
+        },
+        {
+          key: "steps",
+          title: "Instructions",
+          screen: () => (
             <Part
               title="Instructions"
               badge={e.steps.mode === "expanded" ? "Expanded" : e.steps.mode === "filled" ? "Filled gaps" : undefined}
-              {...e.steps}
+              changes={e.steps.changes}
               use={use.steps}
               onUse={(v) => setUse({ ...use, steps: v })}
               original={<Lines lines={stepLines(recipe)} />}
               suggested={<Lines lines={e.steps.suggested} against={stepLines(recipe)} />}
             />
-            <Part
-              title="Ingredients"
-              {...e.ingredients}
-              use={use.ingredients}
-              onUse={(v) => setUse({ ...use, ingredients: v })}
-              original={<Lines lines={ingredientLines(recipe)} />}
-              suggested={<Lines lines={e.ingredients.suggested} against={ingredientLines(recipe)} />}
-            />
-            <Part
-              title="Nutrition"
-              {...e.nutrition}
-              use={use.nutrition}
-              onUse={(v) => setUse({ ...use, nutrition: v })}
-              original={<NutritionList n={recipe.nutrition} />}
-              suggested={<NutritionList n={e.nutrition.suggested} />}
-            />
+          ),
+        },
+        {
+          key: "nutrition",
+          title: "Nutrition",
+          screen: () => <Part title="Nutrition" changes={e.nutrition.changes} use={use.nutrition} onUse={(v) => setUse({ ...use, nutrition: v })} original={<NutritionList n={recipe.nutrition} />} suggested={<NutritionList n={e.nutrition.suggested} />} />,
+        },
+        {
+          key: "organize",
+          title: "Categories and tags",
+          screen: () => (
             <Part
               title="Categories and tags"
-              {...e.organize}
+              changes={e.organize.changes}
               use={use.organize}
               onUse={(v) => setUse({ ...use, organize: v })}
               original={
@@ -391,20 +379,100 @@ export default function EnhanceWizard({ recipe, onClose, onApplied }: { recipe: 
                 </div>
               }
             />
-            {applyError && (
-              <p role="alert" className="rounded-xl bg-error-subtle p-3">
-                {applyError}
-              </p>
-            )}
-            <div className="flex flex-wrap justify-end gap-3">
-              <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 font-semibold hover:bg-page">
-                Keep original
+          ),
+        },
+      ] as const).filter((p) => e[p.key].changed);
+  const total = parts.length + 1; // (+ the Save screen)
+  const onSave = !!e && at >= parts.length;
+  const anyTicked = parts.some((p) => use[p.key]);
+  const button = "rounded-lg px-4 py-2 font-semibold";
+
+  return (
+    <Popup title={recipe.title} onClose={onClose} wide tall>
+      <div className="flex flex-col gap-4 p-5 sm:p-6">
+        {e && parts.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-action">
+              Improve with AI · Step {Math.min(at, parts.length) + 1} of {total}
+            </p>
+            <div className="flex gap-1" aria-hidden>
+              {Array.from({ length: total }, (_, i) => (
+                <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= at ? "bg-action" : "bg-line"}`} />
+              ))}
+            </div>
+          </div>
+        )}
+        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
+        {error && (
+          <div role="alert" className="rounded-xl bg-error-subtle p-4">
+            <p>{error}</p>
+            {/* AI Enhance or AI turned off, or the recipe is gone: asking again won't help */}
+            {errorStatus !== 409 && errorStatus !== 404 && (
+              <button type="button" onClick={() => check(skipped.current)} className="mt-3 rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90">
+                Try again
               </button>
-              {anyChange && (
-                <button type="button" onClick={apply} disabled={busy || !anyTicked} className="rounded-lg bg-action px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                  {busy ? "Applying…" : "Apply selected"}
+            )}
+          </div>
+        )}
+        {e && parts.length === 0 && (
+          <>
+            <p className="rounded-xl bg-page p-4">The AI didn't find anything to change. The recipe looks good as it is.</p>
+            <div className="flex justify-end">
+              <button type="button" onClick={onClose} className={`${button} bg-action text-white hover:opacity-90`}>
+                Done
+              </button>
+            </div>
+          </>
+        )}
+        {e && parts.length > 0 && (
+          <>
+            {!onSave && parts[at].screen()}
+            {onSave && (
+              <section aria-label="Save" className="flex flex-col gap-3">
+                <h3 className="text-xl font-bold">Save</h3>
+                <ul aria-label="Your choices" className="divide-y divide-line rounded-xl border border-line">
+                  {parts.map((p, i) => (
+                    <li key={p.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                      <span className="font-semibold">{p.title}</span>
+                      <button type="button" onClick={() => setAt(i)} className="text-sm text-link hover:underline">
+                        {use[p.key] ? "AI's version" : "Original"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-sm text-subtle">The recipe as it is now stays in Version history.</p>
+                {applyError && (
+                  <p role="alert" className="rounded-xl bg-error-subtle p-3">
+                    {applyError}
+                  </p>
+                )}
+                <div className="flex flex-wrap justify-end gap-3">
+                  {!anyTicked && (
+                    <button type="button" onClick={onClose} className={`${button} border border-line hover:bg-page`}>
+                      Close without changes
+                    </button>
+                  )}
+                  <button type="button" onClick={apply} disabled={busy || !anyTicked} className={`${button} bg-action text-white hover:opacity-90 disabled:opacity-50`}>
+                    {busy ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </section>
+            )}
+            <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+              <button type="button" onClick={onClose} className="px-2 py-2 font-semibold text-subtle hover:underline">
+                Skip
+              </button>
+              <span className="ml-auto" />
+              {at > 0 && (
+                <button type="button" onClick={() => setAt(at - 1)} className={`${button} border border-line hover:bg-page`}>
+                  Back
                 </button>
               )}
+              {!onSave ? (
+                <button type="button" onClick={() => setAt(at + 1)} className={`${button} bg-action text-white hover:opacity-90`}>
+                  Next
+                </button>
+              ) : null}
             </div>
           </>
         )}
