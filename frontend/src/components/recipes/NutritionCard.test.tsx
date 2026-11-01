@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NutritionCard } from "./NutritionCard";
 import { fakeServer } from "../../test/fakeServer";
@@ -48,7 +48,7 @@ describe("nutrition facts", () => {
     const u = userEvent.setup();
     card(facts({ source: "you", outdated: true }), { onChange });
     expect(screen.getByText(/The ingredients changed since these numbers were entered/)).toBeInTheDocument();
-    await u.click(await screen.findByRole("button", { name: "Estimate again" }));
+    await u.click(await screen.findByRole("button", { name: "Re-analyze with AI" }));
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/nutrition"]);
     expect(onChange).toHaveBeenCalledWith(facts());
   });
@@ -71,3 +71,36 @@ describe("nutrition facts", () => {
     expect(server.writes()[0].body).toMatchObject({ calories: 300, addedSugar: 9, servingSize: "1 bowl" });
   });
 });
+
+describe("nutrition panel buttons", () => {
+  it("edit and re-analyze are icons at the top, with hover text; nothing at the bottom", async () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+    card(facts());
+    const top = screen.getByRole("toolbar", { name: "Nutrition actions" });
+    const again = await within(top).findByRole("button", { name: "Re-analyze with AI" });
+    const edit = within(top).getByRole("button", { name: "Edit nutrition" });
+    expect(again).toHaveAttribute("title", "Re-analyze with AI");
+    expect(edit).toHaveAttribute("title", "Edit nutrition");
+    expect(again.textContent?.trim()).toBe("");
+    expect(edit.textContent?.trim()).toBe("");
+    expect(screen.queryByRole("button", { name: "Estimate again" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  });
+
+  it("re-analyze only shows when AI is set up; edit always does", async () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: false, photos: false, enhance: false }) });
+    card(facts());
+    const top = screen.getByRole("toolbar", { name: "Nutrition actions" });
+    await waitFor(() => expect(within(top).getByRole("button", { name: "Edit nutrition" })).toBeInTheDocument());
+    expect(within(top).queryByRole("button", { name: "Re-analyze with AI" })).toBeNull();
+  });
+
+  it("Edit nutrition opens the form", async () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+    const u = userEvent.setup();
+    card(facts());
+    await u.click(screen.getByRole("button", { name: "Edit nutrition" }));
+    expect(await screen.findByRole("dialog", { name: "Nutrition per serving" })).toBeInTheDocument();
+  });
+});
+

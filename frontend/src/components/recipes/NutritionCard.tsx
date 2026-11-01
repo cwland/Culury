@@ -3,6 +3,9 @@ import { api } from "../../api";
 import { useAiStatus } from "../../ai";
 import { pointsEstimate, type Nutrition } from "../../recipes";
 import { Popup } from "../Popup";
+import { EditIcon, WandIcon } from "../Icons";
+
+const iconButton = "flex size-9 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink disabled:opacity-60";
 
 // Daily values used on US nutrition labels
 const ROWS: { key: keyof Nutrition; label: string; unit: string; dv?: number; indent?: boolean }[] = [
@@ -38,10 +41,27 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
 
   return (
     <section aria-label="Nutrition" className="rounded-2xl bg-container p-5 sm:p-6">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h2 className="mr-auto text-xl font-bold">Nutrition</h2>
-        {value && <span className="text-sm text-subtle">per serving</span>}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-xl font-bold">Nutrition</h2>
+        {value && <span className="mr-auto text-sm text-subtle">per serving</span>}
+        {value && (
+          <div role="toolbar" aria-label="Nutrition actions" className="ml-auto flex items-center gap-1">
+            {ai.ready && (
+              <button type="button" aria-label="Re-analyze with AI" title="Re-analyze with AI" onClick={() => void estimate()} disabled={busy} className={iconButton}>
+                <WandIcon className={`size-4 ${busy ? "animate-pulse" : ""}`} />
+              </button>
+            )}
+            <button type="button" aria-label="Edit nutrition" title="Edit nutrition" onClick={() => setEditing(true)} className={iconButton}>
+              <EditIcon />
+            </button>
+          </div>
+        )}
       </div>
+      {busy && value && (
+        <p role="status" className="mt-2 text-sm font-semibold text-action">
+          Working it out…
+        </p>
+      )}
       {updating && (
         <p role="status" className="mt-2 text-sm font-semibold text-action">
           Updating nutrition…
@@ -67,7 +87,7 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
         <>
           {value.outdated && (
             <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-sm">
-              The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Estimate again to update them, or edit them." : "Edit them to match."}
+              The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Re-analyze them with AI, or edit them (the buttons at the top)." : "Edit them to match (the pencil at the top)."}
             </p>
           )}
           {value.servingSize && (
@@ -126,16 +146,6 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
             {value.servings ? `, for ${value.servings} servings` : ""}. {value.note}
             {stale ? ` The recipe now makes ${servings}: estimate again.` : ""}
           </p>
-          <div className="mt-2 flex flex-wrap gap-3 text-sm">
-            {ai.ready && (
-              <button type="button" onClick={() => void estimate()} disabled={busy} className="font-semibold text-link hover:underline disabled:opacity-60">
-                {busy ? "Working it out…" : "Estimate again"}
-              </button>
-            )}
-            <button type="button" onClick={() => setEditing(true)} className="font-semibold text-link hover:underline">
-              Edit
-            </button>
-          </div>
         </>
       )}
       {error && <p role="alert" className="mt-3 text-sm text-error">{error}</p>}
