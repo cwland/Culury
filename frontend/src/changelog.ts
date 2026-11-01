@@ -10,6 +10,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.12.0",
+    date: "2026-10-31",
+    title: "A tidier recipe page, edited in place",
+    changes: [
+      "Edit right on the recipe: the pencil by the name edits the details, and Ingredients, Steps and Notes each have their own pencil. Only that part opens; Save asks whether it's a new version. The separate edit screen is gone.",
+      "Fewer buttons: Share and Delete are icons next to Start cooking, favorite and pin are icons by the name, and Organize sets categories, collections and tags in one place. The AI check is now Improve with AI. Tags and collections show under the buttons.",
+      "Add to grocery list moved into Ingredients, and it adds the size you scaled to, including recipes that only say what they make (2× the cookies, twice the flour).",
+      "Scaling is a − 1× + stepper (or − 4 servings +), with a small reset icon that doesn't push the units around.",
+      "Ingredient amounts written in words now scale: “One pound of ground Italian sausage” is read as 1 lb, and imports and AI write numbers. A comma inside brackets no longer splits a name, and “to taste”, “for garnish” and “optional” are notes.",
+      "Nutrition: Re-analyze with AI and Edit are icons at the top of the panel.",
+      "Settings tabs all load when Settings opens, so switching between them is instant.",
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-10-31",
     title: "Recipe versions",
