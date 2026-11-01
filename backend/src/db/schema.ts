@@ -380,6 +380,7 @@ export interface JobResult {
   unchanged?: number; // import-improve: the AI had nothing to change
   failed?: { title: string; reason: string }[]; // import-improve: couldn't be improved
   stopped?: boolean; // import-improve: stopped before the end
+  blocked?: { reason: "captcha" | "paywall" | "refused" | "rate-limited" | "unavailable"; by?: string; url: string }; // import-url (failed): why the site kept it from us
 }
 
 export const jobs = pgTable(

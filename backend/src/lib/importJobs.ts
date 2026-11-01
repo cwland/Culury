@@ -1,10 +1,12 @@
 import { asc, eq, ilike, sql } from "drizzle-orm";
 import { readRecipeFile, type ReadResult } from "./fileImport.js";
 import type { Db } from "../db/index.js";
-import { categories, recipeUser, recipes, type JobResult } from "../db/schema.js";
+import { categories, jobs, recipeUser, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { fetchUrl, type FetchOptions } from "./fetchPage.js";
+import { BlockedError, detectBlock } from "./blocked.js";
+import { AiError } from "./ai.js";
 import { matchCategories, normalizeUrl, pageInfo, recipeFromJsonLd, recipeFromPhotos, recipeFromText, recipeWithAi, type ImportedRecipe } from "./importRecipe.js";
 import type { JobQueue, JobRow } from "./jobs.js";
 import type { Photos } from "./photos.js";
@@ -106,14 +108,27 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         r = found;
         how = "schema.org";
       } else {
+        const host = new URL(page.url).hostname;
+        // A security check that came back as a normal page: nothing for the AI to read
+        const check = detectBlock(200, html);
+        if (check?.reason === "captcha") throw new BlockedError(check, host);
         const text = [info.title && `Title: ${info.title}`, info.description && `Summary: ${info.description}`, info.videoDescription && `Video description:\n${info.videoDescription}`, info.text && `Page text:\n${info.text}`].filter(Boolean).join("\n\n");
-        r = await recipeWithAi(d.ai, text, `This is from ${page.url}.`);
+        try {
+          r = await recipeWithAi(d.ai, text, `This is from ${page.url}.`);
+        } catch (e) {
+          // No recipe found (or AI off): if the page shows a paywall, that's the reason to give
+          const paywall = e instanceof AiError ? detectBlock(200, html, { noRecipe: true }) : null;
+          if (paywall?.reason === "paywall") throw new BlockedError(paywall, host);
+          throw e;
+        }
         how = "ai";
       }
       const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName }, job, how);
       await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${how === "ai" ? " with AI" : ""}`, detail: result.warnings?.join(" ") ?? url });
       return result;
     } catch (e) {
+      // Kept from us: remember why, so the import window can offer a saved copy or another way in
+      if (e instanceof BlockedError) await d.db.update(jobs).set({ result: { blocked: { ...e.block, url } } }).where(eq(jobs.id, job.id));
       await logEvent(d.db, { category: "import", level: "warning", source: url.slice(0, 200), event: "Couldn't import a recipe", detail: (e as Error).message });
       throw e;
     }

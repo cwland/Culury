@@ -1,6 +1,7 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 import { HttpError } from "./errors.js";
+import { BlockedError, detectBlock } from "./blocked.js";
 
 // Fetching pages and photos for imports. Anyone with a Recipe push key can ask the server to fetch
 // a link, so before each request (and each redirect) the address is checked: the server itself
@@ -74,7 +75,11 @@ export async function fetchUrl(url: string, opts: FetchOptions = {}): Promise<{ 
         current = new URL(res.headers.get("location")!, u).toString();
         continue;
       }
-      if (res.status === 403 || res.status === 429) throw new FetchError(`${u.hostname} turned the request away (${res.status}). Some sites block apps; paste the recipe text instead.`);
+      // Turned away: read the reply page (a little of it) to tell a security check from a refusal
+      if ([401, 403, 429, 503].includes(res.status)) {
+        const page = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0))).subarray(0, 512 * 1024).toString("utf8");
+        throw new BlockedError(detectBlock(res.status, page) ?? { reason: "refused" }, u.hostname, res.status);
+      }
       if (!res.ok) throw new FetchError(`${u.hostname} answered ${res.status}`);
       const length = Number(res.headers.get("content-length") ?? 0);
       if (length > maxBytes) throw new FetchError("That page is too large to import");
