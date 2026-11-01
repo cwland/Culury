@@ -70,59 +70,94 @@ export default function SettingsPage() {
         </div>
       </nav>
 
-      <div role="tabpanel" aria-label={TABS.find((t) => t.id === tab)!.label} className="mt-6 flex flex-col gap-6">
-        {tab === "profile" && (
-          <>
-            <ProfileSettings />
-            <ReminderSettings />
-            <ThemePicker />
-          </>
-        )}
-        {tab === "recipes" && (
-          <>
-            {owner && <RecipeVersionSwitch />}
-            <OrganizeSettings />
-          </>
-        )}
-        {tab === "household" && <HouseholdSettings />}
-        {tab === "security" && (
-          <>
-            <ChangePassword />
-            <Passkeys />
-            {owner && <SignInSettings />}
-            <Devices />
-            <SignInHistory />
-          </>
-        )}
-        {tab === "api" && (
-          <FeatureSwitch
-            feature="apiKeys"
-            title="API keys"
-            text="Other apps (Home Assistant, iOS Shortcuts, n8n, a browser extension) can use Culury with a key. Turn this off to refuse every key at once."
-            offText="Off: every request made with a key is refused (and shows in Logs). Your keys are kept for when you turn this back on."
-          >
-            <ApiKeys />
-          </FeatureSwitch>
-        )}
-        {tab === "email" && <EmailSettings />}
-        {tab === "ai" && (
-          <FeatureSwitch
-            feature="ai"
-            title="AI"
-            text="Use AI to import recipes from any page or video, read photos and handwritten cards, estimate nutrition and sort your grocery list. Add a few services: if one is down, the next one is used."
-            offText="Off: AI is never used. Your AI services are kept for when you turn this back on."
-          >
-            <AiSettings />
-          </FeatureSwitch>
-        )}
-        {tab === "data" && (
-          <>
-            <DataSettings />
-            <UpdatesSettings />
-          </>
-        )}
-        {tab === "logs" && <LogsSettings />}
-      </div>
+      {/* Every tab is built once, when Settings opens, and then only shown or hidden: switching
+          tabs is instant and nothing reloads or jumps */}
+      {tabs.map((t) => (
+        <div key={t.id} role="tabpanel" aria-label={t.label} hidden={tab !== t.id} className="mt-6 flex flex-col gap-6">
+          <TabContent tab={t.id} owner={owner} />
+        </div>
+      ))}
     </div>
   );
+}
+
+function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
+  switch (tab) {
+    case "profile":
+      return (
+        <>
+          <ProfileSettings />
+          <ReminderSettings />
+          <ThemePicker />
+        </>
+      );
+    case "recipes":
+      return (
+        <>
+          {owner && <RecipeVersionSwitch />}
+          <OrganizeSettings />
+        </>
+      );
+    case "household":
+      return (
+        <>
+          <HouseholdSettings />
+        </>
+      );
+    case "security":
+      return (
+        <>
+          <ChangePassword />
+          <Passkeys />
+          {owner && <SignInSettings />}
+          <Devices />
+          <SignInHistory />
+        </>
+      );
+    case "api":
+      return (
+        <>
+        <FeatureSwitch
+          feature="apiKeys"
+          title="API keys"
+          text="Other apps (Home Assistant, iOS Shortcuts, n8n, a browser extension) can use Culury with a key. Turn this off to refuse every key at once."
+          offText="Off: every request made with a key is refused (and shows in Logs). Your keys are kept for when you turn this back on."
+        >
+          <ApiKeys />
+        </FeatureSwitch>
+        </>
+      );
+    case "email":
+      return (
+        <>
+          <EmailSettings />
+        </>
+      );
+    case "ai":
+      return (
+        <>
+        <FeatureSwitch
+          feature="ai"
+          title="AI"
+          text="Use AI to import recipes from any page or video, read photos and handwritten cards, estimate nutrition and sort your grocery list. Add a few services: if one is down, the next one is used."
+          offText="Off: AI is never used. Your AI services are kept for when you turn this back on."
+        >
+          <AiSettings />
+        </FeatureSwitch>
+        </>
+      );
+    case "data":
+      return (
+        <>
+          <DataSettings />
+          <UpdatesSettings />
+        </>
+      );
+    case "logs":
+      return (
+        <>
+          <LogsSettings />
+        </>
+      );
+  }
 }
