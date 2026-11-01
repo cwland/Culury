@@ -10,6 +10,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.14.0",
+    date: "2026-11-01",
+    title: "Recipes from sites that block imports",
+    changes: [
+      "A link import now says why a site kept the recipe from Culury: a security check (CAPTCHA, by Cloudflare, reCAPTCHA, hCaptcha or AWS WAF), a paywall, or a refusal. Sites that are marked paywalled but still carry the recipe in the page, like America's Test Kitchen, import as before.",
+      "When a site blocks an import, Culury looks for a saved copy on the Wayback Machine, then archive.ph. The import window says where it's looking, and the recipe page says which archive and date the recipe came from. The recipe keeps its own link. Turn it off in Settings › Recipes › Saved copies.",
+      "When nothing works, the import window says so and offers what's left: open the archive's security check or the recipe's page yourself, Paste the recipe, From a photo, or a Blank recipe with the link filled in.",
+      "Send to Culury: a bookmark (Settings › Recipes) that sends the recipe page you have open to Culury, past a security check or a paywall you're signed in to. Culury asks before importing it.",
+    ],
+  },
+  {
     version: "0.13.0",
     date: "2026-10-31",
     title: "PDF imports and a step-by-step AI review",
