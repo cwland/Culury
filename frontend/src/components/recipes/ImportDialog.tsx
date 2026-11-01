@@ -20,10 +20,31 @@ export interface ImportJob {
     recipeIds?: number[]; // a file: the recipes added
     skipped?: number;
     problems?: { name: string; reason: string }[];
+    // a link the site kept from us, and the saved copies (web archives) tried
+    blocked?: { reason: BlockReason; by?: string; url: string };
+    trying?: string;
+    savedCopy?: { from: string; url: string; date?: string };
+    savedCopies?: { from: string; outcome: "none" | "captcha" | "failed" | "no-recipe"; link?: string }[];
   } | null;
   error: string | null;
   createdAt: string;
 }
+
+type BlockReason = "captcha" | "paywall" | "refused" | "rate-limited" | "unavailable";
+const WHY: Record<BlockReason, string> = {
+  captcha: "it asked for a security check",
+  paywall: "it's behind a paywall or sign-in",
+  refused: "it turned Culury away",
+  "rate-limited": "it's limiting requests right now",
+  unavailable: "it's unavailable right now",
+};
+const hostOf = (u: string) => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch {
+    return u;
+  }
+};
 
 // "Check this out https://site.com/recipe" (shared from a phone) -> the link
 export const firstLink = (s: string) => s.match(/https?:\/\/[^\s"'<>]+/)?.[0] ?? null;
@@ -53,7 +74,9 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
     const one = job?.result?.recipeId ?? (job?.result?.format === "PDF" && job.result.recipeIds?.length === 1 ? job.result.recipeIds[0] : null);
     if (job?.status === "done" && one) {
       onClose();
-      window.location.hash = `#/recipes/${one}${job.result?.warnings?.length ? "?imported=warn" : "?imported=1"}`;
+      const copy = job.result?.savedCopy; // read from a web archive's copy: the recipe page says so
+      const from = copy ? `&copy=${encodeURIComponent(copy.from)}${copy.date ? `&copied=${copy.date}` : ""}` : "";
+      window.location.hash = `#/recipes/${one}${job.result?.warnings?.length ? "?imported=warn" : "?imported=1"}${from}`;
     }
   }, [job, onClose]);
 
@@ -201,7 +224,7 @@ export default function ImportDialog({ initial, onClose }: { initial?: string; o
           </div>
         </form>
 
-        <Status job={job} error={error} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance} />
+        <Status job={job} error={error} onTab={setTab} canPhoto={ai.photos} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance} />
       </div>
     </Popup>
   );
@@ -263,9 +286,19 @@ function ImproveChoice({ job, count, onClose }: { job: ImportJob; count: number;
 }
 
 // canReview: Improve with AI is on, so a file's recipes can be reviewed one by one
-function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: ImportJob | null; error: string; onRetry: () => void; onForce: () => void; onClose: () => void; canReview?: boolean }) {
+function Status({ job, error, onRetry, onForce, onClose, canReview, onTab, canPhoto }: { job: ImportJob | null; error: string; onRetry: () => void; onForce: () => void; onClose: () => void; canReview?: boolean; onTab?: (t: "text" | "photo") => void; canPhoto?: boolean }) {
   if (error) return <p role="alert" className="mt-4 rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p>;
   if (!job) return null;
+  // Blocked, now looking for a saved copy
+  if ((job.status === "queued" || job.status === "running") && job.result?.blocked && job.result.trying)
+    return (
+      <p role="status" className="mt-4 flex items-center gap-3 rounded-lg bg-pressed px-4 py-3">
+        <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden />
+        <span>
+          Couldn't get the recipe from {hostOf(job.result.blocked.url)}: {WHY[job.result.blocked.reason]}. Trying a saved copy on {job.result.trying === "Wayback Machine" ? "the Wayback Machine" : job.result.trying}…
+        </span>
+      </p>
+    );
   if (job.status === "queued" || job.status === "running")
     return (
       <p role="status" className="mt-4 flex items-center gap-3 rounded-lg bg-pressed px-4 py-3">
@@ -315,6 +348,7 @@ function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: Imp
         </div>
       </div>
     );
+  if (job.status === "failed" && job.result?.blocked) return <Blocked job={job} onRetry={onRetry} onClose={onClose} onTab={onTab} canPhoto={canPhoto} />;
   if (job.status === "failed")
     return (
       <div role="alert" className="mt-4 rounded-lg bg-error-subtle px-4 py-3 text-error">
@@ -325,4 +359,53 @@ function Status({ job, error, onRetry, onForce, onClose, canReview }: { job: Imp
       </div>
     );
   return null;
+}
+
+// The site kept the recipe from us, and no saved copy could be read: what you can do instead
+function Blocked({ job, onRetry, onClose, onTab, canPhoto }: { job: ImportJob; onRetry: () => void; onClose: () => void; onTab?: (t: "text" | "photo") => void; canPhoto?: boolean }) {
+  const { blocked, savedCopies = [] } = job.result!;
+  const check = savedCopies.find((c) => c.outcome === "captcha" && c.link);
+  const passing = blocked!.reason === "rate-limited" || blocked!.reason === "unavailable"; // may clear up by itself
+  const button = "rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-ink hover:bg-pressed";
+  const link = "font-semibold text-link hover:underline";
+  return (
+    <div role="alert" aria-label="Couldn't import" className="mt-4 rounded-lg bg-error-subtle px-4 py-3">
+      <p className="font-semibold text-error">We were unable to automatically import the recipe.</p>
+      <p className="mt-1 text-sm text-error">{job.error}</p>
+      <ul className="mt-3 flex flex-col gap-1.5 text-sm text-ink">
+        {check && (
+          <li>
+            <a href={check.link} target="_blank" rel="noreferrer noopener" className={link}>
+              Open the saved copy on {check.from} ↗
+            </a>{" "}
+            and complete its security check, then copy the recipe and paste it here.
+          </li>
+        )}
+        <li>
+          <a href={blocked!.url} target="_blank" rel="noreferrer noopener" className={link}>
+            Open the recipe's page ↗
+          </a>{" "}
+          in your browser. If you can see the recipe there (signed in, or after its check), copy it and paste it here, or take a screenshot.
+        </li>
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={() => onTab?.("text")} className={button}>
+          Paste the recipe
+        </button>
+        {canPhoto && (
+          <button type="button" onClick={() => onTab?.("photo")} className={button}>
+            From a photo
+          </button>
+        )}
+        <a href={`#/recipes/new?source=${encodeURIComponent(blocked!.url)}`} onClick={onClose} className={button}>
+          Blank recipe
+        </a>
+        {passing && (
+          <button type="button" onClick={onRetry} className={button}>
+            Try again
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }

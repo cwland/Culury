@@ -35,6 +35,14 @@ describe("adding a recipe by hand", () => {
     ]);
   });
 
+  it("Blank recipe after a blocked import: the link is already filled in", async () => {
+    window.location.hash = "#/recipes/new?source=" + encodeURIComponent("https://www.americastestkitchen.com/recipes/13647-pork");
+    fakeServer({ ...lists });
+    render(<RecipeEditor />);
+    expect(await screen.findByLabelText("Source link")).toHaveValue("https://www.americastestkitchen.com/recipes/13647-pork");
+    window.location.hash = "";
+  });
+
   it("pressing Enter in the Name box doesn't save a half-typed recipe", async () => {
     const server = fakeServer({ ...lists, "POST /api/recipes": created });
     const u = userEvent.setup();

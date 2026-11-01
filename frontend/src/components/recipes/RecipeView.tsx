@@ -47,6 +47,16 @@ const iconButton = "flex size-9 shrink-0 items-center justify-center rounded-lg 
 const smallButton = "flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-2 text-sm font-semibold hover:bg-pressed";
 
 // startEditing: opened from an old "edit" link, so the details are ready to edit
+// Imported from a web archive's saved copy (?copy=Wayback%20Machine&copied=2025-12-01): say so
+function copyNote() {
+  const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+  const from = q.get("copy");
+  if (!from) return null;
+  const day = q.get("copied");
+  const when = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? ` (${new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })})` : "";
+  return ` The site blocked the import, so this came from a saved copy on ${from === "Wayback Machine" ? "the Wayback Machine" : from}${when}. A saved copy can be older than the recipe on the site.`;
+}
+
 export default function RecipeView({ id, startEditing }: { id: number; startEditing?: boolean }) {
   const [r, setR] = useState<Recipe | null>(null);
   const [error, setError] = useState("");
@@ -164,6 +174,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
         <p role="status" className="mb-3 rounded-lg bg-success-subtle px-4 py-3 text-success">
           Imported. Give it a quick look, and use the pencils to fix anything that came through wrong.
           {/[?&]imported=warn/.test(window.location.hash) && " The photo couldn't be saved here, so it's shown from the site."}
+          {copyNote()}
         </p>
       )}
       {ai.enhance && offer && (

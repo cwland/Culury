@@ -130,3 +130,60 @@ describe("after importing many recipes", () => {
   });
 });
 
+
+describe("a link the site blocks", () => {
+  beforeEach(() => forgetAiStatus());
+  const URL_ = "https://www.americastestkitchen.com/recipes/13647-slow-cooker-apple-cider-pork";
+  const linkJob = (over: Record<string, unknown>) => job({ kind: "import-url", source: URL_, ...over });
+  const run = async (answer: () => unknown, ai = { ready: true, photos: true, enhance: false }) => {
+    fakeServer({ "GET /api/ai/status": () => ai, "POST /api/recipes/import": () => ({ status: 202, json: linkJob({}) }), "GET /api/imports/31": answer });
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.type(screen.getByLabelText("Recipe page, blog post or video"), URL_);
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    return u;
+  };
+
+  it("while it looks for a saved copy, it says why and where it's looking", async () => {
+    await run(() => linkJob({ status: "running", result: { blocked: { reason: "captcha", by: "Cloudflare", url: URL_ }, trying: "Wayback Machine" } }));
+    expect(await screen.findByText("Couldn't get the recipe from americastestkitchen.com: it asked for a security check. Trying a saved copy on the Wayback Machine…", {}, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  it("read from a saved copy: the recipe opens and says where it came from", async () => {
+    window.location.hash = "#/recipes";
+    await run(() => linkJob({ status: "done", result: { recipeId: 5, title: "Pork", how: "schema.org", savedCopy: { from: "Wayback Machine", url: `https://web.archive.org/web/20251201185510/${URL_}`, date: "2025-12-01" } } }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/5?imported=1&copy=Wayback%20Machine&copied=2025-12-01"), { timeout: 4000 });
+  });
+
+  it("nothing worked: what you can do instead", async () => {
+    const u = await run(() =>
+      linkJob({
+        status: "failed",
+        error: "americastestkitchen.com turned the request away (403). Some sites block apps. No saved copy could be read either: archive.ph asked for a security check.",
+        result: { blocked: { reason: "refused", url: URL_ }, savedCopies: [{ from: "Wayback Machine", outcome: "none" }, { from: "archive.ph", outcome: "captcha", link: `https://archive.ph/newest/${URL_}` }] },
+      }),
+    );
+    const box = await screen.findByRole("alert", { name: "Couldn't import" }, { timeout: 4000 });
+    expect(box).toHaveTextContent("We were unable to automatically import the recipe");
+    expect(box).toHaveTextContent("No saved copy could be read either: archive.ph asked for a security check.");
+    expect(within(box).getByRole("link", { name: /Open the saved copy on archive\.ph/ })).toHaveAttribute("href", `https://archive.ph/newest/${URL_}`);
+    expect(within(box).getByRole("link", { name: /Open the recipe's page/ })).toHaveAttribute("href", URL_);
+    expect(within(box).getByRole("link", { name: "Blank recipe" })).toHaveAttribute("href", `#/recipes/new?source=${encodeURIComponent(URL_)}`);
+    expect(within(box).queryByRole("button", { name: "Try again" })).toBeNull(); // a refusal won't change by itself
+    await u.click(within(box).getByRole("button", { name: "Paste the recipe" }));
+    expect(screen.getByRole("tab", { name: "Paste the recipe" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("From a photo (a screenshot) is offered when your AI reads photos", async () => {
+    const u = await run(() => linkJob({ status: "failed", error: "Blocked.", result: { blocked: { reason: "paywall", url: URL_ }, savedCopies: [] } }));
+    const box = await screen.findByRole("alert", { name: "Couldn't import" }, { timeout: 4000 });
+    await u.click(within(box).getByRole("button", { name: "From a photo" }));
+    expect(screen.getByRole("tab", { name: "From a photo" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("too many requests or the site down: Try again is offered", async () => {
+    await run(() => linkJob({ status: "failed", error: "Busy.", result: { blocked: { reason: "rate-limited", url: URL_ } } }));
+    const box = await screen.findByRole("alert", { name: "Couldn't import" }, { timeout: 4000 });
+    expect(within(box).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+});

@@ -53,8 +53,14 @@ const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2.5 out
 const labelText = "text-sm font-semibold text-subtle";
 const card = "rounded-2xl bg-container p-5 sm:p-6";
 
+// A new recipe from a blocked import (#/recipes/new?source=<link>): the link is filled in
+const startingForm = (): Form => {
+  const source = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("source");
+  return source && /^https?:\/\//.test(source) ? { ...empty, sourceUrl: source } : empty;
+};
+
 export default function RecipeEditor({ id }: { id?: number }) {
-  const [form, setForm] = useState<Form | null>(id ? null : empty);
+  const [form, setForm] = useState<Form | null>(id ? null : startingForm);
   const [start, setStart] = useState<Form>(empty);
   const [categories, setCategories] = useState<TagInfo[]>([]);
   const [collections, setCollections] = useState<CollectionInfo[]>([]);

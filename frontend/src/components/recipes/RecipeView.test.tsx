@@ -47,6 +47,14 @@ describe("AI Enhance on the recipe page", () => {
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
   });
 
+  it("imported from a saved copy: the note says which archive, and when the copy was made", async () => {
+    window.location.hash = "#/recipes/7?imported=1&copy=Wayback%20Machine&copied=2025-12-01";
+    server({ ready: true, photos: false, enhance: false });
+    render(<RecipeView id={7} />);
+    const note = await screen.findByText(/from a saved copy/);
+    expect(note).toHaveTextContent("The site blocked the import, so this came from a saved copy on the Wayback Machine (December 1, 2025). A saved copy can be older than the recipe on the site.");
+  });
+
   it("imported with AI Enhance off: no review opens", async () => {
     window.location.hash = "#/recipes/7?imported=1";
     server({ ready: true, photos: false, enhance: false });
