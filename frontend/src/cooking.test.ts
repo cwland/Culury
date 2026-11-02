@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convert, convertTemperatures, findTimers, formatAmount, ingredientLine, recipeUnits, scale, stepUses } from "./cooking";
+import { convert, convertTemperatures, driedEquivalent, findTimers, formatAmount, ingredientLine, recipeUnits, scale, stepUses } from "./cooking";
 import type { Ingredient } from "./recipes";
 
 const ing = (quantity: number | null, unit: string | null, name: string, extra: Partial<Ingredient> = {}): Ingredient => ({ raw: `${quantity ?? ""} ${unit ?? ""} ${name}`.trim(), quantity, unit, name, ...extra });
@@ -83,5 +83,51 @@ describe("which ingredients a step uses", () => {
     expect(stepUses(step, ing(2, "tbsp", "olive oil"))).toBe(true);
     expect(stepUses(step, ing(1, "lb", "ground beef"))).toBe(false);
     expect(stepUses(step, { raw: "Sauce:", section: "Sauce" })).toBe(false);
+  });
+});
+
+describe("fresh herbs: the dried amount, worked out at this size and in these units", () => {
+  const ing = (raw: string, quantity: number | null, unit: string | null, name: string, note: string | null = null) => ({ raw, quantity, quantityMax: null, unit, name, note });
+  const basil = ing("1 tbsp fresh basil", 1, "tbsp", "fresh basil");
+
+  it("spoons and cups: 3 fresh to 1 dried, scaled", () => {
+    expect(driedEquivalent(basil, 1, "original")).toBe("1 tsp dried");
+    expect(driedEquivalent(basil, 2, "original")).toBe("2 tsp dried");
+    expect(driedEquivalent(ing("3 tbsp fresh parsley, chopped", 3, "tbsp", "fresh parsley", "chopped"), 1, "original")).toBe("1 tbsp dried");
+    expect(driedEquivalent(ing("1/4 cup chopped cilantro", 0.25, "cup", "chopped cilantro"), 1, "original")).toBe("1⅓ tbsp dried");
+    expect(driedEquivalent(ing("1 cup fresh basil leaves", 1, "cup", "fresh basil leaves"), 1, "original")).toBe("⅓ cup dried");
+    expect(driedEquivalent(ing("2 tsp fresh thyme leaves", 2, "tsp", "fresh thyme leaves"), 1, "original")).toBe("⅔ tsp dried");
+  });
+
+  it("sprigs and bunches: an estimate", () => {
+    const thyme = ing("3 sprigs fresh thyme", 3, "sprig", "fresh thyme");
+    expect(driedEquivalent(thyme, 1, "original")).toBe("about ¾ tsp dried");
+    expect(driedEquivalent(thyme, 2, "original")).toBe("about 1½ tsp dried");
+    expect(driedEquivalent(ing("2 sprigs rosemary", 2, "sprig", "rosemary"), 1, "original")).toBe("about 1 tsp dried");
+    expect(driedEquivalent(ing("1 bunch cilantro", 1, "bunch", "cilantro"), 1, "original")).toBe("about ⅓ cup dried");
+  });
+
+  it("in metric: millilitres for the bigger amounts; spoons stay spoons", () => {
+    expect(driedEquivalent(ing("1 bunch cilantro", 1, "bunch", "cilantro"), 1, "metric")).toBe("about 80 ml dried");
+    expect(driedEquivalent(basil, 1, "metric")).toBe("1 tsp dried");
+    expect(driedEquivalent(ing("45 ml fresh dill", 45, "ml", "fresh dill"), 1, "original")).toBe("1 tbsp dried");
+  });
+
+  it("not for dried or ground herbs, other ingredients, or herbs without an amount", () => {
+    for (const i of [
+      ing("1 tsp dried oregano", 1, "tsp", "dried oregano"),
+      ing("1 tsp ground sage", 1, "tsp", "ground sage"),
+      ing("2 bay leaves", 2, null, "bay leaves"),
+      ing("1 tbsp fresh ginger", 1, "tbsp", "fresh ginger"),
+      ing("2 tbsp butter", 2, "tbsp", "butter"),
+      ing("fresh basil, for serving", null, null, "fresh basil", "for serving"),
+      ing("10 fresh basil leaves", 10, null, "fresh basil leaves"),
+    ])
+      expect([i.raw, driedEquivalent(i, 1, "original")]).toEqual([i.raw, null]);
+  });
+
+  it("the ingredient line carries it", () => {
+    expect(ingredientLine(basil, 2, "original")).toMatchObject({ amount: "2 tbsp", name: "fresh basil", dried: "2 tsp dried" });
+    expect(ingredientLine(ing("2 tbsp butter", 2, "tbsp", "butter"), 1, "original").dried).toBeNull();
   });
 });

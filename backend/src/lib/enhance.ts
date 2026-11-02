@@ -54,7 +54,7 @@ Rules:
 - Steps marked DETAILED (fill gaps only, "stepMode": "filled"): keep the recipe's own wording. Change a step only to fix a mistake or add a missing detail (a time, a temperature, a doneness cue, a missing step). Keep every step; lines starting with "# " are headings, keep them.
 - Steps marked BRIEF (expand them, "stepMode": "expanded"): rewrite them as full instructions a home cook can follow. Group them under short headings, each its own line starting with "# " (for example "# Prep and Season", "# Sear the Pork Chops", "# Build the Pan Sauce"). Each step starts with a short label and a colon ("Pat dry: ...", "Deglaze: ..."), then says how and why: pan and heat level, visual and doneness cues, times, resting, scraping up browned bits. Keep every action and the cook's own numbers; add detail, don't drop anything. Never number the lines.
 - Food safety: if a doneness temperature is below the USDA safe minimum (pork 145°F, poultry 165°F, ground meat 160°F), use the safe one and say so in stepChanges.
-- Ingredients: one per line, as written, but with amounts as numbers ("1 lb ground beef", not "One pound of ground beef"). Add an ingredient only if the steps use it and it's missing. Never change a quantity without saying why in ingredientChanges.
+- Ingredients: one per line, as written, but with amounts as numbers ("1 lb ground beef", not "One pound of ground beef"). Never add an ingredient, not even salt, pepper, oil or water: only correct and tidy the ones the recipe has (amounts, units, names, prep notes), and you may split a combined line ("salt and pepper") or group lines under "# " headings. Never change a quantity without saying why in ingredientChanges.
 - Nutrition is for ONE serving: grams, except calories (kcal) and sodium (mg), from standard food tables (USDA). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like. "servingSize": how much one serving is, like "About 1½ cups (340 g)". "note": one short sentence on what you assumed.
 - Categories: choose from the household's categories. Suggest a new one only if none fits.
 - Tags: lowercase, short. Reuse the household's existing tags rather than near-duplicates. Keep the recipe's tags unless one is wrong.
@@ -136,7 +136,10 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
 
   // Instructions: numbering the AI may have kept is dropped
   const sSteps = textList(json.steps, 300, 10000)?.map((s) => s.replace(/^(?:step\s*)?\d+[.)]\s+/i, "")) ?? null;
-  const sIngredients = textList(json.ingredients, 500, 1000)?.map((s) => tidyIngredientLine(s.replace(/^[-•*]\s+/, ""))) ?? null;
+  const rawIngredients = textList(json.ingredients, 500, 1000)?.map((s) => tidyIngredientLine(s.replace(/^[-•*]\s+/, ""))) ?? null;
+  // The AI corrects and tidies; it doesn't add. A line for an ingredient the recipe doesn't have
+  // is dropped, with any change note about it.
+  const { kept: sIngredients, dropped } = rawIngredients ? onlyTheRecipes(ingredients, rawIngredients) : { kept: null, dropped: [] as string[] };
 
   // Nutrition: only an estimate with calories counts
   let sNutrition: Nutrition | null = null;
@@ -166,7 +169,7 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   const mode = !stepSection.changed ? null : json.stepMode === "expanded" || json.stepMode === "filled" ? json.stepMode : briefSteps(r.steps) ? "expanded" : "filled";
   const out: Enhancement = {
     steps: { ...stepSection, mode },
-    ingredients: section(ingredients, sIngredients, changesOf("ingredientChanges"), sameLines),
+    ingredients: section(ingredients, sIngredients, withoutNotesAbout(changesOf("ingredientChanges"), dropped), sameLines),
     nutrition: section(r.nutrition ?? null, sNutrition, changesOf("nutritionChanges"), sameNutrition),
     organize: organizeChanged
       ? { categories: categoriesOut, newCategories, tags: tagsOut, changes: organizeChanges, changed: true }
@@ -190,9 +193,9 @@ function summary(e: Enhancement, steps: string[], ingredients: string[], cats: s
     : s.mode === "expanded"
       ? `Instructions: expanded into ${heads ? `${plural(heads, "part")}, ` : ""}${plural(lines, "step")}`
       : `Instructions: ${plural(notIn(s.suggested, steps).length || 1, "step")} filled in or fixed`;
-  const added = notIn(e.ingredients.suggested, ingredients).length;
-  const gone = notIn(ingredients, e.ingredients.suggested).length;
-  const ingLine = !e.ingredients.changed ? "Ingredients: no changes" : `Ingredients: ${[added && `${added} added`, gone && `${gone} changed or removed`].filter(Boolean).join(", ") || "reworded"}`;
+  // (nothing is ever added: every new line is a corrected one)
+  const fixed = notIn(e.ingredients.suggested.filter((l) => !l.startsWith("# ")), ingredients).length;
+  const ingLine = !e.ingredients.changed ? "Ingredients: no changes" : `Ingredients: ${fixed ? `${fixed} corrected` : "regrouped"}`;
   const n = e.nutrition.suggested;
   const nutLine = e.nutrition.changed && n ? `Nutrition: estimated, ${n.calories} kcal per serving` : "Nutrition: no changes";
   const o = e.organize;
@@ -226,4 +229,40 @@ export async function applyEnhancements(db: Db, recipeId: number, body: z.infer<
     if (!r) throw notFound("Recipe");
     await saveRecipe(tx, recipeId, { steps: body.steps, ingredients: body.ingredients, nutrition: body.nutrition, categories: body.categories, tags: body.tags } as RecipeInput, userId);
   });
+}
+
+// ---------- the AI doesn't add ingredients ----------
+
+// The words that name an ingredient: no amounts, units, prep or size words
+const NOT_NAMES = new Set("a an and or of to the for with into in on plus taste tasting optional fresh freshly ground chopped diced minced sliced grated shredded crushed peeled seeded large small medium big whole halved quartered cubed packed heaping level divided about cup cups c tbsp tablespoon tablespoons tsp teaspoon teaspoons oz ounce ounces lb lbs pound pounds g gram grams kg ml l liter liters pinch dash can cans clove cloves bunch sprig sprigs stick sticks slice slices piece pieces package pkg jar bottle head heads stalk stalks handful as needed more serving garnish fine finely roughly thinly thickly cold warm hot room temperature softened melted".split(" "));
+const nameWords = (line: string) =>
+  line
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z\s-]/g, " ")
+    .split(/[\s-]+/)
+    .filter((w) => w.length > 1 && !NOT_NAMES.has(w))
+    .map((w) => w.replace(/(ies)$/, "y").replace(/(oes|ses|xes)$/, (m) => m.slice(0, -2)).replace(/s$/, ""));
+
+// Each suggested line must be about an ingredient the recipe has: most of its name words appear
+// in one original line. Headings are fine (grouping), and so are lines with no name words left.
+export function onlyTheRecipes(original: string[], suggested: string[]) {
+  const originals = original.filter((l) => !l.startsWith("# ")).map((l) => new Set(nameWords(l)));
+  const dropped: string[] = [];
+  const kept = suggested.filter((line) => {
+    if (line.startsWith("# ")) return true;
+    const words = nameWords(line);
+    if (!words.length) return true;
+    const known = originals.some((o) => words.filter((w) => o.has(w)).length / words.length >= 0.5);
+    if (!known) dropped.push(line);
+    return known;
+  });
+  return { kept, dropped };
+}
+
+// A change note about a dropped line goes too ("Added salt and pepper to season.")
+function withoutNotesAbout(changes: string[], dropped: string[]) {
+  if (!dropped.length) return changes;
+  const words = new Set(dropped.flatMap(nameWords));
+  return changes.filter((c) => !nameWords(c).some((w) => words.has(w)));
 }

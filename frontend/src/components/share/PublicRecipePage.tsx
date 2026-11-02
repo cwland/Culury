@@ -133,6 +133,7 @@ export default function PublicRecipePage({ token }: { token: string }) {
                       <>
                         <strong className="font-semibold">{line.amount}</strong> {line.name}
                         {line.note && <span className="text-subtle">, {line.note}</span>}
+                        {line.dried && <span className="text-subtle"> ({line.dried})</span>}
                       </>
                     )}
                   </li>

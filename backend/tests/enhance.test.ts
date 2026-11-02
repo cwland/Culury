@@ -17,14 +17,51 @@ const chili = async () =>
 const full = {
   steps: ["Cook the chicken until it reaches 165°F, about 6 minutes a side."],
   stepChanges: ["Added how long to cook the chicken and the safe temperature."],
-  ingredients: ["1 lb chicken", "1 onion", "1 tsp salt"],
-  ingredientChanges: ["Added salt: step 1 seasons the chicken."],
+  ingredients: ["1 lb chicken breast", "1 onion, diced"],
+  ingredientChanges: ["Chicken: breast, as the cooking time suits.", "Onion: diced, as the steps use it."],
   nutrition: { calories: 320, fat: 9, saturatedFat: 2, carbs: 6, fiber: 1, sugar: 2, addedSugar: 1, protein: 48, sodium: 600, servingSize: "About 1 cup", note: "Assumed chicken breast." },
   nutritionChanges: ["Estimated from the ingredients."],
   categories: ["Dinner", "Soup"],
   tags: ["spicy", "chicken"],
   organizeChanges: ["Added Soup: it's a stew.", "Added chicken: the main ingredient."],
 };
+
+describe("the AI corrects ingredients; it never adds them", () => {
+  const check = async (ingredients: string, suggested: string[], changes: string[] = []) => {
+    await aiOn();
+    const r = (await t.api("POST", "/api/recipes", { title: "Soup", ingredients, steps: ["Simmer everything."] })).body;
+    t.ai.respond = () => reply({ ingredients: suggested, ingredientChanges: changes });
+    return (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body.ingredients;
+  };
+
+  it("an added ingredient (salt and pepper, say) is dropped, and so is its note", async () => {
+    const e = await check("1 lb chicken\n1 onion", ["1 lb chicken", "1 onion, diced", "1 tsp salt", "1/2 tsp freshly ground black pepper"], ["Onion: diced, as the steps use it.", "Added salt and pepper to season."]);
+    expect(e.suggested).toEqual(["1 lb chicken", "1 onion, diced"]);
+    expect(e.changes).toEqual(["Onion: diced, as the steps use it."]);
+  });
+
+  it("corrections and tidying stay: amounts as numbers, a clearer name, one line split in two", async () => {
+    const e = await check("Two pounds of chuck\nkosher salt and pepper to taste\n1 bunch cilantro", ["2 lb chuck roast", "kosher salt, to taste", "black pepper, to taste", "1 bunch fresh cilantro"]);
+    expect(e.suggested).toEqual(["2 lb chuck roast", "kosher salt, to taste", "black pepper, to taste", "1 bunch fresh cilantro"]);
+  });
+
+  it("headings the AI groups lines under are fine", async () => {
+    const e = await check("1 cup flour\n2 eggs\n1 cup sugar", ["# Dry", "1 cup flour", "1 cup sugar", "# Wet", "2 eggs"]);
+    expect(e.suggested).toEqual(["# Dry", "1 cup flour", "1 cup sugar", "# Wet", "2 eggs"]);
+  });
+
+  it("when all it did was add, there's no ingredient change to offer", async () => {
+    const e = await check("1 lb chicken\n1 onion", ["1 lb chicken", "1 onion", "2 cloves garlic"], ["Added garlic."]);
+    expect(e).toMatchObject({ changed: false });
+  });
+
+  it("it's told not to add ingredients", async () => {
+    await check("1 lb chicken", ["1 lb chicken"]);
+    const system = String(t.ai.calls[0].body.messages[0].content);
+    expect(system).toMatch(/Never add an ingredient/);
+    expect(system).not.toMatch(/Add an ingredient only if/);
+  });
+});
 
 describe("asking AI to check a recipe", () => {
   it("suggests fixes for each section and changes nothing in the recipe", async () => {
@@ -194,7 +231,7 @@ describe("live progress and fuller instructions", () => {
     expect(said).toContain("Asking OpenAI (tiny)…");
     expect(said).toContain("Answer received from OpenAI");
     expect(said.some((s) => /^Instructions: /.test(s))).toBe(true);
-    expect(said).toContain("Ingredients: 1 added");
+    expect(said).toContain("Ingredients: 2 corrected");
     expect(said).toContain("Nutrition: estimated, 320 kcal per serving");
     expect(said).toContain("Categories and tags: 1 new category, 1 tag added");
     const asking = lines.find((l) => l.text === "Asking OpenAI (tiny)…");

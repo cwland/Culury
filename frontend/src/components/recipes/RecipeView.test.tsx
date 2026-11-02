@@ -22,6 +22,20 @@ beforeEach(() => {
   window.location.hash = "#/recipes/7";
 });
 
+describe("fresh herbs", () => {
+  it("show the dried amount next to them, and it scales with the recipe", async () => {
+    window.location.hash = "#/recipes/7";
+    server({ ready: false, photos: false }, recipeJson({ ingredients: [{ raw: "1 tbsp fresh basil", quantity: 1, quantityMax: null, unit: "tbsp", name: "fresh basil", note: null }, { raw: "1 lb ground beef", quantity: 1, quantityMax: null, unit: "lb", name: "ground beef", note: null }] }));
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const list = await screen.findByRole("region", { name: "Ingredients" });
+    expect(within(list).getAllByRole("listitem")[0]).toHaveTextContent("1 tbsp fresh basil (1 tsp dried)");
+    expect(within(list).getAllByRole("listitem")[1]).not.toHaveTextContent("dried");
+    for (let k = 0; k < 4; k++) await u.click(screen.getByRole("button", { name: "More servings" }));
+    expect(within(list).getAllByRole("listitem")[0]).toHaveTextContent("2 tbsp fresh basil (2 tsp dried)");
+  });
+});
+
 describe("AI Enhance on the recipe page", () => {
   it("a recipe just typed in offers the AI check when AI Enhance is on", async () => {
     for (const hash of ["#/recipes/7?added=1"]) {

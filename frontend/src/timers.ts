@@ -72,6 +72,7 @@ function chime() {
 let lastRing = 0;
 const baseTitle = () => document.title.replace(/^⏰ .*? · /, "");
 setInterval(() => {
+  if (typeof document === "undefined") return; // the page is gone (tests tearing down)
   const now = Date.now();
   let changed = false;
   for (const t of timers) {

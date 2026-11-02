@@ -71,3 +71,11 @@ describe("Cook Mode", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: /ground beef/ })[0]).toHaveAttribute("aria-pressed", "false"));
   });
 });
+
+describe("fresh herbs in Cook Mode", () => {
+  it("the checklist shows the dried amount too", async () => {
+    fakeServer({ "GET /api/recipes/7": () => recipeJson({ ingredients: [{ raw: "3 sprigs fresh thyme", quantity: 3, quantityMax: null, unit: "sprig", name: "fresh thyme", note: null }] }), "GET /api/recipes/7/me": () => ({}) });
+    render(<CookMode id={7} />);
+    expect(await screen.findByRole("list", { name: "Ingredients checklist" })).toHaveTextContent("(about ¾ tsp dried)");
+  });
+});

@@ -541,6 +541,7 @@ export function IngredientLine({ i, factor = 1, units = "original" }: { i: Ingre
     <span>
       <strong className="font-semibold">{line.amount}</strong> {line.name}
       {line.note && <span className="text-subtle">, {line.note}</span>}
+      {line.dried && <span className="text-subtle"> ({line.dried})</span>}
     </span>
   );
 }

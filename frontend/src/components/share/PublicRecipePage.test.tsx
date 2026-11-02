@@ -13,6 +13,7 @@ const shared = {
   ingredients: [
     { raw: "2 lb chuck", quantity: 2, quantityMax: null, unit: "lb", name: "chuck", note: null },
     { raw: "salt", quantity: null, quantityMax: null, unit: null, name: "salt", note: null },
+    { raw: "2 tbsp chopped fresh cilantro", quantity: 2, quantityMax: null, unit: "tbsp", name: "chopped fresh cilantro", note: null },
   ],
   steps: [{ section: "Cook" }, { text: "Brown the beef." }, { text: "Bake at 350°F for 2 hours." }],
   servings: 4,
@@ -45,7 +46,7 @@ describe("a shared recipe", () => {
     expect(screen.getByText("Big and beefy.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Texas Chili" })).toHaveAttribute("src", "/api/photos/abc.webp");
     const ingredients = screen.getByRole("region", { name: "Ingredients" });
-    expect(within(ingredients).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["2 lb chuck", "salt"]);
+    expect(within(ingredients).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["2 lb chuck", "salt", "2 tbsp chopped fresh cilantro (2 tsp dried)"]);
     const steps = screen.getByRole("region", { name: "Steps" });
     expect(steps).toHaveTextContent("Cook");
     expect(steps).toHaveTextContent("Brown the beef.");

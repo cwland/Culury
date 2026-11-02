@@ -95,11 +95,50 @@ export function formatAmount(a: Amount): string {
   return [q, unitLabel(a.unit, a.quantityMax ?? a.quantity)].filter(Boolean).join(" ");
 }
 
-// The line as it should read at this scale and in these units ("" amount: show the line as written)
+// The line as it should read at this scale and in these units ("" amount: show the line as written).
+// dried: for fresh herbs, the dried amount to use instead ("1 tsp dried").
 export function ingredientLine(i: Ingredient, factor: number, units: Units) {
-  if (i.section) return { amount: "", name: i.section, note: null, plain: true };
-  if (i.quantity == null && !i.unit) return { amount: "", name: i.raw, note: null, plain: true };
-  return { amount: formatAmount(convert(scale(i, factor), units)), name: i.name ?? i.raw, note: i.note ?? null, plain: false };
+  if (i.section) return { amount: "", name: i.section, note: null, plain: true, dried: null };
+  if (i.quantity == null && !i.unit) return { amount: "", name: i.raw, note: null, plain: true, dried: null };
+  return { amount: formatAmount(convert(scale(i, factor), units)), name: i.name ?? i.raw, note: i.note ?? null, plain: false, dried: driedEquivalent(i, factor, units) };
+}
+
+// ---------- fresh herbs -> dried ----------
+
+// Dried herbs are about three times as strong: 1 tbsp fresh = 1 tsp dried. Sprigs and bunches are
+// estimates (a sprig of thyme ≈ ¼ tsp dried, of rosemary ≈ ½ tsp; a bunch ≈ 1 cup of fresh leaves).
+const HERBS = /\b(basil|parsley|cilantro|coriander leaves|dill|chives|mint|oregano|thyme|rosemary|sage|tarragon|marjoram|chervil|savory|lemon balm)\b/;
+const SPRIG_TSP: Record<string, number> = { rosemary: 0.5 };
+const NICE = [0, 1 / 8, 1 / 4, 1 / 3, 3 / 8, 1 / 2, 5 / 8, 2 / 3, 3 / 4, 7 / 8, 1];
+const nice = (n: number) => {
+  const whole = Math.floor(n);
+  const frac = NICE.reduce((best, f) => (Math.abs(f - (n - whole)) < Math.abs(best - (n - whole)) ? f : best), 0);
+  return Math.max(whole + frac, 1 / 8);
+};
+
+export function driedEquivalent(i: Ingredient, factor: number, units: Units): string | null {
+  const text = `${i.name ?? ""} ${i.raw}`.toLowerCase();
+  const herb = text.match(HERBS)?.[1];
+  if (!herb || /\b(dried|dry|ground)\b/.test(text) || i.quantity == null || !i.unit) return null;
+  const a = scale(i, factor);
+  let tsp: number; // dried, in teaspoons
+  let estimate = false;
+  if (i.unit === "sprig") {
+    tsp = a.quantity! * (SPRIG_TSP[herb] ?? 0.25);
+    estimate = true;
+  } else if (i.unit === "bunch") {
+    tsp = (a.quantity! * VOLUME.cup) / VOLUME.tsp / 3;
+    estimate = true;
+  } else if (VOLUME[i.unit] && i.unit !== "gal") {
+    if (!/\bfresh\b|\b(chopped|minced|torn|leaves|sliced|snipped)\b/.test(text) && !["cilantro", "parsley", "chives", "basil", "mint", "dill"].includes(herb)) return null;
+    tsp = (a.quantity! * VOLUME[i.unit]) / VOLUME.tsp / 3;
+  } else return null;
+  // A spoon or cup you can measure; in metric, the bigger amounts in millilitres
+  let out: Amount;
+  if (tsp < 2.95) out = { quantity: nice(tsp), quantityMax: null, unit: "tsp" };
+  else if (tsp < 12) out = { quantity: nice(tsp / 3), quantityMax: null, unit: "tbsp" };
+  else out = units === "metric" ? convert({ quantity: tsp / 48, quantityMax: null, unit: "cup" }, "metric") : { quantity: nice(tsp / 48), quantityMax: null, unit: "cup" };
+  return `${estimate ? "about " : ""}${formatAmount(out)} dried`;
 }
 
 // ---------- temperatures in steps ----------
