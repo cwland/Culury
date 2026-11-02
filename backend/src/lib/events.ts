@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 // long request (GET /api/events); the app sends its login header with fetch, so no token is ever
 // in a URL. Works through reverse proxies (buffering is turned off for this response).
 
-export type Topic = "grocery" | "pantry" | "plan" | "recipes";
+export type Topic = "grocery" | "pantry" | "plan" | "recipes" | "inbox";
 export interface LiveEvent {
   topic: Topic;
   id?: number; // which list, if it's about one

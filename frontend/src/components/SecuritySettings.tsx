@@ -13,12 +13,13 @@ interface ApiKey {
   lastUsedAt: string | null;
 }
 
-type KeyAccess = "read" | "write" | "recipe_push" | "grocery_write" | "admin";
+type KeyAccess = "read" | "write" | "recipe_push" | "grocery_write" | "inbox_push" | "admin";
 // What a key may do (the server enforces the same list; see backend lib/keyAccess.ts)
 const ACCESS: { value: KeyAccess; label: string; text: string }[] = [
   { value: "read", label: "Read only", text: "See recipes, meal plans, grocery lists and pantry" },
   { value: "recipe_push", label: "Recipe push", text: "Send in recipes (a link to import, or a finished recipe), nothing else" },
   { value: "grocery_write", label: "Grocery list write", text: "Add to and check off grocery lists, nothing else" },
+  { value: "inbox_push", label: "Inbox only", text: "Send links and notes to the inbox (the Culury Companion extension), nothing else" },
   { value: "write", label: "Write only", text: "Add, change and delete, but can't read anything" },
   { value: "admin", label: "Full admin", text: "Everything above, plus logs, backups and exports" },
 ];

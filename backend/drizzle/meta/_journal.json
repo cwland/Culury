@@ -99,6 +99,13 @@
       "when": 1793598005333,
       "tag": "0013_setup_wizard",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793632274304,
+      "tag": "0014_inbox",
+      "breakpoints": true
     }
   ]
 }

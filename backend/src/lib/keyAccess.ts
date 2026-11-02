@@ -3,9 +3,10 @@
 //  - write:         add, change and delete them (no reading)
 //  - recipe_push:   only send in recipes (a URL to import, or a finished recipe) and check on imports
 //  - grocery_write: only add to, check off and change grocery lists
+//  - inbox_push:    only send things to the inbox (the Culury Companion extension); it can't read anything
 //  - admin:         read + write everything above, plus logs, backups and exports
 // No key can ever see or change settings, other keys, sign-in details, or restore a backup.
-export const KEY_ACCESS = ["read", "write", "recipe_push", "grocery_write", "admin"] as const;
+export const KEY_ACCESS = ["read", "write", "recipe_push", "grocery_write", "inbox_push", "admin"] as const;
 export type KeyAccess = (typeof KEY_ACCESS)[number];
 
 export const KEY_ACCESS_LABELS: Record<KeyAccess, string> = {
@@ -13,6 +14,7 @@ export const KEY_ACCESS_LABELS: Record<KeyAccess, string> = {
   write: "Write only",
   recipe_push: "Recipe push",
   grocery_write: "Grocery list write",
+  inbox_push: "Inbox only",
   admin: "Full admin",
 };
 
@@ -26,6 +28,11 @@ const RECIPE_PUSH = new Set(["POST /api/recipes", "POST /api/recipes/import", "P
 // grocery_write: every route under here
 const GROCERY = "/api/grocery";
 
+// The inbox: keys can only push to it (inbox_push, write, admin); reading, changing and clearing it
+// is for signed-in people only, whatever the key
+const INBOX = "/api/inbox";
+const INBOX_PUSHERS: KeyAccess[] = ["inbox_push", "write", "admin"];
+
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");
 const isRead = (method: string) => method === "GET" || method === "HEAD";
 
@@ -33,6 +40,8 @@ const isRead = (method: string) => method === "GET" || method === "HEAD";
 export function keyAllows(access: KeyAccess, method: string, path: string): boolean {
   if (NEVER.some((p) => under(path, p))) return false;
   if (ADMIN_ONLY.some((p) => under(path, p))) return access === "admin";
+  if (under(path, INBOX)) return method === "POST" && path === INBOX && INBOX_PUSHERS.includes(access);
+  if (access === "inbox_push") return false;
   switch (access) {
     case "admin":
       return true;
@@ -45,6 +54,7 @@ export function keyAllows(access: KeyAccess, method: string, path: string): bool
     case "grocery_write":
       return under(path, GROCERY) && !isRead(method);
   }
+  return false;
 }
 
 export function keyDenied(access: KeyAccess, method: string): string {

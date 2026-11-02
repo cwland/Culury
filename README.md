@@ -113,9 +113,14 @@ Each key has one access type, chosen when it's made and changeable later:
 | Write only | Add, change and delete them (no reading) |
 | Recipe push | Only send recipes in (`POST /api/recipes`, `POST /api/recipes/import`) and check on imports |
 | Grocery list write | Only add to, check off and change grocery lists |
+| Inbox only | Only push to the inbox (`POST /api/inbox`), for the Culury Companion extension |
 | Full admin | Everything above, plus logs, backups and exports |
 
-No key can ever see or change settings, other keys, sign-in details, or restore a backup. The rules are in `backend/src/lib/keyAccess.ts`. **Settings → API keys** has an on/off switch that refuses every key at once.
+No key can ever see or change settings, other keys, sign-in details, or restore a backup, and no key can read, change or clear the inbox (Inbox only, Write only and Full admin keys can push to it).
+
+### Inbox
+
+A household inbox for things other apps send in to look at later. `POST /api/inbox` takes `{ type, url?, title?, content?, sourceApp?, metadata?: { pageTitle?, favIconUrl?, capturedAt? } }`; `type` is `RECIPE_LINK`, `INSTAGRAM_LINK`, `TEXT_NOTE` (needs `content`) or `RAW_RECIPE_DATA` (copied HTML or JSON-LD in `content`). Links need an `http(s)` `url`. With no title, the page title, the note's first line or the link's site is used. The same link sent while it's still waiting comes back as that item (200, `duplicate: true`) instead of a second one. Signed-in only: `GET /api/inbox` (waiting items, newest first; `?status=PROCESSED` or `DISMISSED` for the others), `GET /api/inbox/count` (`{ pending }`), `PATCH /api/inbox/:id` (`{ status }`), `DELETE /api/inbox/:id`. Open copies of the app hear about changes on the live events stream (topic `inbox`). Backups include the inbox. The rules are in `backend/src/lib/keyAccess.ts`. **Settings → API keys** has an on/off switch that refuses every key at once.
 
 ## Security
 

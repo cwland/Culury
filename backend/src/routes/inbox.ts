@@ -1,0 +1,126 @@
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { and, count, desc, eq } from "drizzle-orm";
+import { apiKeys, inboxItems, INBOX_STATUSES, INBOX_TYPES, users } from "../db/schema.js";
+import { HttpError, notFound } from "../lib/errors.js";
+import { idParam } from "../lib/validation.js";
+
+// The inbox: links, notes and recipe data sent in by other apps (the Culury Companion browser
+// extension) to look at later. Shared by the household. API keys can only push to it (see
+// lib/keyAccess.ts); reading, changing and clearing it is for signed-in people.
+
+const webUrl = z
+  .string()
+  .trim()
+  .max(2000)
+  .url("That isn't a web address")
+  .refine((u) => /^https?:\/\//i.test(u), "Only http:// and https:// addresses");
+const short = (max: number) => z.string().trim().max(max).optional().transform((v) => v || undefined);
+
+const pushBody = z
+  .object({
+    type: z.enum(INBOX_TYPES, { error: "type is RECIPE_LINK, INSTAGRAM_LINK, TEXT_NOTE or RAW_RECIPE_DATA" }),
+    url: webUrl.optional(),
+    title: short(300),
+    content: z.string().max(1_000_000, "That's too much text (1 MB at most)").optional().transform((v) => (v?.trim() ? v : undefined)),
+    sourceApp: short(100),
+    metadata: z
+      .object({ pageTitle: short(300), favIconUrl: webUrl.optional(), capturedAt: short(40) })
+      .partial()
+      .optional(),
+  })
+  .refine((b) => b.type === "TEXT_NOTE" || b.url, { message: "A link needs its url", path: ["url"] })
+  .refine((b) => b.type !== "TEXT_NOTE" || b.content, { message: "A note needs its text (content)", path: ["content"] });
+
+// What to call it: the title given, the page's title, the note's first line, or the link's site
+function titleOf(b: z.infer<typeof pushBody>) {
+  const firstLine = b.type === "TEXT_NOTE" ? b.content?.trim().split("\n")[0].trim() : undefined;
+  const site = b.url ? new URL(b.url).hostname.replace(/^www\./, "") : undefined;
+  return (b.title || b.metadata?.pageTitle || firstLine || site || "Untitled").slice(0, 300);
+}
+
+function requireSignedIn(req: FastifyRequest) {
+  if (req.auth?.method !== "token") throw new HttpError(403, "Sign in to see the inbox");
+}
+
+const shown = (i: typeof inboxItems.$inferSelect) => ({
+  id: i.id,
+  type: i.type,
+  title: i.title,
+  url: i.url,
+  content: i.content,
+  sourceApp: i.sourceApp,
+  metadata: i.metadata,
+  status: i.status,
+  sentBy: i.sentBy,
+  createdAt: i.createdAt,
+  reviewedAt: i.reviewedAt,
+});
+
+export default async function inboxRoutes(app: FastifyInstance) {
+  const { db } = app;
+
+  // Push something in (an "Inbox only" key, a write or admin key, or a signed-in person)
+  app.post("/api/inbox", async (req, reply) => {
+    const body = pushBody.parse(req.body);
+    // The same link while it's still waiting: don't add it twice
+    if (body.url) {
+      const [waiting] = await db
+        .select()
+        .from(inboxItems)
+        .where(and(eq(inboxItems.url, body.url), eq(inboxItems.status, "PENDING")))
+        .limit(1);
+      if (waiting) return reply.status(200).send({ ...shown(waiting), duplicate: true });
+    }
+    const auth = req.auth!;
+    const [who] =
+      auth.method === "apiKey"
+        ? await db.select({ name: apiKeys.name }).from(apiKeys).where(eq(apiKeys.id, auth.keyId))
+        : await db.select({ name: users.displayName, username: users.username }).from(users).where(eq(users.id, auth.userId)).then((r) => r.map((u) => ({ name: u.name || u.username })));
+    const [row] = await db
+      .insert(inboxItems)
+      .values({ type: body.type, title: titleOf(body), url: body.url ?? null, content: body.content ?? null, sourceApp: body.sourceApp ?? null, metadata: body.metadata ?? null, sentBy: who?.name ?? null })
+      .returning();
+    app.events.emit({ topic: "inbox", by: auth.method === "token" ? auth.userId : null });
+    return reply.status(201).send(shown(row));
+  });
+
+  // What's waiting (or ?status=PROCESSED / DISMISSED), newest first
+  app.get("/api/inbox", async (req) => {
+    requireSignedIn(req);
+    const { status } = z.object({ status: z.enum(INBOX_STATUSES).default("PENDING") }).parse(req.query);
+    const rows = await db.select().from(inboxItems).where(eq(inboxItems.status, status)).orderBy(desc(inboxItems.createdAt), desc(inboxItems.id)).limit(500);
+    return rows.map(shown);
+  });
+
+  // For the badge
+  app.get("/api/inbox/count", async (req) => {
+    requireSignedIn(req);
+    const [{ n }] = await db.select({ n: count() }).from(inboxItems).where(eq(inboxItems.status, "PENDING"));
+    return { pending: n };
+  });
+
+  // Dealt with: PROCESSED (imported) or DISMISSED (or back to PENDING)
+  app.patch("/api/inbox/:id", async (req) => {
+    requireSignedIn(req);
+    const { id } = idParam.parse(req.params);
+    const { status } = z.object({ status: z.enum(INBOX_STATUSES) }).parse(req.body);
+    const [row] = await db
+      .update(inboxItems)
+      .set({ status, reviewedAt: status === "PENDING" ? null : new Date() })
+      .where(eq(inboxItems.id, id))
+      .returning();
+    if (!row) throw notFound("Inbox item");
+    app.events.emit({ topic: "inbox", by: req.auth!.method === "token" ? (req.auth as { userId: number }).userId : null });
+    return shown(row);
+  });
+
+  app.delete("/api/inbox/:id", async (req, reply) => {
+    requireSignedIn(req);
+    const { id } = idParam.parse(req.params);
+    const [row] = await db.delete(inboxItems).where(eq(inboxItems.id, id)).returning({ id: inboxItems.id });
+    if (!row) throw notFound("Inbox item");
+    app.events.emit({ topic: "inbox", by: (req.auth as { userId: number }).userId });
+    return reply.status(204).send();
+  });
+}

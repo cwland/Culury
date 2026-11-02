@@ -37,6 +37,7 @@ import { registerFileImport, registerImportJobs, registerPhotoImport } from "./l
 import { registerAisleSorting } from "./lib/aiHelpers.js";
 import aiRoutes from "./routes/ai.js";
 import shareRoutes from "./routes/share.js";
+import inboxRoutes from "./routes/inbox.js";
 import type { FetchImpl, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
@@ -263,6 +264,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(groceryRoutes);
   app.register(eventRoutes);
   app.register(organizeRoutes);
+  app.register(inboxRoutes);
 
   return app;
 }

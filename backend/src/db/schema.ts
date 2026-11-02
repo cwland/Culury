@@ -491,3 +491,30 @@ export const pantryItems = pgTable("pantry_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// The inbox: links, notes and recipe data sent in by other apps (the Culury Companion browser
+// extension) to look at later. One inbox for the household.
+export const INBOX_TYPES = ["RECIPE_LINK", "INSTAGRAM_LINK", "TEXT_NOTE", "RAW_RECIPE_DATA"] as const;
+export const INBOX_STATUSES = ["PENDING", "PROCESSED", "DISMISSED"] as const;
+export interface InboxMetadata {
+  pageTitle?: string;
+  favIconUrl?: string;
+  capturedAt?: string;
+}
+export const inboxItems = pgTable(
+  "inbox_items",
+  {
+    id: serial("id").primaryKey(),
+    type: text("type").$type<(typeof INBOX_TYPES)[number]>().notNull(),
+    title: text("title").notNull(),
+    url: text("url"),
+    content: text("content"),
+    sourceApp: text("source_app"),
+    metadata: jsonb("metadata").$type<InboxMetadata>(),
+    status: text("status").$type<(typeof INBOX_STATUSES)[number]>().notNull().default("PENDING"),
+    sentBy: text("sent_by"), // the API key's name, or the person's name, when it came in
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  },
+  (t) => [index("inbox_items_status_idx").on(t.status, t.createdAt)]
+);

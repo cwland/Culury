@@ -108,6 +108,15 @@ describe("restore", () => {
     ]);
   });
 
+  it("a backup keeps the inbox", async () => {
+    await t.api("POST", "/api/inbox", { type: "RECIPE_LINK", url: "https://example.com/pork", title: "Pork Roast" });
+    const exported = JSON.parse((await raw("/api/export")).body);
+    expect(exported.data.inboxItems).toHaveLength(1);
+    await t.app.db.execute(sql`delete from inbox_items`);
+    expect((await t.api("POST", "/api/import?confirm=replace", exported)).status).toBe(200);
+    expect((await t.api("GET", "/api/inbox")).body).toMatchObject([{ title: "Pork Roast", status: "PENDING" }]);
+  });
+
   it("refuses an archive that isn't a backup", async () => {
     const res = await t.app.inject({ method: "POST", url: "/api/import?confirm=replace", payload: Buffer.from([0x1f, 0x8b, 1, 2, 3]), headers: { authorization: `Bearer ${t.getToken()}`, "content-type": "application/gzip" } });
     expect([res.statusCode, res.json().error]).toEqual([400, "That file isn't a Culury backup"]);
