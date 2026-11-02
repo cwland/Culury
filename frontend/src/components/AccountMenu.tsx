@@ -1,7 +1,7 @@
 import { showWhatsNew, versionLabel } from "../version";
 import { useEffect, useRef, useState } from "react";
 import { initialsOf, useSession } from "../session";
-import { LogoutIcon, UserIcon } from "./Icons";
+import { ChefIcon, LogoutIcon, UserIcon } from "./Icons";
 
 // The initials button (bottom of the left nav, or "Account" on phones) and its menu
 export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
@@ -61,6 +61,9 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
           <a role="menuitem" href="#/settings/profile" onClick={() => setOpen(false)} className={item}>
             <UserIcon className="size-4 text-subtle" /> Profile & security
           </a>
+          <button role="menuitem" onClick={() => (setOpen(false), window.dispatchEvent(new Event("culury:tour")))} className={item}>
+            <ChefIcon className="size-4 text-subtle" /> Getting started
+          </button>
           <button role="menuitem" onClick={signOut} className={item}>
             <LogoutIcon className="size-4 text-subtle" /> Sign out
           </button>

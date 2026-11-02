@@ -98,7 +98,7 @@ interface Draft {
   busy: "" | "test" | "models";
 }
 
-const PROVIDERS: {
+export const PROVIDERS: {
   id: Provider;
   label: string;
   name: string;

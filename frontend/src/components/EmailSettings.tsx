@@ -27,7 +27,7 @@ interface EmailSettingsResponse {
   accountEmail: string | null;
 }
 
-const PRESETS: { id: string; label: string; host: string; port: number; security: Security; hint: string }[] = [
+export const PRESETS: { id: string; label: string; host: string; port: number; security: Security; hint: string }[] = [
   { id: "gmail", label: "Gmail", host: "smtp.gmail.com", port: 587, security: "starttls", hint: "Username is your Gmail address. Use an app password (Google Account → Security → App passwords), not your normal password." },
   { id: "outlook", label: "Outlook / Microsoft 365", host: "smtp.office365.com", port: 587, security: "starttls", hint: "Username is your full Outlook address." },
   { id: "icloud", label: "iCloud Mail", host: "smtp.mail.me.com", port: 587, security: "starttls", hint: "Use an app-specific password from appleid.apple.com." },

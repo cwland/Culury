@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { SessionContext } from "../../session";
 import type { Units } from "../../cooking";
 import { UndoIcon } from "../Icons";
 
@@ -21,8 +22,9 @@ const write = (v: object) => {
 };
 
 export function useCookPrefs(recipeId: number) {
+  const mine = useContext(SessionContext)?.user.units; // chosen in the setup wizard or profile
   const [factor, setFactorState] = useState(() => read().scale?.[recipeId] ?? 1);
-  const [units, setUnitsState] = useState<Units>(() => read().units ?? "original");
+  const [units, setUnitsState] = useState<Units>(() => read().units ?? mine ?? "original");
   useEffect(() => {
     setFactorState(read().scale?.[recipeId] ?? 1);
   }, [recipeId]);

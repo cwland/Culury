@@ -10,6 +10,8 @@ export interface User {
   colorMode?: string | null; // light, dark or system (null: system)
   role?: "owner" | "member"; // the owner runs the server (settings, keys, backups, members)
   remindAt?: string | null; // daily meal plan email time ("17:30"), null: off
+  units?: "original" | "metric" | "us"; // how amounts show to start with (the setup wizard)
+  setupDone?: boolean; // been through the setup wizard (false: it shows on sign-in)
 }
 
 export interface Session {

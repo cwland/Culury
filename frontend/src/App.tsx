@@ -3,6 +3,8 @@ import { applyMode, applyTheme } from "./themes";
 import { api, ApiError, getToken, setToken } from "./api";
 import AuthScreen from "./components/AuthScreen";
 import AppShell from "./components/AppShell";
+import SetupWizard from "./components/SetupWizard";
+import GettingStarted from "./components/GettingStarted";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { SessionContext, type User } from "./session";
 
@@ -41,6 +43,13 @@ export default function App() {
     if (userMode) applyMode(userMode);
   }, [userMode]);
   const [resetToken, setResetToken] = useState(resetTokenFromHash);
+  // Getting started: after the setup wizard, or from the account menu
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    const open = () => setTour(true);
+    window.addEventListener("culury:tour", open);
+    return () => window.removeEventListener("culury:tour", open);
+  }, []);
 
   const signedInRef = useRef<(token: string, user: User) => void>(() => {});
   const check = useCallback(async () => {
@@ -153,7 +162,20 @@ export default function App() {
         },
       }}
     >
-      <AppShell />
+      {auth.user.setupDone === false ? (
+        <SetupWizard
+          user={auth.user}
+          onDone={(user) => {
+            setAuth({ status: "in", user });
+            setTour(true);
+          }}
+        />
+      ) : (
+        <>
+          <AppShell />
+          {tour && <GettingStarted onClose={() => setTour(false)} />}
+        </>
+      )}
     </SessionContext.Provider>
   );
 }
