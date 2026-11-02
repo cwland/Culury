@@ -10,6 +10,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.16.0",
+    date: "2026-11-01",
+    title: "Setup wizard, a simpler AI check, and tidier settings",
+    changes: [
+      "A setup wizard on first sign-in: your name, measurements, a passkey, email and AI (each with a test that has to pass before you go on), AI preferences and the starting categories. Members get the short version. Then a Getting started tour, also in the account menu.",
+      "Improve with AI never adds ingredients any more (no more surprise salt and pepper): it only corrects and tidies the ones the recipe has.",
+      "The AI check is one change at a time: Accept change or Reject change, both move on, Prior goes back. The pencil edits the AI's suggestion before you accept it. The last choice saves and says Recipe added (or updated).",
+      "Fresh herbs show the dried amount beside them, like (1 tsp dried), scaled with the recipe. Sprigs and bunches get an estimate.",
+      "A file with several recipes (a Paprika export, a PDF) lists them A–Z first: untick the ones you don't want, choose how to check them, then Accept. Improve all automatically runs in the background, with a pill at the top of every screen showing how far it's got.",
+      "Editing a recipe hides the buttons, tags and categories until you save; the rating sits above Save and Cancel; clicking anywhere else closes the editor (it asks first if you changed something).",
+      "Settings › Recipes › Organize: categories, collections, tags and meal plan rows as tabs of chips instead of long lists. Sort categories and collections A–Z, Z–A or Manual, and drag the chips into order.",
+    ],
+  },
+  {
     version: "0.15.0",
     date: "2026-11-01",
     title: "Share links, downloads and a new Share window",

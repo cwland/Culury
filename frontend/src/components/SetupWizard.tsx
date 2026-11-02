@@ -137,8 +137,7 @@ function About({ user, step, onSaved }: StepProps & { user: User; onSaved: (u: U
   const ok = !!name.trim() && !!username.trim() && /^\S+@\S+\.\S+$/.test(email.trim());
   useEffect(() => {
     step(ok, async () => {
-      const r = await api<{ user: User }>("PATCH", "/api/profile", { displayName: name.trim(), username: username.trim(), email: email.trim() });
-      onSaved(r.user);
+      onSaved(await api<User>("PATCH", "/api/profile", { displayName: name.trim(), username: username.trim(), email: email.trim() }));
     });
   });
   return (
@@ -146,7 +145,7 @@ function About({ user, step, onSaved }: StepProps & { user: User; onSaved: (u: U
       <p className="text-subtle">How you'll show up to the rest of the household, and where password resets go.</p>
       <label className={label}>
         Full name
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Cory Landers" className={field} />
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="First and last name" className={field} />
       </label>
       <label className={label}>
         Username

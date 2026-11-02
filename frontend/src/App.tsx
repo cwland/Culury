@@ -3,6 +3,7 @@ import { applyMode, applyTheme } from "./themes";
 import { api, ApiError, getToken, setToken } from "./api";
 import AuthScreen from "./components/AuthScreen";
 import AppShell from "./components/AppShell";
+import { APP_VERSION } from "./version";
 import SetupWizard from "./components/SetupWizard";
 import GettingStarted from "./components/GettingStarted";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
@@ -166,7 +167,9 @@ export default function App() {
         <SetupWizard
           user={auth.user}
           onDone={(user) => {
-            setAuth({ status: "in", user });
+            // a new account has nothing "new" to read about: skip What's new for this version
+            setAuth({ status: "in", user: { ...user, seenVersion: APP_VERSION } });
+            void api("PUT", "/api/auth/seen-version", { version: APP_VERSION }).catch(() => {});
             setTour(true);
           }}
         />

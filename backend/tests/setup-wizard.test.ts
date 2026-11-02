@@ -23,6 +23,11 @@ describe("first-run setup", () => {
     expect((await t.api("PATCH", "/api/profile", { units: "imperial" })).status).toBe(400);
   });
 
+  it("a profile save answers with the whole account (the app keeps it as the signed-in user)", async () => {
+    const r = await t.api("PATCH", "/api/profile", { displayName: "Cory Landers" });
+    expect(r.body).toMatchObject({ displayName: "Cory Landers", role: "owner", units: expect.any(String), setupDone: false });
+  });
+
   it("finishing setup is remembered", async () => {
     const r = await t.api("POST", "/api/profile/setup-done");
     expect(r.status).toBe(200);

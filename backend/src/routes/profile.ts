@@ -58,6 +58,6 @@ export default async function profileRoutes(app: FastifyInstance) {
       })
       .where(eq(users.id, userId))
       .returning();
-    return { id: user.id, username: user.username, displayName: user.displayName, email: user.email, seenVersion: user.seenVersion, theme: user.theme, colorMode: user.colorMode };
+    return publicUser(user);
   });
 }

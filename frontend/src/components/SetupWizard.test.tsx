@@ -11,7 +11,7 @@ const owner: User = { id: 1, username: "cory", displayName: null, email: "cory@e
 const member: User = { ...owner, id: 2, username: "sam", role: "member" };
 const routes = (more: Record<string, any> = {}) =>
   fakeServer({
-    "PATCH /api/profile": (b: any) => ({ user: { ...owner, ...b } }),
+    "PATCH /api/profile": (b: any) => ({ ...owner, ...b }),
     "POST /api/settings/email/test": () => ({ ok: true, message: "Sent a test email to cory@example.com." }),
     "PUT /api/settings/email": () => ({ ok: true }),
     "POST /api/settings/ai/test": () => ({ ok: true, message: "qwen3 answered correctly." }),
