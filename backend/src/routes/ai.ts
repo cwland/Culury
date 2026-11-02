@@ -117,7 +117,9 @@ export default async function aiRoutes(app: FastifyInstance) {
     });
     const name = (part.filename || "recipes").slice(0, 200);
     const file = await photos.saveIncomingFile(buf);
-    const job = await queue.enqueue("import-file", { file, name }, userOf(req));
+    // ?choose=1 (the app): a file with several recipes is listed first, for you to pick from
+    const choose = (req.query as { choose?: string } | undefined)?.choose === "1";
+    const job = await queue.enqueue("import-file", { file, name, ...(choose ? { choose: true } : {}) }, userOf(req));
     return reply.status(202).send(jobView(job));
   });
 

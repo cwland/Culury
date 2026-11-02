@@ -20,6 +20,8 @@ export interface ImportJob {
     recipeIds?: number[]; // a file: the recipes added
     skipped?: number;
     problems?: { name: string; reason: string }[];
+    choices?: { n: number; title: string; already: boolean }[]; // a file read first: its recipes, A–Z
+    chosen?: number;
     // a link the site kept from us, and the saved copies (web archives) tried
     blocked?: { reason: BlockReason; by?: string; url: string };
     trying?: string;
@@ -46,6 +48,59 @@ const hostOf = (u: string) => {
   }
 };
 
+type Then = "review" | "auto" | "none";
+
+// A file with several recipes, read first: tick the ones to import (A–Z; ones you already have are
+// marked and start unticked), and say what happens after
+function PickList({ choices, canImprove, onAccept }: { choices: { n: number; title: string; already: boolean }[]; canImprove: boolean; onAccept: (keep: number[], then: Then) => void }) {
+  const [keep, setKeep] = useState(() => new Set(choices.filter((c) => !c.already).map((c) => c.n)));
+  const [then, setThenChoice] = useState<Then>(canImprove ? "review" : "none");
+  const [busy, setBusy] = useState(false);
+  const flip = (n: number) => setKeep((k) => (k.has(n) ? new Set([...k].filter((x) => x !== n)) : new Set([...k, n])));
+  const all = keep.size === choices.length;
+  const radio = (value: Then, label: string, hint: string) => (
+    <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-pressed">
+      <input type="radio" name="then" checked={then === value} onChange={() => setThenChoice(value)} className="mt-1 size-4 accent-[var(--color-action)]" />
+      <span>
+        <span className="font-semibold">{label}</span>
+        <span className="block text-sm text-subtle">{hint}</span>
+      </span>
+    </label>
+  );
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-lg bg-container p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold">
+          {choices.length} recipes in the file · {keep.size} to import
+        </p>
+        <button type="button" onClick={() => setKeep(all ? new Set() : new Set(choices.map((c) => c.n)))} className="text-sm font-semibold text-link hover:underline">
+          {all ? "Untick all" : "Tick all"}
+        </button>
+      </div>
+      <div role="group" aria-label="Recipes in the file" className="max-h-[40vh] overflow-y-auto rounded-lg border border-line bg-page">
+        {choices.map((c) => (
+          <label key={c.n} className="flex cursor-pointer items-center gap-3 border-b border-line px-3 py-2 last:border-b-0 hover:bg-pressed">
+            <input type="checkbox" checked={keep.has(c.n)} onChange={() => flip(c.n)} className="size-4 shrink-0 accent-[var(--color-action)]" />
+            <span className="min-w-0 flex-1 truncate">{c.title}</span>
+            {c.already && <span className="shrink-0 text-xs text-muted">already in your recipes</span>}
+          </label>
+        ))}
+      </div>
+      {canImprove && (
+        <fieldset className="flex flex-col gap-1">
+          <legend className="mb-1 text-sm font-semibold text-subtle">Then</legend>
+          {radio("review", "Review each with AI", "One at a time: accept or reject each change")}
+          {radio("auto", "Improve all automatically", "In the background; the originals stay in each recipe's Version history")}
+          {radio("none", "Just import them", "You can improve any of them later")}
+        </fieldset>
+      )}
+      <button type="button" disabled={!keep.size || busy} onClick={() => (setBusy(true), onAccept([...keep].sort((a, b) => a - b), then))} className="self-start rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
+        {busy ? "Importing…" : "Accept"}
+      </button>
+    </div>
+  );
+}
+
 // "Check this out https://site.com/recipe" (shared from a phone) -> the link
 export const firstLink = (s: string) => s.match(/https?:\/\/[^\s"'<>]+/)?.[0] ?? null;
 
@@ -63,6 +118,32 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState("");
   const started = useRef(false);
+  // After picking from a file: review them with AI, improve them all in the background, or just import
+  const [then, setThen] = useState<Then | null>(null);
+  const pick = async (keep: number[], next: Then) => {
+    setError("");
+    try {
+      setThen(next);
+      setJob(await api<ImportJob>("POST", `/api/imports/${job!.id}/choose`, { keep }));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (!then || job?.status !== "done" || !job.result?.recipeIds?.length) return;
+    if (then === "review") {
+      onClose();
+      window.location.hash = `#/recipes/review/${job.id}`;
+    } else if (then === "auto") {
+      setThen(null);
+      void api<ImportJob>("POST", `/api/imports/${job.id}/improve`)
+        .then((batch) => {
+          onClose();
+          window.location.hash = `#/recipes/improving/${batch.id}`;
+        })
+        .catch((e) => setError((e as Error).message));
+    }
+  }, [job, then, onClose]);
 
   // Follow the import until it's done
   useEffect(() => {
@@ -98,7 +179,7 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
       setError("");
       setJob(null);
       try {
-        setJob(await uploadFile<ImportJob>("/api/recipes/import/file", pdf ?? recipeFile!));
+        setJob(await uploadFile<ImportJob>("/api/recipes/import/file?choose=1", pdf ?? recipeFile!));
       } catch (err) {
         setError((err as Error).message);
       }
@@ -225,7 +306,7 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
           </div>
         </form>
 
-        <Status job={job} error={error} onTab={setTab} canPhoto={ai.photos} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance} />
+        {job?.status === "done" && job.result?.choices && !job.result.chosen ? <PickList choices={job.result.choices} canImprove={ai.enhance} onAccept={(keep, next) => void pick(keep, next)} /> : <Status job={job} error={error} onTab={setTab} canPhoto={ai.photos} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance && then !== "none"} />}
       </div>
     </Popup>
   );

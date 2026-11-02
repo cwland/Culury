@@ -382,6 +382,8 @@ export interface JobResult {
   unchanged?: number; // import-improve: the AI had nothing to change
   failed?: { title: string; reason: string }[]; // import-improve: couldn't be improved
   stopped?: boolean; // import-improve: stopped before the end
+  choices?: { n: number; title: string; already: boolean }[]; // import-file (choose): the recipes in the file, A–Z
+  chosen?: number; // import-file (choose): the import that brought in the ones picked
   savedCopy?: { from: string; url: string; date?: string }; // import-url: read from a web archive's copy
   savedCopies?: { from: string; outcome: "none" | "captcha" | "failed" | "no-recipe"; link?: string }[]; // import-url (failed): the archives tried
   sent?: boolean; // import-url: the page came from your browser (Send to Culury)

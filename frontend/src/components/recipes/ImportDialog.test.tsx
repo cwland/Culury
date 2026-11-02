@@ -28,7 +28,7 @@ describe("importing a file from another app", () => {
     expect(done).toHaveTextContent("Added 41 recipes from Paprika");
     expect(done).toHaveTextContent("3 were already in your recipes");
     expect(within(done).getByText(/Untitled\.paprikarecipe/)).toHaveTextContent("It has no name");
-    const sent = server.writes().find((w) => w.path === "/api/recipes/import/file")!;
+    const sent = server.writes().find((w) => w.path === "/api/recipes/import/file?choose=1")!;
     expect((sent.body as FormData).get("file")).toBeInstanceOf(File);
     expect(onClose).not.toHaveBeenCalled(); // stays open to show the summary
   });
@@ -69,7 +69,7 @@ describe("PDFs", () => {
     expect(screen.getByLabelText("Recipe photos")).toHaveAttribute("accept", expect.stringContaining("application/pdf"));
     await u.upload(screen.getByLabelText("Recipe photos"), new File([new Uint8Array([37, 80, 68, 70])], "card.pdf", { type: "application/pdf" }));
     await u.click(screen.getByRole("button", { name: "Import" }));
-    await waitFor(() => expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/import/file"]));
+    await waitFor(() => expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/import/file?choose=1"]));
   });
 
   it("a PDF with one recipe opens it, like a link would", async () => {
@@ -185,5 +185,76 @@ describe("a link the site blocks", () => {
     await run(() => linkJob({ status: "failed", error: "Busy.", result: { blocked: { reason: "rate-limited", url: URL_ } } }));
     const box = await screen.findByRole("alert", { name: "Couldn't import" }, { timeout: 4000 });
     expect(within(box).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+});
+
+describe("picking which recipes to import from a file", () => {
+  beforeEach(() => forgetAiStatus());
+  const choices = [
+    { n: 1, title: "apple pie", already: false },
+    { n: 3, title: "Bread", already: false },
+    { n: 2, title: "Chili", already: true },
+    { n: 0, title: "Waffles", already: false },
+  ];
+  const setup = (ai = { ready: true, photos: false, enhance: true }) =>
+    fakeServer({
+      "GET /api/ai/status": () => ai,
+      "POST /api/recipes/import/file": () => ({ status: 202, json: job({}) }),
+      "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", choices, problems: [] } }),
+      "POST /api/imports/31/choose": () => ({ status: 202, json: job({ id: 32 }) }),
+      "GET /api/imports/32": () => job({ id: 32, status: "done", result: { format: "Paprika", imported: 2, skipped: 0, recipeIds: [5, 6], problems: [] } }),
+      "POST /api/imports/32/improve": () => ({ status: 202, json: { ...job({}), id: 40, kind: "import-improve" } }),
+    });
+  const run = async () => {
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "My Recipes.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    return { u, list: await screen.findByRole("group", { name: "Recipes in the file" }, { timeout: 4000 }) };
+  };
+
+  it("lists the file's recipes A–Z, ticked (ones you already have are marked and unticked); nothing's imported until Accept", async () => {
+    const server = setup();
+    const { list } = await run();
+    const boxes = within(list).getAllByRole("checkbox");
+    expect(boxes.map((b) => b.closest("label")!.textContent)).toEqual(["apple pie", "Bread", "Chilialready in your recipes", "Waffles"]);
+    expect(boxes.map((b) => (b as HTMLInputElement).checked)).toEqual([true, true, false, true]);
+    expect(server.sent[server.sent.findIndex((s) => s.path.startsWith("/api/recipes/import/file"))].path).toBe("/api/recipes/import/file?choose=1");
+    expect(server.writes().some((w) => w.path.endsWith("/choose"))).toBe(false);
+  });
+
+  it("Accept imports only the ticked ones, then the wizard starts", async () => {
+    window.location.hash = "#/recipes";
+    const server = setup();
+    const { u, list } = await run();
+    await u.click(within(list).getByRole("checkbox", { name: "Waffles" }));
+    await u.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(server.writes().find((w) => w.path === "/api/imports/31/choose")?.body).toEqual({ keep: [1, 3] }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/review/32"), { timeout: 4000 });
+  });
+
+  it("Improve all automatically instead: starts it and opens the progress", async () => {
+    window.location.hash = "#/recipes";
+    const server = setup();
+    const { u } = await run();
+    await u.click(screen.getByRole("radio", { name: /Improve all automatically/ }));
+    await u.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(server.writes().some((w) => w.path === "/api/imports/32/improve")).toBe(true), { timeout: 4000 });
+  });
+
+  it("with Improve with AI off: Accept just imports them", async () => {
+    setup({ ready: false, photos: false, enhance: false });
+    const { u } = await run();
+    expect(screen.queryByRole("radio", { name: /Review each/ })).toBeNull();
+    await u.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByRole("status", { name: "Import finished" }, { timeout: 4000 })).toHaveTextContent("Added 2 recipes from Paprika.");
+  });
+
+  it("nothing ticked: Accept waits", async () => {
+    setup();
+    const { u, list } = await run();
+    for (const name of ["apple pie", "Bread", "Waffles"]) await u.click(within(list).getByRole("checkbox", { name }));
+    expect(screen.getByRole("button", { name: "Accept" })).toBeDisabled();
   });
 });

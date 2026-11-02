@@ -1,5 +1,5 @@
 import { asc, eq, ilike, sql } from "drizzle-orm";
-import { readRecipeFile, type ReadResult } from "./fileImport.js";
+import { readRecipeFile, type FileRecipe, type ReadResult } from "./fileImport.js";
 import type { Db } from "../db/index.js";
 import { categories, jobs, recipeUser, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
@@ -238,13 +238,23 @@ async function sameRecipe(db: Db, r: ImportedRecipe) {
 // A collection exported from another app (Paprika now; more formats in fileImport.ts)
 export function registerFileImport(queue: JobQueue, d: Deps) {
   queue.handle("import-file", async (job) => {
-    const { file, name } = job.payload as { file: string; name: string };
+    // choose: list the recipes first (several of them); keep: import only these (by their place in
+    // the file); found: a PDF's recipes as the AI read them the first time (so it isn't asked again)
+    const { file, name, choose, keep, found: readBefore } = job.payload as { file: string; name: string; choose?: boolean; keep?: number[]; found?: FileRecipe[] };
     try {
-      const data = await d.photos.readIncoming(file);
       // A PDF is read by AI (one recipe or a whole cookbook); other files are another app's export
       const pdf = name.toLowerCase().endsWith(".pdf");
-      const { format, recipes: found, problems }: ReadResult = pdf ? { format: "PDF", recipes: await recipesFromPdf(d.ai, data, name), problems: [] } : readRecipeFile(name, data);
-      if (pdf && !found.length) throw new Error(`No recipes were found in ${name}.`);
+      const read: ReadResult = pdf && readBefore ? { format: "PDF", recipes: readBefore, problems: [] } : pdf ? { format: "PDF", recipes: await recipesFromPdf(d.ai, await d.photos.readIncoming(file), name), problems: [] } : readRecipeFile(name, await d.photos.readIncoming(file));
+      const { format, problems } = read;
+      if (pdf && !read.recipes.length) throw new Error(`No recipes were found in ${name}.`);
+      if (choose && read.recipes.length > 1) {
+        const choices = [];
+        for (const [n, r] of read.recipes.entries()) choices.push({ n, title: r.title, already: !!(await sameRecipe(d.db, r)) });
+        choices.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+        if (pdf) await d.db.update(jobs).set({ payload: { ...job.payload, found: read.recipes } }).where(eq(jobs.id, job.id));
+        return { format, choices, problems: problems.slice(0, 200) };
+      }
+      const found = keep ? read.recipes.filter((_, n) => keep.includes(n)) : read.recipes;
       const recipeIds: number[] = [];
       let imported = 0;
       let skipped = 0;
