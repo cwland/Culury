@@ -516,6 +516,63 @@ describe("editing in place", () => {
     expect(writes(s)).toHaveLength(0);
   });
 
+  it("editing details: the rating sits above Save and Cancel; the buttons, tags and categories hide until it's done", async () => {
+    editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const h = await screen.findByRole("region", { name: "Recipe" });
+    expect(within(h).getByRole("group", { name: "Recipe actions" })).toBeInTheDocument();
+    expect(within(h).getByText("Dinner")).toBeInTheDocument();
+    await u.click(within(h).getByRole("button", { name: "Edit details" }));
+    const form = within(h).getByRole("form", { name: "Recipe details" });
+    const stars = within(form).getByRole("radiogroup", { name: "Your rating" });
+    expect(stars.compareDocumentPosition(within(form).getByRole("button", { name: "Save" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(h).getAllByRole("radiogroup", { name: "Your rating" })).toHaveLength(1);
+    expect(within(h).queryByRole("group", { name: "Recipe actions" })).toBeNull();
+    expect(within(h).queryByRole("list", { name: "Tags and collections" })).toBeNull();
+    expect(within(h).queryByText("Dinner")).toBeNull();
+    await u.click(within(form).getByRole("button", { name: "Cancel" }));
+    expect(within(h).getByRole("group", { name: "Recipe actions" })).toBeInTheDocument();
+    expect(within(h).getByRole("list", { name: "Tags and collections" })).toBeInTheDocument();
+  });
+
+  it("editing a section hides the buttons too (ingredients)", async () => {
+    editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "Edit ingredients" }));
+    expect(screen.queryByRole("group", { name: "Recipe actions" })).toBeNull();
+  });
+
+  it("clicking elsewhere on the page closes the section; buttons and links don't", async () => {
+    editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "Edit ingredients" }));
+    expect(screen.getByRole("textbox", { name: "Ingredients" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Share" }));
+    await u.click(within(await screen.findByRole("dialog", { name: /^Share/ })).getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("textbox", { name: "Ingredients" })).toBeInTheDocument();
+    await u.click(screen.getByText("Brown the beef."));
+    expect(screen.queryByRole("textbox", { name: "Ingredients" })).toBeNull();
+  });
+
+  it("with changes made, clicking elsewhere asks first", async () => {
+    const s = editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "Edit ingredients" }));
+    await u.type(screen.getByRole("textbox", { name: "Ingredients" }), "\n1 onion");
+    await u.click(screen.getByText("Brown the beef."));
+    const ask = await screen.findByRole("dialog", { name: "Discard changes?" });
+    await u.click(within(ask).getByRole("button", { name: "Keep editing" }));
+    expect((screen.getByRole("textbox", { name: "Ingredients" }) as HTMLTextAreaElement).value).toContain("1 onion");
+    await u.click(screen.getByText("Brown the beef."));
+    await u.click(within(await screen.findByRole("dialog", { name: "Discard changes?" })).getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("textbox", { name: "Ingredients" })).toBeNull();
+    expect(writes(s)).toHaveLength(0);
+  });
+
   it("an old edit link opens the recipe with its details ready to edit", async () => {
     server(on);
     render(<RecipeView id={7} startEditing />);

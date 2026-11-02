@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, ingredientsText, listAddress, parseMinutes, parseServings, siteName, stepsText, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
 import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
@@ -80,6 +80,25 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
   // Editing in place: one section at a time, with its text while it's being edited
   const [editing, setEditing] = useState<Section | null>(startEditing ? "details" : null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // Clicking elsewhere on the page (not a button, link or field) closes the section being edited;
+  // with changes made, it asks first
+  const [askDiscard, setAskDiscard] = useState(false);
+  const dirty = useRef(false);
+  const stopRef = useRef(() => {});
+  dirty.current = !!editing && !!r && JSON.stringify(draft) !== JSON.stringify(draftOf(r, editing));
+  useEffect(() => {
+    if (!editing) return;
+    const away = (e: MouseEvent) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (!el || el.closest("form, button, a, input, textarea, select, label, [role=dialog], [role=radio], [role=button]")) return;
+      if (dirty.current) setAskDiscard(true);
+      else stopRef.current();
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
   const saver = useSectionSave(r, (updated) => setR(updated));
   const [tab, setTab] = useState<"recipe" | "nutrition" | "history">("recipe");
@@ -131,6 +150,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
     setDraftErrors({});
     setEditing(null);
   };
+  stopRef.current = stopEdit;
   // Save the section being edited (nothing changed: just close it)
   const saveSection = (e: FormEvent) => {
     e.preventDefault();
@@ -211,7 +231,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
         <div className="flex flex-col p-5 sm:p-7 md:pt-5">
           {/* The categories on the left; Start cooking, Share and Delete on the right */}
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm font-semibold uppercase tracking-wide text-action">{r.categories.map((c) => c.name).join(" · ")}</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-action">{!editing && r.categories.map((c) => c.name).join(" · ")}</p>
             <div className="flex shrink-0 items-center gap-1">
               {r.steps.length > 0 && (
                 <a href={`#/recipes/${r.id}/cook`} className="mr-1 flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
@@ -255,6 +275,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
                 {field("sourceName", "Source")}
                 {field("sourceUrl", "Link to the original")}
               </div>
+              <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
               <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
             </form>
           ) : (
@@ -290,11 +311,14 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
             </>
           )}
 
-          <div className="mt-4 flex items-center gap-3">
-            <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
-          </div>
+          {editing !== "details" && (
+            <div className="mt-4 flex items-center gap-3">
+              <Stars value={r.me.rating} onChange={(rating) => void setMine({ rating })} />
+            </div>
+          )}
 
-          {/* What you can do with it */}
+          {/* What you can do with it (hidden while a part is being edited) */}
+          {!editing && (
           <div role="group" aria-label="Recipe actions" className="flex flex-wrap gap-2 pt-5">
             {r.ingredients.length > 0 && (
               <button type="button" onClick={() => setShopping(true)} className={smallButton}>
@@ -310,7 +334,8 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
               </button>
             )}
           </div>
-          {(r.tags.length > 0 || r.collections.length > 0) && (
+          )}
+          {!editing && (r.tags.length > 0 || r.collections.length > 0) && (
             <ul aria-label="Tags and collections" className="flex flex-wrap gap-2 pt-3">
               {r.collections.map((c) => (
                 <li key={`c${c.id}`}>
@@ -460,6 +485,21 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
             setEnhancing(false);
           }}
         />
+      )}
+      {askDiscard && (
+        <Popup title="Discard changes?" onClose={() => setAskDiscard(false)}>
+          <div className="flex flex-col gap-4 p-5">
+            <p>You changed this part of the recipe. Discard the changes?</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => (setAskDiscard(false), stopEdit())} className="rounded-lg bg-error px-4 py-2 font-semibold text-white hover:opacity-90">
+                Discard
+              </button>
+              <button type="button" onClick={() => setAskDiscard(false)} className="rounded-lg border border-line px-4 py-2 font-semibold hover:bg-pressed">
+                Keep editing
+              </button>
+            </div>
+          </div>
+        </Popup>
       )}
       {sharing && <ShareDialog recipe={r} onClose={() => setSharing(false)} />}
       {shopping && <AddToListDialog title={r.title} source={{ recipes: [{ recipeId: r.id, ...(r.servings ? { servings: Math.round(r.servings * prefs.factor * 100) / 100 } : prefs.factor !== 1 ? { scale: prefs.factor } : {}) }] }} onClose={() => setShopping(false)} />}
