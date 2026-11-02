@@ -52,6 +52,18 @@ export default async function importRoutes(app: FastifyInstance) {
     return (await db.select().from(jobs).orderBy(desc(jobs.id)).limit(limit)).filter((j) => j.kind.startsWith("import-")).map(jobView);
   });
 
+  // In the background now (the status pill on every screen): file imports and AI batches waiting
+  // or running, and AI batches that finished in the last minute (so the pill can say it's done)
+  app.get("/api/imports/active", async () => {
+    const rows = await db
+      .select()
+      .from(jobs)
+      .where(sql`(${jobs.kind} in ('import-improve', 'import-file') and ${jobs.status} in ('queued', 'running')) or (${jobs.kind} = 'import-improve' and ${jobs.status} in ('done', 'failed') and ${jobs.finishedAt} > now() - interval '60 seconds')`)
+      .orderBy(desc(jobs.id))
+      .limit(20);
+    return rows.map(jobView);
+  });
+
   // Try a failed import again (or import a duplicate after all, with force)
   app.post("/api/imports/:id/retry", async (req, reply) => {
     const { id } = idParam.parse(req.params);

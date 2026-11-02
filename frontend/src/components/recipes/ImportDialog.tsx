@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api";
 import { uploadFile, uploadFiles, useAiStatus } from "../../ai";
 import { Popup } from "../Popup";
+import { startedInBackground } from "../BackgroundPill";
 
 export interface ImportJob {
   id: number;
@@ -138,8 +139,8 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
       setThen(null);
       void api<ImportJob>("POST", `/api/imports/${job.id}/improve`)
         .then((batch) => {
+          startedInBackground(batch as never);
           onClose();
-          window.location.hash = `#/recipes/improving/${batch.id}`;
         })
         .catch((e) => setError((e as Error).message));
     }
@@ -322,9 +323,9 @@ function ImproveChoice({ job, count, onClose }: { job: ImportJob; count: number;
     setBusy(true);
     setError("");
     try {
-      const batch = await api<ImportJob>("POST", `/api/imports/${job.id}/improve`);
+      // it runs in the background: the pill at the top says "Import started", then how far along
+      startedInBackground((await api<ImportJob>("POST", `/api/imports/${job.id}/improve`)) as never);
       onClose();
-      window.location.hash = `#/recipes/improving/${batch.id}`;
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

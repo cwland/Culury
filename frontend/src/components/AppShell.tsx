@@ -12,6 +12,7 @@ import { useSession } from "../session";
 import { api } from "../api";
 import WhatsNew from "./WhatsNew";
 import UpdateBar from "./UpdateBar";
+import { BackgroundPill } from "./BackgroundPill";
 import { GearIcon, GroceryIcon, Logo, PantryIcon, PlannerIcon, RecipesIcon } from "./Icons";
 
 type Page = "recipes" | "plan" | "grocery" | "pantry" | "settings";
@@ -81,6 +82,7 @@ export default function AppShell() {
         </div>
       </nav>
 
+      <BackgroundPill />
       <main className="min-w-0 flex-1 pb-16 sm:pb-0">
         {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : page === "plan" ? <PlannerPage /> : page === "grocery" ? <GroceryPage /> : <PantryPage />}
       </main>

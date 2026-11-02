@@ -109,18 +109,29 @@ describe("after importing many recipes", () => {
     expect(status).toHaveTextContent("Each recipe's original is kept as v1 in its Version history.");
   });
 
-  it("Improve all automatically: says how many AI requests first, then starts and shows the progress", async () => {
+  it("Improve all automatically: says how many AI requests first, then starts it in the background and closes the window", async () => {
     window.location.hash = "#/recipes";
     const server = done({ ready: true, photos: false, enhance: true });
     const improves = () => server.writes().filter((w) => w.path === "/api/imports/31/improve");
-    const status = await run();
+    const started: unknown[] = [];
+    const listen = (e: Event) => started.push((e as CustomEvent).detail);
+    window.addEventListener("culury:background", listen);
+    const onClose = vi.fn();
     const u = userEvent.setup();
+    render(<ImportDialog onClose={onClose} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "My Recipes.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    const status = await screen.findByRole("status", { name: "Import finished" }, { timeout: 4000 });
     await u.click(within(status).getByRole("button", { name: "Improve all automatically" }));
     expect(status).toHaveTextContent("This asks your AI 3 times, once per recipe.");
     expect(improves()).toHaveLength(0); // not until Start
     await u.click(within(status).getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(window.location.hash).toBe("#/recipes/improving/40"));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(improves()).toHaveLength(1);
+    expect(window.location.hash).toBe("#/recipes"); // it carries on in the background
+    expect(started).toMatchObject([{ id: 40, kind: "import-improve" }]);
+    window.removeEventListener("culury:background", listen);
   });
 
   it("with AI Enhance off there's nothing to offer", async () => {
