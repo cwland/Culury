@@ -195,6 +195,7 @@ export interface Nutrition {
   servingSize?: string | null; // "About 1½ cups (340 g)"
   note?: string | null;
   outdated?: boolean; // the ingredients changed since (cleared by a new estimate or typing them in)
+  perIngredient?: { line: string; grams: number | null; calories: number }[]; // AI estimates: what each line came to (whole amount), largest first
 }
 
 export const recipes = pgTable(

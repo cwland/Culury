@@ -162,3 +162,102 @@ describe("when the ingredients change", () => {
     expect(job.status).toBe("done");
   });
 });
+
+// ---------- Re-analyze with AI, after editing the ingredients on the recipe page ----------
+
+describe("re-analyzing after an ingredient edit", () => {
+  let t: TestApp;
+  beforeAll(async () => (t = await setupTestApp()));
+  afterAll(async () => t.close());
+  beforeEach(async () => {
+    await t.reset();
+    await t.login();
+  });
+  const reply = (obj: object) => ({ status: 200, json: { choices: [{ message: { content: JSON.stringify(obj) } }] } });
+  const sentToAi = () => {
+    const last = t.ai.calls.at(-1)!;
+    return last.body.messages.map((m: { content: string }) => m.content).join("\n");
+  };
+
+  for (const version of ["current", "new", undefined] as const)
+    it(`the AI is sent the ingredients as they are now (saved ${version ?? "without versioning"})`, async () => {
+      await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+      if (!version) await t.api("PUT", "/api/settings/features", { recipeVersions: false });
+      t.ai.respond = () => reply({ calories: 500 });
+      const r = (await t.api("POST", "/api/recipes", { title: "Pork roast", servings: 8, ingredients: "1 (5-pound) boneless pork butt roast\n3 tablespoons packed brown sugar" })).body;
+      await t.api("POST", `/api/recipes/${r.id}/nutrition`);
+      expect(sentToAi()).not.toContain("white sugar");
+      const saved = await t.api("PATCH", `/api/recipes/${r.id}`, { ingredients: "1 (5-pound) boneless pork butt roast\n3 tablespoons packed brown sugar\n4 1/4 cup white sugar", ...(version ? { version } : {}) });
+      expect(saved.status).toBe(200);
+      await t.app.jobs.drain();
+      await t.api("POST", `/api/recipes/${r.id}/nutrition`);
+      expect(sentToAi()).toContain("4 1/4 cup white sugar");
+    });
+});
+
+// ---------- worked out per ingredient, added up by Culury ----------
+
+describe("estimating nutrition per ingredient", () => {
+  let t: TestApp;
+  beforeAll(async () => (t = await setupTestApp()));
+  afterAll(async () => t.close());
+  beforeEach(async () => {
+    await t.reset();
+    await t.login();
+    await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+  });
+  const reply = (obj: object) => ({ status: 200, json: { choices: [{ message: { content: JSON.stringify(obj) } }] } });
+  const pork = { line: "1 (5-pound) boneless pork butt roast", grams: 2268, calories: 5900, fat: 430, saturatedFat: 150, carbs: 0, fiber: 0, sugar: 0, addedSugar: 0, protein: 400, sodium: 1500 };
+  const sugar = { line: "4 1/4 cup white sugar", grams: 850, calories: 3290, fat: 0, saturatedFat: 0, carbs: 850, fiber: 0, sugar: 850, addedSugar: 850, protein: 0, sodium: 0 };
+  const recipe = async (servings: number | null, ingredients: string) =>
+    (await t.api("POST", "/api/recipes", { title: "Pork roast", ...(servings ? { servings } : {}), ingredients })).body.id as number;
+
+  it("asks for each ingredient line, and adds them up per serving itself", async () => {
+    const id = await recipe(10, "1 (5-pound) boneless pork butt roast\n4 1/4 cup white sugar");
+    t.ai.respond = () => reply({ ingredients: [pork, sugar], servingSize: "About 6 oz (230 g)", note: "Trimmed weight." });
+    const n = (await t.api("POST", `/api/recipes/${id}/nutrition`)).body;
+    // (5900 + 3290) / 10, (430 + 0) / 10 …
+    expect(n).toMatchObject({ calories: 919, fat: 43, saturatedFat: 15, carbs: 85, sugar: 85, addedSugar: 85, protein: 40, sodium: 150, servings: 10, source: "ai", servingSize: "About 6 oz (230 g)" });
+    expect(t.ai.calls.at(-1)!.body.messages.at(-1).content).toContain("- 4 1/4 cup white sugar");
+  });
+
+  it("adding a lot of sugar raises the calories", async () => {
+    const id = await recipe(10, "1 (5-pound) boneless pork butt roast");
+    t.ai.respond = () => reply({ ingredients: [pork] });
+    const before = (await t.api("POST", `/api/recipes/${id}/nutrition`)).body.calories;
+    await t.api("PATCH", `/api/recipes/${id}`, { ingredients: "1 (5-pound) boneless pork butt roast\n4 1/4 cup white sugar", version: "current" });
+    t.ai.respond = () => reply({ ingredients: [pork, sugar] });
+    const after = (await t.api("POST", `/api/recipes/${id}/nutrition`)).body.calories;
+    expect(after - before).toBe(329);
+  });
+
+  it("keeps what each line came to (for the breakdown), largest first", async () => {
+    const id = await recipe(10, "1 (5-pound) boneless pork butt roast\n4 1/4 cup white sugar");
+    t.ai.respond = () => reply({ ingredients: [sugar, pork] });
+    const n = (await t.api("POST", `/api/recipes/${id}/nutrition`)).body;
+    expect(n.perIngredient).toEqual([
+      { line: "1 (5-pound) boneless pork butt roast", grams: 2268, calories: 5900 },
+      { line: "4 1/4 cup white sugar", grams: 850, calories: 3290 },
+    ]);
+  });
+
+  it("no servings given: divides by 4, like before", async () => {
+    const id = await recipe(null, "4 1/4 cup white sugar");
+    t.ai.respond = () => reply({ ingredients: [sugar] });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ calories: 822.5, servings: 4 });
+  });
+
+  it("a line with a missing or odd number counts as 0 for that number; no calories at all is an error", async () => {
+    const id = await recipe(2, "1 cup rice\n1 tbsp butter");
+    t.ai.respond = () => reply({ ingredients: [{ line: "1 cup rice", calories: "205 kcal", carbs: 45 }, { line: "1 tbsp butter", calories: 102, fat: "lots" }] });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ calories: 153.5, carbs: 22.5, fat: 0 });
+    t.ai.respond = () => reply({ ingredients: [{ line: "1 cup rice" }] });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).status).toBe(502);
+  });
+
+  it("an AI that answers with one total per serving (the old way) still works", async () => {
+    const id = await recipe(4, "1 cup rice");
+    t.ai.respond = () => reply({ calories: 200, carbs: 45 });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ calories: 200, carbs: 45, source: "ai" });
+  });
+});

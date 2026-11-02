@@ -16,31 +16,45 @@ const num = (v: unknown, max = 100000) => {
 
 // ---------- nutrition ----------
 
-const NUTRITION_SYSTEM = `You estimate nutrition for recipes. Reply with JSON only:
-{"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0, "servingSize": "", "note": ""}
-Values are for ONE serving: grams, except calories (kcal) and sodium (mg). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like (not fruit or milk). "servingSize": how much one serving is, in kitchen measures with an approximate weight, like "About 1½ cups (340 g)". Use typical values from standard food tables (USDA) for the ingredients and amounts given, divided by the number of servings. If an amount is missing, assume a typical amount. "note": one short sentence on what you assumed, or "".`;
+// The AI looks up each ingredient line (amount as given, from standard food tables); Culury adds
+// the lines up and divides by the servings. Asking for one per-serving total let the AI guess,
+// and the guess barely moved when ingredients changed (4 cups of sugar added, same calories).
+const NUTRITION_SYSTEM = `You estimate nutrition for a recipe, one ingredient at a time. Reply with JSON only:
+{"ingredients": [{"line": "<the ingredient line as given>", "grams": 0, "calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0}], "servingSize": "", "note": ""}
+One entry per ingredient line, in the order given. Each entry is for the WHOLE amount on that line (not per serving): "grams" is its weight, then calories (kcal), sodium (mg) and the rest in grams, from standard food tables (USDA) for that food and amount. "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like (not fruit or milk). If an amount is missing, assume a typical amount. For an item like "salt for the water" or "oil for frying", count only what's eaten. "servingSize": how much one serving of the finished dish is, in kitchen measures with an approximate weight, like "About 1½ cups (340 g)". "note": one short sentence on what you assumed, or "".`;
+
+const NUMBERS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "addedSugar", "protein", "sodium"] as const;
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
   if (!lines.length) throw new AiError("Add the ingredients first: nutrition is worked out from them.");
   const servings = r.servings ?? null;
   const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
-  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: 400 });
-  const out: Nutrition = {
-    calories: num(json.calories, 20000),
-    fat: num(json.fat),
-    saturatedFat: num(json.saturatedFat),
-    carbs: num(json.carbs),
-    fiber: num(json.fiber),
-    sugar: num(json.sugar),
-    addedSugar: num(json.addedSugar),
-    protein: num(json.protein),
-    sodium: num(json.sodium),
-    source: "ai",
+  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: 400 + 120 * lines.length });
+  const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
+  const common = {
+    source: "ai" as const,
     servings: servings ?? (r.yieldText ? null : 4),
     servingSize: typeof json.servingSize === "string" && json.servingSize.trim() ? json.servingSize.trim().slice(0, 100) : null,
     note: typeof json.note === "string" && json.note.trim() ? json.note.trim().slice(0, 300) : null,
   };
+  let out: Nutrition;
+  if (per) {
+    // added up here: each line is the whole amount, so divide by the servings (4 when unknown)
+    const by = servings ?? 4;
+    const total = (k: (typeof NUMBERS)[number]) => per.reduce((sum, x) => sum + (num(x[k], k === "sodium" ? 1e7 : 1e6) ?? 0), 0);
+    if (!per.some((x) => num(x.calories, 1e6) !== null)) throw new AiError("The AI didn't give a calorie estimate. Try again.");
+    out = { ...(Object.fromEntries(NUMBERS.map((k) => [k, round1(total(k) / by)])) as Record<(typeof NUMBERS)[number], number>), ...common };
+    out.perIngredient = per
+      .map((x) => ({ line: typeof x.line === "string" ? x.line.trim().slice(0, 200) : "", grams: num(x.grams, 1e6), calories: num(x.calories, 1e6) ?? 0 }))
+      .filter((x) => x.line)
+      .sort((a, b) => b.calories - a.calories)
+      .slice(0, 100);
+  } else {
+    // an AI that still answers with one total per serving
+    out = { ...(Object.fromEntries(NUMBERS.map((k) => [k, num(json[k], k === "calories" ? 20000 : 100000)])) as Record<(typeof NUMBERS)[number], number | null>), ...common };
+  }
   if (out.calories === null) throw new AiError("The AI didn't give a calorie estimate. Try again.");
   return out;
 }
