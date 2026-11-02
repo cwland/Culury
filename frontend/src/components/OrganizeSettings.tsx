@@ -45,7 +45,10 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
   const [error, setError] = useState("");
   const [confirmId, setConfirmId] = useState<number | null>(null);
 
-  const load = () => void api<Item[]>("GET", path).then(setItems);
+  const load = () =>
+    void api<Item[]>("GET", path)
+      .then(setItems)
+      .catch((e) => setError((e as Error).message));
   useEffect(load, [path]);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -128,7 +131,13 @@ function MealSlots() {
   const [s, setS] = useState<PlannerSettings | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => void api<PlannerSettings>("GET", "/api/plan/settings").then(setS), []);
+  useEffect(
+    () =>
+      void api<PlannerSettings>("GET", "/api/plan/settings")
+        .then(setS)
+        .catch((e) => setError((e as Error).message)),
+    [],
+  );
   const save = async (change: Partial<PlannerSettings>) => {
     setError("");
     try {
@@ -137,7 +146,12 @@ function MealSlots() {
       setError((e as Error).message);
     }
   };
-  if (!s) return null;
+  if (!s)
+    return error ? (
+      <p role="alert" className="text-sm text-error">
+        Meal plan rows couldn't load: {error}
+      </p>
+    ) : null;
   const move = (i: number, to: number) => {
     if (to < 0 || to >= s.slots.length) return;
     const next = [...s.slots];

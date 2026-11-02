@@ -73,9 +73,10 @@ export default function RecipeEditor({ id }: { id?: number }) {
   const [asking, setAsking] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
-    void api<TagInfo[]>("GET", "/api/categories").then(setCategories);
-    void api<CollectionInfo[]>("GET", "/api/collections").then(setCollections);
-    void api<TagInfo[]>("GET", "/api/tags").then(setAllTags);
+    // the choices are extras: a recipe can still be typed in without them
+    void api<TagInfo[]>("GET", "/api/categories").then(setCategories).catch(() => {});
+    void api<CollectionInfo[]>("GET", "/api/collections").then(setCollections).catch(() => {});
+    void api<TagInfo[]>("GET", "/api/tags").then(setAllTags).catch(() => {});
     if (id)
       api<Recipe>("GET", `/api/recipes/${id}`)
         .then((r) => {

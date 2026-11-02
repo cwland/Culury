@@ -48,7 +48,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       setTags(t);
       setCategories(c);
       setCollections(col);
-    });
+    }).catch(() => {}); // the filters are extras: the recipes still list without them
     void api<{ total: number }>("GET", "/api/recipes?category=none&limit=1").then((d) => setNoCategory(d.total)).catch(() => {});
   }, []);
 
