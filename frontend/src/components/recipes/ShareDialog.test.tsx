@@ -17,7 +17,7 @@ describe("the recipe's public link (Share)", () => {
     expect(await within(box).findByRole("textbox", { name: "Public link" })).toHaveValue(A.url);
     await u.click(within(box).getByRole("button", { name: "Copy link" }));
     expect(write).toHaveBeenCalledWith(A.url);
-    expect(await within(box).findByText("Copied")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Link copied");
   });
 
   it("New link asks first, then replaces it (the old one stops working)", async () => {
@@ -54,5 +54,96 @@ describe("downloads (Share)", () => {
     expect(within(box).getAllByRole("button").map((b) => b.textContent)).toEqual(["PDF", "JSON-LD", "Paprika", "Meal-Master", "CookML"]);
     await u.click(within(box).getByRole("button", { name: "Paprika" }));
     await waitFor(() => expect(got).toEqual(["/api/recipes/7/export?format=paprika"]));
+  });
+});
+
+describe("ways to send it (Share)", () => {
+  const routes = (link = A) => ({ "GET /api/recipes/7/share-link": () => link, "POST /api/recipes/7/email": () => ({ sent: 1 }), "GET /api/recipes/7/export": () => new Response("%PDF-1.7 file", { headers: { "content-type": "application/pdf", "content-disposition": 'attachment; filename="chili.pdf"' } }) });
+  const open = async () => {
+    const u = userEvent.setup();
+    render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
+    await screen.findByDisplayValue(A.url);
+    return u;
+  };
+  const setShare = (share?: (d: ShareData) => Promise<void>, canShare?: (d: ShareData) => boolean) => {
+    Object.defineProperty(navigator, "share", { value: share, configurable: true });
+    Object.defineProperty(navigator, "canShare", { value: canShare, configurable: true });
+  };
+  URL.createObjectURL ??= () => "blob:x";
+  URL.revokeObjectURL ??= () => {};
+
+  it("Share… opens the phone's (or Mac's) share sheet with the title and link; hidden where there isn't one", async () => {
+    setShare(undefined);
+    fakeServer(routes());
+    const { unmount } = render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
+    await screen.findByDisplayValue(A.url);
+    expect(screen.queryByRole("button", { name: "Share…" })).toBeNull();
+    unmount();
+    const share = vi.fn(async () => {});
+    setShare(share);
+    fakeServer(routes());
+    const u = await open();
+    await u.click(screen.getByRole("button", { name: "Share…" }));
+    expect(share).toHaveBeenCalledWith({ title: "Chili", text: "Chili", url: A.url });
+    setShare(undefined);
+  });
+
+  it("Share… with a file chosen sends the file too, where the share sheet takes files", async () => {
+    const share = vi.fn(async (_d: ShareData) => {});
+    setShare(share, () => true);
+    fakeServer(routes());
+    const u = await open();
+    await u.selectOptions(screen.getByRole("combobox", { name: "Attach a file" }), "pdf");
+    await u.click(screen.getByRole("button", { name: "Share…" }));
+    await waitFor(() => expect(share).toHaveBeenCalled());
+    const data = share.mock.calls[0][0];
+    expect(data).toMatchObject({ title: "Chili", url: A.url });
+    expect(data.files?.[0]).toMatchObject({ name: "chili.pdf", type: "application/pdf" });
+    setShare(undefined);
+  });
+
+  it("Mail app: opens a new email with the subject and link filled in", async () => {
+    fakeServer(routes());
+    const go = vi.spyOn(window, "open").mockReturnValue(null);
+    const u = await open();
+    await u.click(screen.getByRole("button", { name: "Mail app" }));
+    const url = String(go.mock.calls[0][0]);
+    expect(url.startsWith("mailto:?subject=Chili&body=")).toBe(true);
+    expect(decodeURIComponent(url)).toContain(A.url);
+    go.mockRestore();
+  });
+
+  it("Mail app with a file: downloads it first and says to attach it (mail links can't carry files)", async () => {
+    const server = fakeServer(routes());
+    const go = vi.spyOn(window, "open").mockReturnValue(null);
+    const u = await open();
+    await u.selectOptions(screen.getByRole("combobox", { name: "Attach a file" }), "pdf");
+    await u.click(screen.getByRole("button", { name: "Mail app" }));
+    await waitFor(() => expect(go).toHaveBeenCalled());
+    expect(server.sent.some((s) => s.path === "/api/recipes/7/export?format=pdf")).toBe(true);
+    expect(await screen.findByText("chili.pdf is in your downloads: attach it to the email.")).toBeInTheDocument();
+    go.mockRestore();
+  });
+
+  it("Send from Culury: to, note and the file you chose", async () => {
+    const server = fakeServer(routes());
+    const u = await open();
+    await u.selectOptions(screen.getByRole("combobox", { name: "Attach a file" }), "paprika");
+    const form = screen.getByRole("form", { name: "Send from Culury" });
+    await u.type(within(form).getByLabelText("To"), "mom@example.com");
+    await u.type(within(form).getByLabelText(/Note/), "Try it!");
+    await u.click(within(form).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/email")?.body).toEqual({ to: "mom@example.com", note: "Try it!", attach: "paprika" }));
+    expect(await within(form).findByText("Sent to mom@example.com.")).toBeInTheDocument();
+  });
+
+  it("with public links off: Copy, Share… and Mail app need the link, so only Send from Culury is offered", async () => {
+    setShare(vi.fn(async () => {}));
+    fakeServer(routes({ ...A, on: false }));
+    render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
+    await screen.findByText(/Public share links are off/);
+    for (const name of ["Copy link", "Share…", "Mail app"]) expect([name, screen.queryByRole("button", { name })]).toEqual([name, null]);
+    expect(screen.getByRole("form", { name: "Send from Culury" })).toBeInTheDocument();
+    setShare(undefined);
   });
 });

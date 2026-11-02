@@ -9,6 +9,7 @@ import { emailConfigFromEnv } from "./lib/mail.js";
 import { logEvent } from "./lib/appLog.js";
 import { emergencyResetAuth } from "./lib/oauth.js";
 import { serveWeb } from "./web.js";
+import { sharePreview } from "./lib/shareLinks.js";
 
 const { db } = createDb(process.env.DATABASE_URL!);
 await runMigrations(db);
@@ -26,7 +27,11 @@ const app = buildApp({
 });
 
 // Production (Docker): the API also serves the built web app from WEB_DIR
-if (process.env.WEB_DIR) await serveWeb(app, path.resolve(process.env.WEB_DIR));
+// (a share link's page carries the recipe's preview tags: Settings › Email's app address, else this one)
+if (process.env.WEB_DIR)
+  await serveWeb(app, path.resolve(process.env.WEB_DIR), {
+    preview: async (token, base) => sharePreview(app.db, token, (await app.mail.active())?.config.appUrl || base),
+  });
 
 // Background jobs (recipe imports). Once a day: old finished jobs and unused photos are cleared away.
 await app.jobs.start(async () => {

@@ -33,6 +33,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  // files (and pictures shown in the email: cid + contentDisposition "inline")
+  attachments?: { filename?: string; content: Buffer | string; contentType: string; cid?: string; contentDisposition?: "inline" | "attachment" }[];
 }
 
 export interface Transport {

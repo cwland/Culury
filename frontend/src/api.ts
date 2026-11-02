@@ -69,8 +69,8 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 
 // ---------- shapes returned by the API ----------
 
-// Download a file from the API (needs the login header, so a plain link won't do)
-export async function downloadFile(path: string) {
+// A file from the API, with the login header: its name, type and contents
+export async function fetchFile(path: string) {
   const token = getToken();
   const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
   if (!res.ok) {
@@ -78,7 +78,14 @@ export async function downloadFile(path: string) {
     throw new ApiError(res.status, data.error ?? `Download failed (${res.status})`);
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "download";
-  const url = URL.createObjectURL(await res.blob());
+  const type = (res.headers.get("content-type") ?? "application/octet-stream").split(";")[0];
+  return { name, type, blob: await res.blob() };
+}
+
+// Download a file from the API (needs the login header, so a plain link won't do)
+export async function downloadFile(path: string) {
+  const { name, blob } = await fetchFile(path);
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;

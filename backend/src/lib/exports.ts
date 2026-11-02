@@ -56,7 +56,7 @@ export async function exportRecipe(r: ExportRecipe, format: ExportFormat, opts: 
 // ---------- shared bits ----------
 
 // The recipe's own photo (saved here) as a JPEG; a photo shown from another site isn't fetched
-async function photoJpeg(imageUrl: string | null, dir: string) {
+export async function photoJpeg(imageUrl: string | null, dir: string) {
   const name = imageUrl?.match(/^\/api\/photos\/([0-9a-f-]{36}\.webp)$/)?.[1];
   if (!name) return null;
   try {

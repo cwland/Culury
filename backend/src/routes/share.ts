@@ -11,7 +11,7 @@ import { userOf } from "./recipes.js";
 import { isOn } from "../lib/features.js";
 import { logEvent } from "../lib/appLog.js";
 import { newShareToken, publicRecipe, recipeIdForToken, sharePath, shareTokenOf } from "../lib/shareLinks.js";
-import { exportRecipe, FORMATS, type ExportFormat } from "../lib/exports.js";
+import { exportRecipe, FORMATS, photoJpeg, type ExportFormat } from "../lib/exports.js";
 
 // Sharing: a recipe by email, as a printable page (save as PDF), or as schema.org JSON-LD; the
 // grocery list by email; and each person's daily meal plan email.
@@ -102,15 +102,28 @@ export default async function shareRoutes(app: FastifyInstance) {
     return reply.type("text/html; charset=utf-8").send(recipePrintPage(await loadRecipe(db, id, null)));
   });
 
+  // Send from Culury: the email, with the recipe attached as a file if asked (attach). It goes to
+  // other people, so the recipe's notes stay out, as on the public page.
   app.post("/api/recipes/:id/email", async (req) => {
     const { id } = idParam.parse(req.params);
     signedIn(req);
-    const body = z.object({ to: recipients, note: z.string().trim().max(1000).optional() }).strict().parse(req.body);
+    const body = z
+      .object({ to: recipients, note: z.string().trim().max(1000).optional(), attach: z.enum(["none", ...(Object.keys(FORMATS) as ExportFormat[])], { error: `Attach none, or one of: ${Object.keys(FORMATS).join(", ")}` }).optional() })
+      .strict()
+      .parse(req.body);
     const config = await mailOrStop();
-    const r = await loadRecipe(db, id, null);
+    const r = { ...(await loadRecipe(db, id, null)), notes: null };
     const u = await me(req);
-    const msg = recipeEmail(r, { appUrl: config.appUrl ?? null, from: u?.displayName || u?.username || "Someone", note: body.note });
-    for (const to of body.to) await mail.send({ to, ...msg }, config, "recipe");
+    const appUrl = config.appUrl ?? null;
+    const shareUrl = appUrl && (await isOn(db, "publicLinks")) ? `${appUrl.replace(/\/+$/, "")}${sharePath((await shareTokenOf(db, id)).token)}` : null;
+    const photo = await photoJpeg(r.imageUrl, app.photos.dir);
+    const file = body.attach && body.attach !== "none" ? await exportRecipe(r, body.attach, { appUrl, photoDir: app.photos.dir }) : null;
+    const msg = recipeEmail(r, { appUrl, from: u?.displayName || u?.username || "Someone", note: body.note, shareUrl, photoCid: !!photo, attached: file?.filename });
+    const attachments = [
+      ...(photo ? [{ cid: "recipe-photo", content: photo, contentType: "image/jpeg", contentDisposition: "inline" as const }] : []),
+      ...(file ? [{ filename: file.filename, content: file.body, contentType: file.type }] : []),
+    ];
+    for (const to of body.to) await mail.send({ to, ...msg, attachments }, config, "recipe");
     return { sent: body.to.length };
   });
 

@@ -104,3 +104,15 @@ describe("backups", () => {
     for (const p of paths) expect(p).toMatch(/^\/share\/rcp_[0-9a-f]{32}$/);
   });
 });
+
+describe("a share link's preview card", () => {
+  it("title, summary and the photo's full address; nothing for an unknown or turned-off link", async () => {
+    const { sharePreview } = await import("../src/lib/shareLinks.js");
+    const r = await add({ imageUrl: "/api/photos/0e0d2c6f-1a2b-4c3d-8e9f-001122334455.webp" });
+    const token = (await linkOf(r.id)).path.split("/").pop()!;
+    expect(await sharePreview(t.app.db, token, "https://recipes.example.com/")).toEqual({ title: "Texas Chili", description: "Big and beefy.", image: "https://recipes.example.com/api/photos/0e0d2c6f-1a2b-4c3d-8e9f-001122334455.webp", url: `https://recipes.example.com/share/${token}` });
+    expect(await sharePreview(t.app.db, "rcp_ffffffffffffffffffffffffffffffff", "https://x.test")).toBeNull();
+    await t.api("PUT", "/api/settings/features", { publicLinks: false });
+    expect(await sharePreview(t.app.db, token, "https://x.test")).toBeNull();
+  });
+});

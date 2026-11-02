@@ -80,19 +80,29 @@ const font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Hel
 
 function recipeBody(r: ShareRecipe, appUrl: string | null) {
   const img = absolute(r.imageUrl, appUrl);
-  const facts = [
+  const facts = factsOf(r);
+  return `
+<h1 style="margin:0 0 6px;font-size:28px;line-height:1.2">${esc(r.title)}</h1>
+${r.description ? `<p style="margin:0 0 10px;color:#555">${esc(r.description)}</p>` : ""}
+${factsHtml(facts)}
+${img ? `<img src="${esc(img)}" alt="" style="display:block;width:100%;max-width:640px;max-height:360px;object-fit:cover;border-radius:12px;margin:0 0 18px">` : ""}
+${recipeMain(r)}`;
+}
+
+const factsHtml = (facts: unknown[]) => (facts.length ? `<p style="margin:0 0 14px;color:#555;font-size:14px">${facts.map((f) => esc(String(f))).join(" &nbsp;·&nbsp; ")}</p>` : "");
+const factsOf = (r: ShareRecipe) =>
+  [
     r.prepMinutes && `Prep ${minutesText(r.prepMinutes)}`,
     r.cookMinutes && `Cook ${minutesText(r.cookMinutes)}`,
     r.totalMinutes && `Total ${minutesText(r.totalMinutes)}`,
     (r.yieldText || r.servings) && (r.yieldText || `${r.servings} servings`),
   ].filter(Boolean);
+
+// Ingredients, steps, notes, nutrition and source (under the title and photo)
+function recipeMain(r: ShareRecipe) {
   let stepNo = 0;
   const n = r.nutrition;
   return `
-<h1 style="margin:0 0 6px;font-size:28px;line-height:1.2">${esc(r.title)}</h1>
-${r.description ? `<p style="margin:0 0 10px;color:#555">${esc(r.description)}</p>` : ""}
-${facts.length ? `<p style="margin:0 0 14px;color:#555;font-size:14px">${facts.map((f) => esc(String(f))).join(" &nbsp;·&nbsp; ")}</p>` : ""}
-${img ? `<img src="${esc(img)}" alt="" style="display:block;width:100%;max-width:640px;max-height:360px;object-fit:cover;border-radius:12px;margin:0 0 18px">` : ""}
 <div class="cols">
 <div class="ing">
 <h2 style="font-size:18px;margin:0 0 8px">Ingredients</h2>
@@ -110,15 +120,34 @@ ${n && n.calories !== null ? `<p style="margin:18px 0 0;font-size:13px;color:#55
 ${r.sourceUrl ? `<p style="margin:18px 0 0;font-size:13px;color:#777">From <a href="${esc(r.sourceUrl)}" style="color:#1a7f4b">${esc(r.sourceName || r.sourceUrl)}</a></p>` : r.sourceName ? `<p style="margin:18px 0 0;font-size:13px;color:#777">From ${esc(r.sourceName)}</p>` : ""}`;
 }
 
-export function recipeEmail(r: ShareRecipe, opts: { appUrl: string | null; from: string; note?: string | null }) {
-  const html = `<!doctype html><html><body style="margin:0;background:#f4f6f5;${font};color:#1d2b24">
-<div style="max-width:680px;margin:0 auto;padding:24px 16px">
-<p style="margin:0 0 16px;color:#555">${esc(opts.from)} shared a recipe with you${opts.note ? ":" : "."}</p>
+// The shared-recipe email: the photo (in the email, cid:recipe-photo), title, summary, times, the
+// note, a big Open the recipe button to the public link, then the recipe itself, for reading
+// without opening anything. photoCid: the photo is attached inline; else it's linked.
+export function recipeEmail(r: ShareRecipe, opts: { appUrl: string | null; from: string; note?: string | null; shareUrl?: string | null; photoCid?: boolean; attached?: string | null }) {
+  const img = opts.photoCid ? "cid:recipe-photo" : absolute(r.imageUrl, opts.appUrl);
+  const button = opts.shareUrl
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 6px"><tr><td style="border-radius:10px;background:#1a7f4b"><a href="${esc(opts.shareUrl)}" style="display:inline-block;padding:14px 26px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px">Open the recipe</a></td></tr></table>`
+    : "";
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;background:#f4f6f5;${font};color:#1d2b24">
+<div style="max-width:640px;margin:0 auto;padding:24px 12px">
+<p style="margin:0 0 14px;color:#555;font-size:15px">${esc(opts.from)} shared a recipe with you${opts.note ? ":" : "."}</p>
 ${opts.note ? `<p style="margin:0 0 16px;padding:12px 14px;background:#fff;border-left:4px solid #1a7f4b;border-radius:6px">${esc(opts.note)}</p>` : ""}
-<div style="background:#fff;border-radius:16px;padding:24px">${recipeBody(r, opts.appUrl)}</div>
-<p style="margin:16px 0 0;font-size:12px;color:#888">Sent from Culury${opts.appUrl ? ` · <a href="${esc(opts.appUrl.replace(/\/+$/, ""))}/#/recipes/${r.id}" style="color:#888">open it in Culury</a>` : ""}</p>
+<div style="background:#fff;border-radius:16px;overflow:hidden">
+${img ? `<img src="${esc(img)}" alt="${esc(r.title)}" width="640" style="display:block;width:100%;max-width:640px;height:auto;max-height:340px;object-fit:cover;border:0">` : ""}
+<div style="padding:22px 22px 8px">
+<h1 style="margin:0 0 6px;font-size:28px;line-height:1.2">${esc(r.title)}</h1>
+${r.description ? `<p style="margin:0 0 10px;color:#555;font-size:16px">${esc(r.description)}</p>` : ""}
+${factsHtml(factsOf(r))}
+${button}
+${opts.attached ? `<p style="margin:10px 0 0;font-size:13px;color:#666">The recipe is attached as ${esc(opts.attached)}.</p>` : ""}
+</div>
+<div style="padding:18px 22px 24px;border-top:1px solid #eef1ef">${recipeMain(r)}</div>
+</div>
+<p style="margin:16px 4px 0;font-size:12px;color:#888">Sent from Culury${opts.appUrl ? ` · <a href="${esc(opts.appUrl.replace(/\/+$/, ""))}/#/recipes/${r.id}" style="color:#888">open it in Culury</a>` : ""}</p>
 </div></body></html>`;
-  return { subject: r.title, html, text: recipeText(r, opts.note ? `${opts.from}: ${opts.note}\n\n` : `${opts.from} shared a recipe with you.\n\n`) };
+  const intro = `${opts.note ? `${opts.from}: ${opts.note}` : `${opts.from} shared a recipe with you.`}\n${opts.shareUrl ? `\nOpen the recipe: ${opts.shareUrl}\n` : ""}${opts.attached ? `\nThe recipe is attached as ${opts.attached}.\n` : ""}\n`;
+  return { subject: r.title, html, text: recipeText(r, intro) };
 }
 
 export function recipeText(r: ShareRecipe, intro = "") {

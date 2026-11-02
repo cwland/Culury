@@ -58,3 +58,13 @@ export async function publicRecipe(db: Db, token: string) {
     updatedAt: r.updatedAt,
   };
 }
+
+// What a share link's preview card shows: title, summary, photo (needs a full address: the app's
+// address from Settings › Email, else the one the link was opened on)
+export async function sharePreview(db: Db, token: string, base: string) {
+  const r = await publicRecipe(db, token).catch(() => null);
+  if (!r) return null;
+  const b = base.replace(/\/+$/, "");
+  const image = !r.imageUrl ? null : /^https?:/.test(r.imageUrl) ? r.imageUrl : `${b}${r.imageUrl}`;
+  return { title: r.title, description: r.description, image, url: `${b}${sharePath(token)}` };
+}
