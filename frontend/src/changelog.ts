@@ -10,6 +10,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.15.0",
+    date: "2026-11-01",
+    title: "Share links, downloads and a new Share window",
+    changes: [
+      "Every recipe has a public read-only link (Share › Public link). Anyone with it sees the recipe without signing in: photo, ingredients with scaling and units, steps and nutrition. The recipe's notes, your ratings and who added it stay private. New link replaces a link that spread too far; Settings › Recipes › Public share links turns them all off.",
+      "Download a recipe as a PDF (made by Culury, with the photo and nutrition), JSON-LD, Paprika, Meal-Master or CookML, from Share or from the public page.",
+      "The Share window: Copy link, Share… (your phone's or Mac's share sheet), Mail app, and Send from Culury, each with an optional file attached. The email is new: the photo, the times and a big Open the recipe button, with the recipe underneath.",
+      "Share links show the recipe's title, summary and photo when pasted into Messages, WhatsApp or Slack.",
+      "On the recipe page, As written is now As is, on the same line as the servings.",
+    ],
+  },
+  {
     version: "0.14.0",
     date: "2026-11-01",
     title: "Recipes from sites that block imports",
