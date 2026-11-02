@@ -11,11 +11,11 @@ const down = () => ({ status: 503, json: { error: "The server is restarting" } }
 const settle = () => new Promise((r) => setTimeout(r, 100));
 
 describe("loads that fail", () => {
-  it("Settings › Recipes: each list says it couldn't load", async () => {
-    fakeServer({ "GET /api/categories": down, "GET /api/collections": down, "GET /api/tags": down, "GET /api/plan/settings": down });
+  it("Settings › Recipes: a list that can't load says so", async () => {
+    fakeServer({ "GET /api/organize/sort": down, "GET /api/categories": down, "GET /api/collections": down, "GET /api/tags": down, "GET /api/plan/settings": down });
     render(<OrganizeSettings />);
-    expect((await screen.findAllByRole("alert")).length).toBeGreaterThanOrEqual(4);
-    expect(screen.getAllByText(/The server is restarting/).length).toBeGreaterThanOrEqual(4);
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent(/The server is restarting/);
+    await settle();
   });
 
   it("the recipe list still lists recipes without its tags and categories", async () => {

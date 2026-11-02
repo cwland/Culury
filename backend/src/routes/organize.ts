@@ -1,12 +1,24 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { asc, eq, sql } from "drizzle-orm";
-import { categories, collectionRecipes, collections, recipeTags, recipes, tags } from "../db/schema.js";
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { appSettings, categories, collectionRecipes, collections, recipeTags, recipes, tags } from "../db/schema.js";
+import type { Db } from "../db/index.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idList, idParam } from "../lib/validation.js";
 import { cleanTag, refreshSearch } from "../lib/recipes.js";
 
 const label = z.string().trim().min(1, "Give it a name").max(100);
+
+// How categories and collections are listed everywhere: A–Z, Z–A, or your own order (manual)
+const SORTS = ["az", "za", "manual"] as const;
+type Sort = (typeof SORTS)[number];
+type Sorting = { categories: Sort; collections: Sort };
+export async function sorting(db: Db): Promise<Sorting> {
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "organizeSort"));
+  return { categories: "manual", collections: "manual", ...((row?.value ?? {}) as Partial<Sorting>) };
+}
+const orderOf = (sort: Sort, table: typeof categories | typeof collections) =>
+  sort === "az" ? [asc(sql`lower(${table.name})`)] : sort === "za" ? [desc(sql`lower(${table.name})`)] : [asc(table.sortOrder), asc(table.name)];
 const optionalText = z.string().trim().max(2000).nullable().optional().transform((v) => (v === undefined ? undefined : v || null));
 
 // Unique names: a clear message instead of a database error
@@ -72,8 +84,16 @@ export default async function organizeRoutes(app: FastifyInstance) {
     db
       .select({ id: categories.id, name: categories.name, count: sql<number>`(select count(*)::int from recipe_categories rc where rc.category_id = ${categories.id})` })
       .from(categories)
-      .orderBy(asc(categories.sortOrder), asc(categories.name))
+      .orderBy(...orderOf((await sorting(db)).categories, categories))
   );
+
+  app.get("/api/organize/sort", async () => sorting(db));
+  app.put("/api/organize/sort", async (req) => {
+    const change = z.object({ categories: z.enum(SORTS), collections: z.enum(SORTS) }).partial().strict().parse(req.body);
+    const value = { ...(await sorting(db)), ...change };
+    await db.insert(appSettings).values({ key: "organizeSort", value }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+    return value;
+  });
 
   app.post("/api/categories", async (req, reply) => {
     const { name } = z.object({ name: label }).strict().parse(req.body);
@@ -119,7 +139,7 @@ export default async function organizeRoutes(app: FastifyInstance) {
         images: sql<string[]>`coalesce((select array_agg(x.image_url) from (select r.image_url from collection_recipes cr join recipes r on r.id = cr.recipe_id where cr.collection_id = ${collections.id} and r.image_url is not null order by cr.position limit 4) x), '{}')`,
       })
       .from(collections)
-      .orderBy(asc(collections.sortOrder), asc(collections.name))
+      .orderBy(...orderOf((await sorting(db)).collections, collections))
   );
 
   app.post("/api/collections", async (req, reply) => {

@@ -1,56 +1,70 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { PlannerSettings } from "../plan";
 import { api } from "../api";
 import type { CollectionInfo, TagInfo } from "../recipes";
 import { ChevronDown, ChevronUp, Trash } from "./Icons";
 import { InlineText } from "./inputs";
 import { Card } from "./settingsUi";
+import { Popup } from "./Popup";
 
-// Settings › Recipes: the household's categories (in order), collections and tags
+// Settings › Recipes: the household's categories, collections, tags and meal plan rows, one at a
+// time. Each list is a set of chips (tap one to rename it, see its recipes or delete it);
+// categories and collections sort A–Z, Z–A, or by hand (Manual: drag them, or Move earlier/later).
+type Tab = "categories" | "collections" | "tags" | "meal";
+const TABS: [Tab, string][] = [
+  ["categories", "Categories"],
+  ["collections", "Collections"],
+  ["tags", "Tags"],
+  ["meal", "Meal plan"],
+];
+
 export default function OrganizeSettings() {
+  const [tab, setTab] = useState<Tab>("categories");
   return (
-    <>
-      <MealSlots />
-      <NamedList
-        title="Categories"
-        description="Meal types or courses, in the order you like. Each recipe can be in several."
-        path="/api/categories"
-        what="category"
-        reorder
-      />
-      <NamedList
-        title="Collections"
-        description="Your own hand-picked lists, like Quick Meals or Ninja CREAMi. Add recipes to them from a recipe's Collections button."
-        path="/api/collections"
-        what="collection"
-        reorder
-        withDescription
-      />
-      <NamedList
-        title="Tags"
-        description="Tags are added on each recipe. Rename one here to fix it everywhere; renaming it to another tag's name merges the two."
-        path="/api/tags"
-        what="tag"
-        noAdd
-      />
-    </>
+    <Card title="Organize" description="How recipes are grouped: categories (meal types or courses), your own collections, tags, and the meal plan's rows.">
+      <div role="tablist" aria-label="Organize" className="mb-4 flex flex-wrap gap-1 rounded-lg bg-page p-1">
+        {TABS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-semibold ${tab === id ? "bg-container text-ink shadow-sm" : "text-subtle hover:text-ink"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div>
+        {tab === "categories" && <ChipList title="Categories" path="/api/categories" what="category" sortKey="categories" hint="Each recipe can be in several." />}
+        {tab === "collections" && <ChipList title="Collections" path="/api/collections" what="collection" sortKey="collections" withDescription hint="Your own hand-picked lists, like Quick Meals. Add recipes to them from a recipe's Organize button." />}
+        {tab === "tags" && <ChipList title="Tags" path="/api/tags" what="tag" noAdd searchable hint="Tags are added on each recipe. Rename one here to fix it everywhere; renaming it to another tag's name merges the two." />}
+        {tab === "meal" && <MealSlots />}
+      </div>
+    </Card>
   );
 }
 
 type Item = TagInfo & Partial<Pick<CollectionInfo, "description">>;
+type Sort = "az" | "za" | "manual";
 
-function NamedList({ title, description, path, what, reorder, withDescription, noAdd }: { title: string; description: string; path: string; what: string; reorder?: boolean; withDescription?: boolean; noAdd?: boolean }) {
+function ChipList({ title, path, what, sortKey, withDescription, noAdd, searchable, hint }: { title: string; path: string; what: string; sortKey?: "categories" | "collections"; withDescription?: boolean; noAdd?: boolean; searchable?: boolean; hint: string }) {
   const [items, setItems] = useState<Item[] | null>(null);
+  const [sort, setSort] = useState<Sort>("manual");
+  const [find, setFind] = useState("");
   const [name, setName] = useState("");
+  const [open, setOpen] = useState<Item | null>(null);
   const [error, setError] = useState("");
-  const [confirmId, setConfirmId] = useState<number | null>(null);
 
   const load = () =>
     void api<Item[]>("GET", path)
       .then(setItems)
       .catch((e) => setError((e as Error).message));
-  useEffect(load, [path]);
-
+  useEffect(() => {
+    load();
+    if (sortKey)
+      void api<Record<string, Sort>>("GET", "/api/organize/sort")
+        .then((s) => setSort(s[sortKey] ?? "manual"))
+        .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
   const run = async (fn: () => Promise<unknown>) => {
     setError("");
     try {
@@ -60,6 +74,14 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
     }
     load();
   };
+  const changeSort = (s: Sort) => {
+    setSort(s);
+    void run(() => api("PUT", "/api/organize/sort", { [sortKey!]: s }));
+  };
+  const reorder = (next: Item[]) => {
+    setItems(next);
+    void run(() => api("PUT", `${path}/order`, { ids: next.map((n) => n.id) }));
+  };
   const add = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
@@ -67,62 +89,148 @@ function NamedList({ title, description, path, what, reorder, withDescription, n
       setName("");
     });
   };
-  const move = (i: number, to: number) => {
-    if (!items || to < 0 || to >= items.length) return;
-    const next = [...items];
-    const [x] = next.splice(i, 1);
-    next.splice(to, 0, x);
-    setItems(next);
-    void run(() => api("PUT", `${path}/order`, { ids: next.map((n) => n.id) }));
+  const manual = !!sortKey && sort === "manual";
+  const shown = useMemo(() => (items ?? []).filter((i) => !find.trim() || i.name.toLowerCase().includes(find.trim().toLowerCase())), [items, find]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const dragged = (e: DragEndEvent) => {
+    if (!items || !e.over || e.active.id === e.over.id) return;
+    reorder(arrayMove(items, items.findIndex((i) => i.id === e.active.id), items.findIndex((i) => i.id === e.over!.id)));
   };
+  const plural = what === "category" ? "categories" : `${what}s`;
 
   return (
-    <Card title={title} description={description}>
-      {items && items.length === 0 && <p className="text-subtle">{noAdd ? "No tags yet. Add them on a recipe." : `No ${what === "category" ? "categories" : `${what}s`} yet.`}</p>}
-      <ul className="divide-y divide-line">
-        {items?.map((it, i) => (
-          <li key={it.id} className="flex items-center gap-2 py-2">
-            {reorder && (
-              <span className="flex flex-col">
-                <button type="button" aria-label={`Move ${it.name} up`} title={`Move ${it.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
-                  <ChevronUp />
-                </button>
-                <button type="button" aria-label={`Move ${it.name} down`} title={`Move ${it.name} down`} disabled={i === items.length - 1} onClick={() => move(i, i + 1)} className="rounded text-muted hover:text-ink disabled:opacity-30">
-                  <ChevronDown />
-                </button>
-              </span>
-            )}
-            <span className="min-w-0 flex-1">
-              <InlineText value={it.name} ariaLabel={`Rename ${it.name}`} onSave={(v) => void run(() => api("PATCH", `${path}/${it.id}`, { name: v }))} className="w-full font-medium" />
-              {withDescription && (
-                <InlineText value={it.description ?? ""} allowEmpty placeholder="Add a description" ariaLabel={`Description of ${it.name}`} onSave={(v) => void run(() => api("PATCH", `${path}/${it.id}`, { description: v }))} className="w-full text-sm text-subtle" />
-              )}
-            </span>
-            <a href={`#/recipes?${what}=${what === "tag" ? encodeURIComponent(it.name) : it.id}`} className="shrink-0 text-sm text-link hover:underline">
-              {it.count} recipe{it.count === 1 ? "" : "s"}
-            </a>
-            <button
-              type="button"
-              aria-label={confirmId === it.id ? `Confirm delete ${it.name}` : `Delete ${it.name}`} title={confirmId === it.id ? `Confirm delete ${it.name}` : `Delete ${it.name}`}
-              onClick={() => (confirmId === it.id ? void run(() => api("DELETE", `${path}/${it.id}`)) : setConfirmId(it.id))}
-              onBlur={() => setConfirmId(null)}
-              className={`shrink-0 rounded px-2 py-1.5 text-sm font-semibold ${confirmId === it.id ? "bg-error text-white" : "text-muted hover:bg-error-subtle hover:text-error"}`}
-            >
-              {confirmId === it.id ? "Delete?" : <Trash />}
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="mr-auto text-sm text-subtle">{hint}</p>
+        {searchable && <input type="search" aria-label={`Find a ${what}`} placeholder={`Find a ${what}`} value={find} onChange={(e) => setFind(e.target.value)} className="w-40 rounded-lg border border-line bg-page px-3 py-1.5 text-sm" />}
+        {sortKey && (
+          <select aria-label={`Sort ${plural}`} value={sort} onChange={(e) => changeSort(e.target.value as Sort)} className="rounded-lg border border-line bg-page px-2 py-1.5 text-sm">
+            <option value="az">A–Z</option>
+            <option value="za">Z–A</option>
+            <option value="manual">Manual</option>
+          </select>
+        )}
+      </div>
+      {manual && items && items.length > 1 && <p className="text-xs text-muted">Drag the chips into the order you want.</p>}
+      {items && !items.length && <p className="text-subtle">{noAdd ? "No tags yet. Add them on a recipe." : `No ${plural} yet.`}</p>}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragged}>
+        <SortableContext items={shown.map((i) => i.id)} strategy={rectSortingStrategy}>
+          <ul aria-label={title} className="flex flex-wrap gap-2">
+            {shown.map((it) => (
+              <Chip key={it.id} item={it} draggable={manual} onOpen={() => setOpen(it)} />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
       {!noAdd && (
-        <form onSubmit={add} className="mt-3 flex gap-2">
-          <input aria-label={`New ${what}`} placeholder={`New ${what}`} value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded border border-muted/50 bg-container px-3 py-2 outline-none focus:border-action focus:ring-2 focus:ring-action/15" />
-          <button type="submit" disabled={!name.trim()} className="rounded bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+        <form onSubmit={add} className="flex gap-2">
+          <input aria-label={`New ${what}`} placeholder={`New ${what}`} value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-page px-3 py-2 text-sm outline-none focus:border-action" />
+          <button type="submit" disabled={!name.trim()} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
             Add
           </button>
         </form>
       )}
-      {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
-    </Card>
+      {error && (
+        <p role="alert" className="text-sm text-error">
+          {error}
+        </p>
+      )}
+      {open && (
+        <ChipEditor
+          item={open}
+          what={what}
+          withDescription={withDescription}
+          place={manual && items ? { at: items.findIndex((i) => i.id === open.id), of: items.length } : null}
+          onMove={(by) => {
+            const at = items!.findIndex((i) => i.id === open.id);
+            reorder(arrayMove(items!, at, at + by));
+          }}
+          onSave={(change) => run(() => api("PATCH", `${path}/${open.id}`, change)).then(() => setOpen(null))}
+          onDelete={() => run(() => api("DELETE", `${path}/${open.id}`)).then(() => setOpen(null))}
+          onClose={() => setOpen(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function Chip({ item, draggable, onOpen }: { item: Item; draggable: boolean; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !draggable });
+  return (
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={isDragging ? "z-10 opacity-80" : ""}>
+      <button
+        type="button"
+        onClick={onOpen}
+        {...(draggable ? { ...attributes, ...listeners } : {})}
+        aria-label={`${item.name}, ${item.count} recipe${item.count === 1 ? "" : "s"}`}
+        className={`flex items-center gap-2 rounded-full border border-line bg-page py-1 pl-3 pr-1.5 text-sm hover:border-action ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+      >
+        <span className="font-medium">{item.name}</span>
+        <span className="rounded-full bg-container px-1.5 text-xs text-subtle">{item.count}</span>
+      </button>
+    </li>
+  );
+}
+
+// A chip, opened: rename it (and describe it, for collections), its recipes, move it, delete it
+function ChipEditor({ item, what, withDescription, place, onMove, onSave, onDelete, onClose }: { item: Item; what: string; withDescription?: boolean; place: { at: number; of: number } | null; onMove: (by: number) => void; onSave: (change: Record<string, string | null>) => void; onDelete: () => void; onClose: () => void }) {
+  const [name, setName] = useState(item.name);
+  const [description, setDescription] = useState(item.description ?? "");
+  const [asking, setAsking] = useState(false);
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    const change: Record<string, string | null> = {};
+    if (name.trim() && name.trim() !== item.name) change.name = name.trim();
+    if (withDescription && description.trim() !== (item.description ?? "")) change.description = description.trim() || null;
+    if (!Object.keys(change).length) return onClose();
+    onSave(change);
+  };
+  const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 font-normal text-ink outline-none focus:border-action";
+  const href = `#/recipes?${what}=${what === "tag" ? encodeURIComponent(item.name) : item.id}`;
+  return (
+    <Popup title={item.name} onClose={onClose}>
+      <form onSubmit={save} className="flex flex-col gap-3 p-5">
+        <label className="text-sm font-semibold text-subtle">
+          Name
+          <input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} className={field} />
+        </label>
+        {withDescription && (
+          <label className="text-sm font-semibold text-subtle">
+            Description
+            <input aria-label="Description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} className={field} />
+          </label>
+        )}
+        <a href={href} onClick={onClose} className="self-start text-sm font-semibold text-link hover:underline">
+          {item.count} recipe{item.count === 1 ? "" : "s"}
+        </a>
+        {place && (
+          <div className="flex gap-2">
+            <button type="button" disabled={place.at === 0} onClick={() => onMove(-1)} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-pressed disabled:opacity-40">
+              Move earlier
+            </button>
+            <button type="button" disabled={place.at === place.of - 1} onClick={() => onMove(1)} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-pressed disabled:opacity-40">
+              Move later
+            </button>
+          </div>
+        )}
+        <div className="flex items-center gap-2 border-t border-line pt-3">
+          {!asking ? (
+            <button type="button" onClick={() => setAsking(true)} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-error hover:bg-error-subtle">
+              <Trash /> Delete
+            </button>
+          ) : (
+            <button type="button" onClick={onDelete} className="rounded-lg bg-error px-3 py-2 text-sm font-semibold text-white">
+              Delete {item.name}
+            </button>
+          )}
+          <span className="ml-auto" />
+          <button type="submit" className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+            Save
+          </button>
+        </div>
+        {asking && <p className="text-xs text-subtle">The recipes stay; they're just no longer in this {what}.</p>}
+      </form>
+    </Popup>
   );
 }
 
