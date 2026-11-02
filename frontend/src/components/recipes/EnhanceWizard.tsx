@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, getToken } from "../../api";
 import { Popup } from "../Popup";
-import { Check, ChevronRight } from "../Icons";
+import { Check, ChevronRight, EditIcon } from "../Icons";
 import { stepLabel, type Enhancement, type Nutrition, type Recipe } from "../../recipes";
 
 // One line of the progress list from the server
@@ -200,14 +200,8 @@ function Chips({ items, mark, strike, isNew }: { items: string[]; mark?: Set<str
 }
 
 // One part of the recipe: Original on the left, AI suggestion on the right (stacked on a phone),
-// what changed, and the choice: the AI's version or the original
-function Part({ title, badge, changes, use, onUse, original, suggested }: { title: string; badge?: string; changes: string[]; use: boolean; onUse: (v: boolean) => void; original: ReactNode; suggested: ReactNode }) {
-  const choice = (on: boolean, label: string) => (
-    <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 font-medium ${use === on ? "border-action bg-brand-subtle" : "border-line hover:bg-page"}`}>
-      <input type="radio" name={`use-${title}`} checked={use === on} onChange={() => onUse(on)} className="size-4 accent-[var(--color-action)]" />
-      {label}
-    </label>
-  );
+// and what changed. The pencil opens the suggestion to edit it (editor); Done ends editing.
+function Part({ title, badge, changes, original, suggested, editing, onEdit, onDone, editor }: { title: string; badge?: string; changes: string[]; original: ReactNode; suggested: ReactNode; editing: boolean; onEdit: () => void; onDone: () => void; editor: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <h3 className="flex items-center gap-2 text-xl font-bold">
@@ -219,9 +213,25 @@ function Part({ title, badge, changes, use, onUse, original, suggested }: { titl
           <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">Original</h4>
           {original}
         </div>
-        <div className="rounded-xl border border-action/40 p-3">
-          <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-subtle">AI suggestion</h4>
-          {suggested}
+        <div className={`rounded-xl border p-3 ${editing ? "border-action ring-2 ring-action/20" : "border-action/40"}`}>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-subtle">AI suggestion</h4>
+            {!editing && (
+              <button type="button" aria-label="Edit the AI suggestion" title="Edit the AI suggestion" onClick={onEdit} className="flex size-8 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink">
+                <EditIcon />
+              </button>
+            )}
+          </div>
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              {editor}
+              <button type="button" onClick={onDone} className="self-end rounded-lg bg-action px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90">
+                Done
+              </button>
+            </div>
+          ) : (
+            suggested
+          )}
         </div>
       </div>
       {changes.length > 0 && (
@@ -234,26 +244,30 @@ function Part({ title, badge, changes, use, onUse, original, suggested }: { titl
           </ul>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        {choice(true, "Use the AI's version")}
-        {choice(false, "Keep the original")}
-      </div>
     </section>
   );
 }
 
+const box = "w-full rounded-lg border border-line bg-page px-3 py-2 text-sm leading-relaxed outline-none focus:border-action";
+const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
 // Improve with AI: asks the AI to check the recipe (nothing is saved yet), then goes one part at a
 // time (ingredients, instructions, nutrition, categories and tags: only parts with changes), each
-// with the original beside the AI's version, and ends on a summary with Save. Only the parts you
-// keep the AI's version of are saved; what the recipe was stays in the version history.
-// position and onStop: reviewing an import's recipes one by one ("Recipe 3 of 42", Stop reviewing)
-export default function EnhanceWizard({ recipe, onClose, onApplied, position, onStop }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void; position?: { n: number; of: number }; onStop?: () => void }) {
+// with the original beside the AI's version. Reject change or Accept change moves on; after the
+// last part the accepted parts are saved (what the recipe was stays in the version history).
+// The pencil edits the AI's version first. onFinished: the end with nothing accepted (or nothing
+// to change); onClose: the ✕. position and onStop: an import's recipes one by one.
+export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, position, onStop }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void; onFinished?: () => void; position?: { n: number; of: number }; onStop?: () => void }) {
   const [e, setE] = useState<Enhancement | null>(null);
   const [error, setError] = useState("");
   const [applyError, setApplyError] = useState("");
   const [busy, setBusy] = useState(false);
   const [use, setUse] = useState<Record<Key, boolean>>({ steps: false, ingredients: false, nutrition: false, organize: false });
-  const [at, setAt] = useState(0); // which screen
+  const [at, setAt] = useState(0); // which part
+  // The AI's versions as edited here (the pencil), and the part being edited
+  const [mine, setMine] = useState<{ ingredients?: string[]; steps?: string[]; nutrition?: Nutrition | null; categories?: string[]; tags?: string[] }>({});
+  const [editing, setEditing] = useState<Key | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
 
   const [lines, setLines] = useState<Progress[]>([]);
   const [errorStatus, setErrorStatus] = useState(0);
@@ -262,7 +276,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
   // skip: services the person skipped as too slow (asked again without them; the list carries on)
   const check = useCallback(
     (skip: string[] = []) => {
-      const mine = ++run.current; // a newer request wins over an older answer
+      const mineRun = ++run.current; // a newer request wins over an older answer
       stopper.current?.abort();
       const stop = (stopper.current = new AbortController());
       setError("");
@@ -272,20 +286,21 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
         recipe.id,
         {
           step: (p) =>
-            mine === run.current &&
+            mineRun === run.current &&
             setLines((ls) => (skip.length && /^Reading “/.test(p.text) && ls.some((l) => /^Reading “/.test(l.text)) ? ls : [...ls, { ...p, at: Date.now() }])),
-          status: (text) => mine === run.current && setLines((ls) => (ls.length ? [...ls.slice(0, -1), { ...ls[ls.length - 1], detail: text }] : ls)),
+          status: (text) => mineRun === run.current && setLines((ls) => (ls.length ? [...ls.slice(0, -1), { ...ls[ls.length - 1], detail: text }] : ls)),
         },
         { skip, signal: stop.signal }
       )
         .then((r) => {
-          if (mine !== run.current) return;
+          if (mineRun !== run.current) return;
           setE(r);
           setAt(0);
-          setUse({ steps: r.steps.changed, ingredients: r.ingredients.changed, nutrition: r.nutrition.changed, organize: r.organize.changed });
+          setMine({});
+          setUse({ steps: false, ingredients: false, nutrition: false, organize: false });
         })
         .catch((err) => {
-          if (mine !== run.current) return;
+          if (mineRun !== run.current) return;
           setErrorStatus((err as ApiError).status ?? 0);
           setError((err as Error).message);
         });
@@ -305,15 +320,25 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
     check();
   }, [check]);
 
-  async function apply() {
-    if (!e) return;
+  // The AI's version of each part, with any edits made here
+  const sug = e && {
+    ingredients: mine.ingredients ?? e.ingredients.suggested,
+    steps: mine.steps ?? e.steps.suggested,
+    nutrition: mine.nutrition !== undefined ? mine.nutrition : e.nutrition.suggested,
+    categories: mine.categories ?? e.organize.categories,
+    tags: mine.tags ?? e.organize.tags,
+  };
+
+  async function save(choices: Record<Key, boolean>) {
+    if (!e || !sug) return;
+    const body: Record<string, unknown> = {};
+    if (choices.steps && e.steps.changed) body.steps = sug.steps;
+    if (choices.ingredients && e.ingredients.changed) body.ingredients = sug.ingredients;
+    if (choices.nutrition && e.nutrition.changed) body.nutrition = sug.nutrition;
+    if (choices.organize && e.organize.changed) Object.assign(body, { categories: sug.categories, tags: sug.tags });
+    if (!Object.keys(body).length) return (onFinished ?? onClose)();
     setBusy(true);
     setApplyError("");
-    const body: Record<string, unknown> = {};
-    if (use.steps && e.steps.changed) body.steps = e.steps.suggested;
-    if (use.ingredients && e.ingredients.changed) body.ingredients = e.ingredients.suggested;
-    if (use.nutrition && e.nutrition.changed) body.nutrition = e.nutrition.suggested;
-    if (use.organize && e.organize.changed) Object.assign(body, { categories: e.organize.categories, tags: e.organize.tags });
     try {
       onApplied(await api<Recipe>("POST", `/api/recipes/${recipe.id}/enhance/apply`, body));
     } catch (err) {
@@ -325,14 +350,50 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
 
   const cats = recipe.categories.map((c) => c.name);
   const lower = (xs: string[]) => new Set(xs.map((x) => x.toLowerCase()));
-  // The screens: each part with changes, in this order, then Save
-  const parts: { key: Key; title: string; screen: () => ReactNode }[] = !e
+  const startEdit = (key: Key) => {
+    if (!sug) return;
+    setDraft(
+      key === "ingredients"
+        ? { text: sug.ingredients.join("\n") }
+        : key === "steps"
+          ? { text: sug.steps.join("\n") }
+          : key === "organize"
+            ? { categories: sug.categories.join(", "), tags: sug.tags.join(", ") }
+            : Object.fromEntries([...NUTRIENTS.map(([k]) => [k, sug.nutrition?.[k] == null ? "" : String(sug.nutrition[k])]), ["servingSize", sug.nutrition?.servingSize ?? ""]])
+    );
+    setEditing(key);
+  };
+  const finishEdit = () => {
+    if (!editing || !e) return;
+    const lines = (t: string) => t.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (editing === "ingredients") setMine({ ...mine, ingredients: lines(draft.text) });
+    if (editing === "steps") setMine({ ...mine, steps: lines(draft.text) });
+    if (editing === "organize") setMine({ ...mine, categories: list(draft.categories), tags: list(draft.tags).map((t) => t.toLowerCase()) });
+    if (editing === "nutrition") {
+      const base = (sug?.nutrition ?? { source: "ai", servings: recipe.servings }) as Nutrition;
+      const n = { ...base } as Record<string, unknown>;
+      for (const [k] of NUTRIENTS) n[k] = draft[k]?.trim() ? Number(draft[k]) : null;
+      n.servingSize = draft.servingSize?.trim() || null;
+      setMine({ ...mine, nutrition: n as unknown as Nutrition });
+    }
+    setEditing(null);
+  };
+  const textEditor = <textarea aria-label="AI suggestion" rows={10} value={draft.text ?? ""} onChange={(ev) => setDraft({ ...draft, text: ev.target.value })} className={box} />;
+  const field = (key: string, label: string) => (
+    <label key={key} className="flex flex-col gap-0.5 text-xs font-semibold text-subtle">
+      {label}
+      <input aria-label={label} value={draft[key] ?? ""} onChange={(ev) => setDraft({ ...draft, [key]: ev.target.value })} className={box} />
+    </label>
+  );
+
+  // The screens: each part with changes, in this order
+  const parts: { key: Key; title: string; screen: () => ReactNode }[] = !e || !sug
     ? []
     : ([
         {
           key: "ingredients",
           title: "Ingredients",
-          screen: () => <Part title="Ingredients" changes={e.ingredients.changes} use={use.ingredients} onUse={(v) => setUse({ ...use, ingredients: v })} original={<Lines lines={ingredientLines(recipe)} />} suggested={<Lines lines={e.ingredients.suggested} against={ingredientLines(recipe)} />} />,
+          screen: () => <Part title="Ingredients" changes={e.ingredients.changes} editing={editing === "ingredients"} onEdit={() => startEdit("ingredients")} onDone={finishEdit} editor={textEditor} original={<Lines lines={ingredientLines(recipe)} />} suggested={<Lines lines={sug.ingredients} against={ingredientLines(recipe)} />} />,
         },
         {
           key: "steps",
@@ -342,17 +403,30 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
               title="Instructions"
               badge={e.steps.mode === "expanded" ? "Expanded" : e.steps.mode === "filled" ? "Filled gaps" : undefined}
               changes={e.steps.changes}
-              use={use.steps}
-              onUse={(v) => setUse({ ...use, steps: v })}
+              editing={editing === "steps"}
+              onEdit={() => startEdit("steps")}
+              onDone={finishEdit}
+              editor={textEditor}
               original={<Lines lines={stepLines(recipe)} />}
-              suggested={<Lines lines={e.steps.suggested} against={stepLines(recipe)} />}
+              suggested={<Lines lines={sug.steps} against={stepLines(recipe)} />}
             />
           ),
         },
         {
           key: "nutrition",
           title: "Nutrition",
-          screen: () => <Part title="Nutrition" changes={e.nutrition.changes} use={use.nutrition} onUse={(v) => setUse({ ...use, nutrition: v })} original={<NutritionList n={recipe.nutrition} />} suggested={<NutritionList n={e.nutrition.suggested} />} />,
+          screen: () => (
+            <Part
+              title="Nutrition"
+              changes={e.nutrition.changes}
+              editing={editing === "nutrition"}
+              onEdit={() => startEdit("nutrition")}
+              onDone={finishEdit}
+              editor={<div className="grid grid-cols-2 gap-2">{[field("servingSize", "Serving size"), ...NUTRIENTS.map(([k, label, unit]) => field(k, `${label} (${unit})`))]}</div>}
+              original={<NutritionList n={recipe.nutrition} />}
+              suggested={<NutritionList n={sug.nutrition} />}
+            />
+          ),
         },
         {
           key: "organize",
@@ -361,43 +435,64 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
             <Part
               title="Categories and tags"
               changes={e.organize.changes}
-              use={use.organize}
-              onUse={(v) => setUse({ ...use, organize: v })}
+              editing={editing === "organize"}
+              onEdit={() => startEdit("organize")}
+              onDone={finishEdit}
+              editor={
+                <div className="flex flex-col gap-2">
+                  {field("categories", "Categories")}
+                  {field("tags", "Tags")}
+                  <p className="text-xs text-muted">Separate them with commas.</p>
+                </div>
+              }
               original={
                 <div className="space-y-2">
                   <p className="text-sm text-subtle">Categories</p>
                   <Chips items={cats} />
                   <p className="text-sm text-subtle">Tags</p>
-                  <Chips items={recipe.tags} strike={new Set([...lower(recipe.tags)].filter((t) => !lower(e.organize.tags).has(t)))} />
+                  <Chips items={recipe.tags} strike={new Set([...lower(recipe.tags)].filter((t) => !lower(sug.tags).has(t)))} />
                 </div>
               }
               suggested={
                 <div className="space-y-2">
                   <p className="text-sm text-subtle">Categories</p>
-                  <Chips items={e.organize.categories} mark={new Set([...lower(e.organize.categories)].filter((c) => !lower(cats).has(c)))} isNew={lower(e.organize.newCategories)} />
+                  <Chips items={sug.categories} mark={new Set([...lower(sug.categories)].filter((c) => !lower(cats).has(c)))} isNew={lower(e.organize.newCategories)} />
                   <p className="text-sm text-subtle">Tags</p>
-                  <Chips items={e.organize.tags} mark={new Set([...lower(e.organize.tags)].filter((t) => !lower(recipe.tags).has(t)))} />
+                  <Chips items={sug.tags} mark={new Set([...lower(sug.tags)].filter((t) => !lower(recipe.tags).has(t)))} />
                 </div>
               }
             />
           ),
         },
       ] as const).filter((p) => e[p.key].changed);
-  const total = parts.length + 1; // (+ the Save screen)
-  const onSave = !!e && at >= parts.length;
-  const anyTicked = parts.some((p) => use[p.key]);
-  const button = "rounded-lg px-4 py-2 font-semibold";
+
+  // Reject change / Accept change: remember the choice and move on; after the last part, save
+  const choose = (accept: boolean) => {
+    const key = parts[at].key;
+    const next = { ...use, [key]: accept };
+    setUse(next);
+    if (at < parts.length - 1) setAt(at + 1);
+    else void save(next);
+  };
+  const button = "rounded-lg px-4 py-2 font-semibold disabled:opacity-50";
 
   return (
     <Popup title={recipe.title} onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         {e && parts.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold text-action">
-              {position ? `Recipe ${position.n} of ${position.of} · ` : ""}Improve with AI · Step {Math.min(at, parts.length) + 1} of {total}
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-action">
+                {position ? `Recipe ${position.n} of ${position.of} · ` : ""}Improve with AI · Step {at + 1} of {parts.length}
+              </p>
+              {onStop && (
+                <button type="button" onClick={onStop} className="text-sm font-semibold text-subtle hover:underline">
+                  Stop reviewing
+                </button>
+              )}
+            </div>
             <div className="flex gap-1" aria-hidden>
-              {Array.from({ length: total }, (_, i) => (
+              {parts.map((_, i) => (
                 <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= at ? "bg-action" : "bg-line"}`} />
               ))}
             </div>
@@ -419,7 +514,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
           <>
             <p className="rounded-xl bg-page p-4">The AI didn't find anything to change. The recipe looks good as it is.</p>
             <div className="flex justify-end">
-              <button type="button" onClick={onClose} className={`${button} bg-action text-white hover:opacity-90`}>
+              <button type="button" onClick={() => (onFinished ?? onClose)()} className={`${button} bg-action text-white hover:opacity-90`}>
                 Done
               </button>
             </div>
@@ -427,59 +522,27 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, position, on
         )}
         {e && parts.length > 0 && (
           <>
-            {!onSave && parts[at].screen()}
-            {onSave && (
-              <section aria-label="Save" className="flex flex-col gap-3">
-                <h3 className="text-xl font-bold">Save</h3>
-                <ul aria-label="Your choices" className="divide-y divide-line rounded-xl border border-line">
-                  {parts.map((p, i) => (
-                    <li key={p.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                      <span className="font-semibold">{p.title}</span>
-                      <button type="button" onClick={() => setAt(i)} className="text-sm text-link hover:underline">
-                        {use[p.key] ? "AI's version" : "Original"}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-sm text-subtle">The recipe as it is now stays in Version history.</p>
-                {applyError && (
-                  <p role="alert" className="rounded-xl bg-error-subtle p-3">
-                    {applyError}
-                  </p>
-                )}
-                <div className="flex flex-wrap justify-end gap-3">
-                  {!anyTicked && (
-                    <button type="button" onClick={onClose} className={`${button} border border-line hover:bg-page`}>
-                      Close without changes
-                    </button>
-                  )}
-                  <button type="button" onClick={apply} disabled={busy || !anyTicked} className={`${button} bg-action text-white hover:opacity-90 disabled:opacity-50`}>
-                    {busy ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </section>
+            {parts[at].screen()}
+            {applyError && (
+              <p role="alert" className="rounded-xl bg-error-subtle p-3">
+                {applyError}
+              </p>
             )}
-            <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-              <button type="button" onClick={onClose} className="px-2 py-2 font-semibold text-subtle hover:underline">
-                Skip
-              </button>
-              {onStop && (
-                <button type="button" onClick={onStop} className="px-2 py-2 font-semibold text-subtle hover:underline">
-                  Stop reviewing
+            <div role="group" aria-label="Your choice" className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+              {at > 0 && (
+                <button type="button" disabled={!!editing || busy} onClick={() => setAt(at - 1)} className={`${button} text-subtle hover:bg-page`}>
+                  Prior
                 </button>
               )}
               <span className="ml-auto" />
-              {at > 0 && (
-                <button type="button" onClick={() => setAt(at - 1)} className={`${button} border border-line hover:bg-page`}>
-                  Back
-                </button>
-              )}
-              {!onSave ? (
-                <button type="button" onClick={() => setAt(at + 1)} className={`${button} bg-action text-white hover:opacity-90`}>
-                  Next
-                </button>
-              ) : null}
+              <button type="button" disabled={!!editing || busy} onClick={() => choose(false)} className={`${button} border border-line hover:bg-page`}>
+                Reject change
+              </button>
+              <button type="button" disabled={!!editing || busy} onClick={() => choose(true)} className={`${button} bg-action text-white hover:opacity-90`}>
+                {busy ? "Saving…" : "Accept change"}
+              </button>
             </div>
+            {editing && <p className="-mt-2 text-right text-sm text-subtle">Press Done to finish editing first.</p>}
           </>
         )}
       </div>

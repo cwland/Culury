@@ -8,7 +8,7 @@ import type { Recipe } from "../../recipes";
 const recipe = recipeJson() as unknown as Recipe;
 const suggestion = (over: Record<string, unknown> = {}) => ({
   steps: { suggested: ["Brown the beef over medium-high heat, about 8 minutes.", "Simmer for 30 minutes."], changes: ["Added how long to brown the beef."], changed: true },
-  ingredients: { suggested: ["1 lb ground beef", "2 tbsp chili powder", "1 tsp salt"], changes: ["Added salt."], changed: true },
+  ingredients: { suggested: ["1 lb ground beef", "2 tbsp ancho chili powder"], changes: ["Chili powder: ancho, as the steps say."], changed: true },
   nutrition: { suggested: { calories: 410, fat: 22, saturatedFat: 8, carbs: 10, fiber: 3, sugar: 2, protein: 33, sodium: 640, source: "ai", servings: 4, note: null }, changes: ["Estimated from the ingredients."], changed: true },
   organize: { categories: ["Dinner", "Soup"], newCategories: ["Soup"], tags: ["chili"], changes: ["Added Soup.", "Swapped beef for chili."], changed: true },
   ...over,
@@ -21,103 +21,116 @@ const open = (routes: Record<string, any> = {}) => {
   return { server, onApplied, onClose };
 };
 
-// The review goes one part at a time: this moves to a part by its name
+// The review goes one part at a time: this moves to a part by its name (accepting the ones before)
 const goTo = async (u: ReturnType<typeof userEvent.setup>, name: string) => {
-  await screen.findByText(/^Improve with AI · Step/, undefined, { timeout: 3000 }); // (the suggestions are in)
-  for (let i = 0; i < 6 && !screen.queryByRole("region", { name }); i++) await u.click(await screen.findByRole("button", { name: "Next" }, { timeout: 3000 }));
+  await screen.findByText(/Improve with AI · Step/, undefined, { timeout: 3000 }); // (the suggestions are in)
+  for (let i = 0; i < 6 && !screen.queryByRole("region", { name }); i++) await u.click(await screen.findByRole("button", { name: "Accept change" }, { timeout: 3000 }));
   return screen.getByRole("region", { name });
 };
+const footerButtons = () => within(screen.getByRole("group", { name: "Your choice" })).getAllByRole("button").map((b) => b.textContent);
 
 describe("Improve with AI, one part at a time", () => {
   it("the recipe's name is in the header the whole way, with which step it's on", async () => {
     const u = userEvent.setup();
     open();
     const dlg = await screen.findByRole("dialog", { name: "Weeknight Chili" });
-    expect(await within(dlg).findByText("Improve with AI · Step 1 of 5", undefined, { timeout: 3000 })).toBeInTheDocument();
-    await u.click(within(dlg).getByRole("button", { name: "Next" }));
-    expect(within(dlg).getByText("Improve with AI · Step 2 of 5")).toBeInTheDocument();
+    expect(await within(dlg).findByText("Improve with AI · Step 1 of 4", undefined, { timeout: 3000 })).toBeInTheDocument();
+    await u.click(within(dlg).getByRole("button", { name: "Accept change" }));
+    expect(within(dlg).getByText("Improve with AI · Step 2 of 4")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Weeknight Chili" })).toBe(dlg);
   });
 
-  it("ingredients first, then instructions, nutrition, categories and tags: one screen each", async () => {
+  it("the bottom has only Reject change and Accept change (and Prior after the first); both move on", async () => {
     const u = userEvent.setup();
     open();
     const ing = await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
-    expect(screen.queryByRole("region", { name: "Instructions" })).toBeNull();
     expect(within(ing).getByRole("heading", { name: "Original" })).toBeInTheDocument();
     expect(within(ing).getByRole("heading", { name: "AI suggestion" })).toBeInTheDocument();
-    expect(within(ing).getByText("1 tsp salt").closest("mark")).not.toBeNull();
-    expect(within(ing).getByText("Added salt.")).toBeInTheDocument();
-    expect(within(ing).getByRole("radio", { name: "Use the AI's version" })).toBeChecked();
-    await u.click(screen.getByRole("button", { name: "Next" }));
-    const steps = screen.getByRole("region", { name: "Instructions" });
-    expect(within(steps).getByText("Brown the beef.")).toBeInTheDocument();
-    expect(within(steps).getByText("Brown the beef over medium-high heat, about 8 minutes.").closest("mark")).not.toBeNull();
-    await u.click(screen.getByRole("button", { name: "Next" }));
-    const nut = screen.getByRole("region", { name: "Nutrition" });
-    expect(within(nut).getByText(/none/i)).toBeInTheDocument();
-    expect(within(nut).getByText(/410/)).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "Next" }));
-    const org = screen.getByRole("region", { name: "Categories and tags" });
-    expect(within(org).getByText("new")).toBeInTheDocument();
-    expect(within(org).getByText("beef").closest("s")).not.toBeNull();
-    // Back goes back
-    await u.click(screen.getByRole("button", { name: "Back" }));
+    expect(within(ing).getByText("2 tbsp ancho chili powder").closest("mark")).not.toBeNull();
+    expect(footerButtons()).toEqual(["Reject change", "Accept change"]);
+    await u.click(screen.getByRole("button", { name: "Reject change" }));
+    expect(screen.getByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    expect(footerButtons()).toEqual(["Prior", "Reject change", "Accept change"]);
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
     expect(screen.getByRole("region", { name: "Nutrition" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Prior" }));
+    expect(screen.getByRole("region", { name: "Instructions" })).toBeInTheDocument();
+    for (const gone of ["Next", "Back", "Skip", "Save"]) expect([gone, screen.queryByRole("button", { name: gone })]).toEqual([gone, null]);
   });
 
-  it("the last screen sums up the choices; Save sends only the parts you kept the AI's version of", async () => {
+  it("the last choice saves the parts you accepted, by itself", async () => {
     const u = userEvent.setup();
     const { server, onApplied } = open();
-    const nut = await goTo(u, "Nutrition");
-    await u.click(within(nut).getByRole("radio", { name: "Keep the original" }));
-    const summary = await goTo(u, "Save");
-    expect(within(summary).getByRole("list", { name: "Your choices" })).toHaveTextContent(/Ingredients.*AI's version.*Instructions.*AI's version.*Nutrition.*Original.*Categories and tags.*AI's version/);
-    expect(summary).toHaveTextContent("The recipe as it is now stays in Version history.");
-    await u.click(within(summary).getByRole("button", { name: "Save" }));
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Accept change" })); // ingredients
+    await u.click(screen.getByRole("button", { name: "Accept change" })); // instructions
+    await u.click(screen.getByRole("button", { name: "Reject change" })); // nutrition
+    await u.click(screen.getByRole("button", { name: "Accept change" })); // categories and tags
     await vi.waitFor(() => expect(onApplied).toHaveBeenCalled());
     const body = server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body;
     expect(Object.keys(body).sort()).toEqual(["categories", "ingredients", "steps", "tags"]);
-    expect(body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili"], ingredients: ["1 lb ground beef", "2 tbsp chili powder", "1 tsp salt"] });
+    expect(body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili"], ingredients: ["1 lb ground beef", "2 tbsp ancho chili powder"] });
     expect(onApplied.mock.calls[0][0]).toMatchObject({ title: "Applied" });
   });
 
-  it("keeping the original everywhere: nothing to save, and it says so", async () => {
+  it("rejecting everything saves nothing and says it's finished", async () => {
     const u = userEvent.setup();
-    const { server, onClose } = open();
-    for (const name of ["Ingredients", "Instructions", "Nutrition", "Categories and tags"]) await u.click(within(await goTo(u, name)).getByRole("radio", { name: "Keep the original" }));
-    const summary = await goTo(u, "Save");
-    expect(within(summary).getByRole("button", { name: "Save" })).toBeDisabled();
-    await u.click(within(summary).getByRole("button", { name: "Close without changes" }));
-    expect(onClose).toHaveBeenCalled();
+    const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion() });
+    const onFinished = vi.fn();
+    render(<EnhanceWizard recipe={recipe} onClose={() => {}} onApplied={() => {}} onFinished={onFinished} />);
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    for (let i = 0; i < 4; i++) await u.click(screen.getByRole("button", { name: "Reject change" }));
+    await vi.waitFor(() => expect(onFinished).toHaveBeenCalled());
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance"]);
   });
 
-  it("a part with no changes is skipped", async () => {
+  it("the pencil opens the AI suggestion to edit it; Done ends editing, and until then the choice buttons wait", async () => {
     const u = userEvent.setup();
-    open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: ["Brown the beef.", "Simmer for 30 minutes."], changes: [], changed: false } }) });
-    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
-    expect(screen.getByText("Improve with AI · Step 1 of 4")).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("region", { name: "Nutrition" })).toBeInTheDocument();
+    const { server, onApplied } = open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: [], changes: [], changed: false }, nutrition: { suggested: null, changes: [], changed: false }, organize: { categories: [], newCategories: [], tags: [], changes: [], changed: false } }) });
+    const ing = await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    await u.click(within(ing).getByRole("button", { name: "Edit the AI suggestion" }));
+    const box = within(ing).getByRole("textbox", { name: "AI suggestion" });
+    expect(box).toHaveValue("1 lb ground beef\n2 tbsp ancho chili powder");
+    expect(screen.getByRole("button", { name: "Accept change" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject change" })).toBeDisabled();
+    await u.clear(box);
+    await u.type(box, "1 lb ground chuck\n2 tbsp ancho chili powder");
+    await u.click(within(ing).getByRole("button", { name: "Done" }));
+    expect(within(ing).getByText("1 lb ground chuck")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
+    await vi.waitFor(() => expect(onApplied).toHaveBeenCalled());
+    expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body).toEqual({ ingredients: ["1 lb ground chuck", "2 tbsp ancho chili powder"] });
+  });
+
+  it("categories and tags can be edited too", async () => {
+    const u = userEvent.setup();
+    const { server } = open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: [], changes: [], changed: false }, ingredients: { suggested: [], changes: [], changed: false }, nutrition: { suggested: null, changes: [], changed: false } }) });
+    const org = await screen.findByRole("region", { name: "Categories and tags" }, { timeout: 3000 });
+    await u.click(within(org).getByRole("button", { name: "Edit the AI suggestion" }));
+    const tags = within(org).getByRole("textbox", { name: "Tags" });
+    await u.clear(tags);
+    await u.type(tags, "chili, weeknight");
+    await u.click(within(org).getByRole("button", { name: "Done" }));
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")?.body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili", "weeknight"] }));
   });
 
   it("nothing to change at all: says so, with a Done", async () => {
     const u = userEvent.setup();
     const none = { suggested: null, changes: [], changed: false };
-    const { onClose } = open({
-      "POST /api/recipes/7/enhance": () => ({ steps: { ...none, suggested: [] }, ingredients: { ...none, suggested: [] }, nutrition: none, organize: { categories: [], newCategories: [], tags: [], changes: [], changed: false } }),
-    });
+    const onFinished = vi.fn();
+    fakeServer({ "POST /api/recipes/7/enhance": () => ({ steps: { ...none, suggested: [] }, ingredients: { ...none, suggested: [] }, nutrition: none, organize: { categories: [], newCategories: [], tags: [], changes: [], changed: false } }) });
+    render(<EnhanceWizard recipe={recipe} onClose={() => {}} onApplied={() => {}} onFinished={onFinished} />);
     expect(await screen.findByText("The AI didn't find anything to change. The recipe looks good as it is.", undefined, { timeout: 3000 })).toBeInTheDocument();
     await u.click(screen.getByRole("button", { name: "Done" }));
-    expect(onClose).toHaveBeenCalled();
+    expect(onFinished).toHaveBeenCalled();
   });
 
-  it("Skip this recipe (any time) closes without saving anything", async () => {
+  it("the ✕ closes without saving anything", async () => {
     const u = userEvent.setup();
     const { server, onClose } = open();
     await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
-    await u.click(screen.getByRole("button", { name: "Skip" }));
+    await u.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance"]);
   });
@@ -129,7 +142,7 @@ describe("Improve with AI, one part at a time", () => {
       "POST /api/recipes/7/enhance": () => (++calls === 1 ? { status: 502, json: { error: "OpenRouter's answer couldn't be read. Try again, or try another AI service." } } : suggestion()),
     });
     expect(await screen.findByText(/couldn't be read/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Accept change" })).toBeNull();
     await u.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 })).toBeInTheDocument();
     expect(server.writes().filter((w) => w.path === "/api/recipes/7/enhance")).toHaveLength(2);
@@ -138,10 +151,21 @@ describe("Improve with AI, one part at a time", () => {
   it("a recipe deleted meanwhile: saving shows the message instead of crashing", async () => {
     const u = userEvent.setup();
     const { onApplied } = open({ "POST /api/recipes/7/enhance/apply": () => ({ status: 404, json: { error: "Recipe not found" } }) });
-    const summary = await goTo(u, "Save");
-    await u.click(within(summary).getByRole("button", { name: "Save" }));
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    for (let i = 0; i < 4; i++) await u.click(screen.getByRole("button", { name: "Accept change" }));
     expect(await screen.findByText("Recipe not found")).toBeInTheDocument();
     expect(onApplied).not.toHaveBeenCalled();
+  });
+
+  it("in a batch: which recipe it is, and Stop reviewing up top", async () => {
+    const u = userEvent.setup();
+    fakeServer({ "POST /api/recipes/7/enhance": () => suggestion() });
+    const onStop = vi.fn();
+    render(<EnhanceWizard recipe={recipe} onClose={() => {}} onApplied={() => {}} position={{ n: 3, of: 42 }} onStop={onStop} />);
+    expect(await screen.findByText("Recipe 3 of 42 · Improve with AI · Step 1 of 4", undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(footerButtons()).toEqual(["Reject change", "Accept change"]);
+    await u.click(screen.getByRole("button", { name: "Stop reviewing" }));
+    expect(onStop).toHaveBeenCalled();
   });
 });
 

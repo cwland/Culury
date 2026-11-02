@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, uploadPhoto } from "../../api";
 import { formatMinutes, ingredientsText, listAddress, parseMinutes, parseServings, siteName, stepsText, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
-import { BackIcon, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
+import { BackIcon, Check, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
 import { OrganizeDialog } from "./OrganizeDialog";
@@ -79,6 +79,13 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
   const [organizing, setOrganizing] = useState(false);
   // Editing in place: one section at a time, with its text while it's being edited
   const [editing, setEditing] = useState<Section | null>(startEditing ? "details" : null);
+  // "Recipe added" / "Recipe updated" at the top for a moment, after the AI wizard
+  const [done, setDone] = useState<string | null>(null);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(null), 3500);
+    return () => clearTimeout(t);
+  }, [done]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   // Clicking elsewhere on the page (not a button, link or field) closes the section being edited;
   // with changes made, it asks first
@@ -483,8 +490,19 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
           onApplied={(updated) => {
             setR(updated);
             setEnhancing(false);
+            setDone(imported ? "Recipe added" : "Recipe updated");
+          }}
+          onFinished={() => {
+            setEnhancing(false);
+            skipAiCheck();
+            if (imported) setDone("Recipe added");
           }}
         />
+      )}
+      {done && (
+        <div role="status" aria-label="Done" className="fixed inset-x-0 top-4 z-[70] mx-auto flex w-fit items-center gap-2 rounded-full bg-ink px-5 py-2.5 font-semibold text-white shadow-lg">
+          <Check className="size-4" /> {done}
+        </div>
       )}
       {askDiscard && (
         <Popup title="Discard changes?" onClose={() => setAskDiscard(false)}>

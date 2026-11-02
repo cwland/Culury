@@ -105,6 +105,7 @@ export default function ReviewImport({ job }: { job: number }) {
           position={{ n: progress.at + 1, of: total }}
           onApplied={() => move("improved")}
           onClose={() => move("skipped")}
+          onFinished={() => move("skipped")}
           onStop={() => setStopped(true)}
         />
       )}

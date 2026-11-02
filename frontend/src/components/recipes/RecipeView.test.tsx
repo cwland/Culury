@@ -22,6 +22,12 @@ beforeEach(() => {
   window.location.hash = "#/recipes/7";
 });
 
+// Through the wizard: Accept change on every part (the last one saves)
+const acceptAll = async (u: ReturnType<typeof userEvent.setup>) => {
+  await screen.findByRole("button", { name: "Accept change" }, { timeout: 3000 });
+  for (let k = 0; k < 6 && screen.queryByRole("button", { name: "Accept change" }); k++) await u.click(screen.getByRole("button", { name: "Accept change" }));
+};
+
 describe("fresh herbs", () => {
   it("show the dried amount next to them, and it scales with the recipe", async () => {
     window.location.hash = "#/recipes/7";
@@ -69,6 +75,18 @@ describe("AI Enhance on the recipe page", () => {
     expect(note).toHaveTextContent("The site blocked the import, so this came from a saved copy on the Wayback Machine (December 1, 2025). A saved copy can be older than the recipe on the site.");
   });
 
+  it("a just-imported recipe: after the last choice it's saved, 'Recipe added' shows at the top, and the recipe is there", async () => {
+    window.location.hash = "#/recipes/7?imported=1";
+    server(on, recipeJson(), { "POST /api/recipes/7/enhance/apply": () => recipeJson({ steps: [{ text: "Brown the beef well." }] }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await acceptAll(u);
+    const done = await screen.findByRole("status", { name: "Done" });
+    expect(done).toHaveTextContent("Recipe added");
+    expect(screen.queryByRole("dialog", { name: "Weeknight Chili" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Brown the beef well.");
+  });
+
   it("imported with AI Enhance off: no review opens", async () => {
     window.location.hash = "#/recipes/7?imported=1";
     server({ ready: true, photos: false, enhance: false });
@@ -104,7 +122,7 @@ describe("AI Enhance on the recipe page", () => {
     expect(await screen.findByRole("dialog", { name: "Weeknight Chili" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Instructions" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "AI check offer" })).toBeNull();
-    await u.click(screen.getByRole("button", { name: "Skip" }));
+    await u.click(within(screen.getByRole("dialog", { name: "Weeknight Chili" })).getByRole("button", { name: "Close" }));
     await u.click(screen.getByRole("button", { name: "Improve with AI" }));
     expect(await screen.findByRole("dialog", { name: "Weeknight Chili" })).toBeInTheDocument();
   });
@@ -115,9 +133,9 @@ describe("AI Enhance on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
-    await u.click(await screen.findByRole("button", { name: "Next" }, { timeout: 3000 }));
-    await u.click(screen.getByRole("button", { name: "Save" }));
+    await acceptAll(u);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Weeknight Chili" })).toBeNull());
+    expect(await screen.findByRole("status", { name: "Done" })).toHaveTextContent("Recipe updated");
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent(/Brown the beef well, about 8 minutes/);
     expect(screen.queryByRole("button", { name: /Undo/ })).toBeNull();
     expect(s.writes().map((w) => w.path)).toEqual(["/api/recipes/7/enhance", "/api/recipes/7/enhance/apply"]);
@@ -257,7 +275,8 @@ describe("Auto nutrition on the recipe page", () => {
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
     await u.click(await screen.findByRole("button", { name: "Improve with AI" }));
-    await u.click(await screen.findByRole("button", { name: "Skip" }, { timeout: 3000 }));
+    await screen.findByRole("button", { name: "Accept change" }, { timeout: 3000 });
+    await u.click(within(screen.getByRole("dialog", { name: "Weeknight Chili" })).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(skips(s)).toHaveLength(1));
   });
 

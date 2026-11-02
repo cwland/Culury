@@ -29,19 +29,18 @@ beforeEach(() => {
 });
 
 describe("reviewing imported recipes one by one", () => {
-  it("goes through each recipe, with its name and place in the header; Skip moves on; Save improves it", async () => {
+  it("goes through each recipe, with its name and place in the header; rejecting moves on, accepting improves it", async () => {
     const s = routes();
     const u = userEvent.setup();
     render(<ReviewImport job={31} />);
     const first = await screen.findByRole("dialog", { name: "Chili" });
-    expect(await within(first).findByText(/^Recipe 1 of 3 · Improve with AI · Step 1 of 2$/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    await u.click(within(first).getByRole("button", { name: "Skip" }));
+    expect(await within(first).findByText(/^Recipe 1 of 3 · Improve with AI · Step 1 of 1$/, undefined, { timeout: 3000 })).toBeInTheDocument();
+    await u.click(within(first).getByRole("button", { name: "Reject change" }));
     const second = await screen.findByRole("dialog", { name: "Pancakes" });
     expect(await within(second).findByText(/^Recipe 2 of 3/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    await u.click(within(second).getByRole("button", { name: "Next" }));
-    await u.click(within(second).getByRole("button", { name: "Save" }));
+    await u.click(within(second).getByRole("button", { name: "Accept change" }));
     const third = await screen.findByRole("dialog", { name: "Soup" });
-    await u.click(await within(third).findByRole("button", { name: "Skip" }, { timeout: 3000 }));
+    await u.click(await within(third).findByRole("button", { name: "Close" }, { timeout: 3000 })); // the ✕ skips it too
     expect(await screen.findByRole("status", { name: "Review finished" })).toHaveTextContent("Reviewed 3 recipes: 1 improved, 2 skipped.");
     expect(s.writes().filter((w) => w.path.endsWith("/apply")).map((w) => w.path)).toEqual(["/api/recipes/6/enhance/apply"]);
   });
@@ -59,7 +58,7 @@ describe("reviewing imported recipes one by one", () => {
     routes();
     const u = userEvent.setup();
     const { unmount } = render(<ReviewImport job={31} />);
-    await u.click(await within(await screen.findByRole("dialog", { name: "Chili" })).findByRole("button", { name: "Skip" }, { timeout: 3000 }));
+    await u.click(await within(await screen.findByRole("dialog", { name: "Chili" })).findByRole("button", { name: "Reject change" }, { timeout: 3000 }));
     await screen.findByRole("dialog", { name: "Pancakes" });
     unmount();
     render(<ReviewImport job={31} />);
