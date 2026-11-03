@@ -163,3 +163,15 @@ describe("a note sent from a page", () => {
     expect(withPage.body.title).toBe("Less salt next time");
   });
 });
+
+describe("imported from the inbox", () => {
+  it("the item moves to Imported, with its recipe; deleting the recipe keeps the entry", async () => {
+    const a = (await t.api("POST", "/api/inbox", link)).body;
+    const recipe = (await t.api("POST", "/api/recipes", { title: "Pork Roast", ingredients: "1 pork butt" })).body;
+    expect((await t.api("PATCH", `/api/inbox/${a.id}`, { status: "PROCESSED", recipeId: recipe.id })).body).toMatchObject({ status: "PROCESSED", recipeId: recipe.id });
+    expect((await t.api("GET", "/api/inbox?status=PROCESSED")).body).toMatchObject([{ id: a.id, recipeId: recipe.id }]);
+    await t.api("DELETE", `/api/recipes/${recipe.id}`);
+    expect((await t.api("GET", "/api/inbox?status=PROCESSED")).body).toMatchObject([{ id: a.id, recipeId: null }]);
+    expect((await t.api("PATCH", `/api/inbox/${a.id}`, { status: "PROCESSED", recipeId: 99999 })).status).toBe(400);
+  });
+});

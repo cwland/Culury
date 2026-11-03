@@ -19,9 +19,14 @@ export interface InboxItem {
   metadata: { pageTitle?: string; favIconUrl?: string; capturedAt?: string } | null;
   status: "PENDING" | "PROCESSED" | "DISMISSED";
   sentBy: string | null;
+  recipeId?: number | null; // imported: the recipe it became (null once that recipe is deleted)
   createdAt: string;
   reviewedAt: string | null;
 }
+
+type Tab = "PENDING" | "PROCESSED" | "DISMISSED";
+const TABS: Tab[] = ["PENDING", "PROCESSED", "DISMISSED"];
+const TAB_LABEL: Record<Tab, string> = { PENDING: "Waiting", PROCESSED: "Imported", DISMISSED: "Dismissed" };
 
 const TYPE_LABEL: Record<InboxType, string> = { RECIPE_LINK: "Recipe link", INSTAGRAM_LINK: "Instagram", TEXT_NOTE: "Note", RAW_RECIPE_DATA: "Recipe data" };
 
@@ -93,13 +98,13 @@ function pageFor(item: InboxItem) {
 }
 
 export function InboxDrawer({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<"PENDING" | "DISMISSED">("PENDING");
+  const [tab, setTab] = useState<Tab>("PENDING");
   const [items, setItems] = useState<InboxItem[] | null>(null);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState<InboxItem | null>(null);
 
   const load = useCallback(() => {
-    api<InboxItem[]>("GET", `/api/inbox${tab === "DISMISSED" ? "?status=DISMISSED" : ""}`)
+    api<InboxItem[]>("GET", `/api/inbox${tab === "PENDING" ? "" : `?status=${tab}`}`)
       .then(setItems)
       .catch((e) => setError((e as Error).message));
   }, [tab]);
@@ -138,9 +143,9 @@ export function InboxDrawer({ onClose }: { onClose: () => void }) {
           </button>
         </header>
         <div role="tablist" aria-label="Inbox" className="mx-5 mt-4 inline-flex self-start rounded-lg bg-page p-1 text-sm font-semibold">
-          {(["PENDING", "DISMISSED"] as const).map((t) => (
+          {TABS.map((t) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`rounded-md px-3 py-1.5 ${tab === t ? "bg-container shadow-sm" : "text-subtle"}`}>
-              {t === "PENDING" ? "Waiting" : "Dismissed"}
+              {TAB_LABEL[t]}
             </button>
           ))}
         </div>
@@ -157,13 +162,15 @@ export function InboxDrawer({ onClose }: { onClose: () => void }) {
                   <p className="font-semibold text-ink">Nothing waiting.</p>
                   <p className="mt-1 text-sm">Links, notes and recipes you send from the Culury Companion browser extension land here, to import when you're ready. Make it a key in Settings › API keys (Inbox only).</p>
                 </>
+              ) : tab === "PROCESSED" ? (
+                <p>Nothing imported yet. Recipes imported from here, or straight from the Culury Companion, are listed here.</p>
               ) : (
                 <p>Nothing dismissed.</p>
               )}
             </div>
           )}
           {!!items?.length && (
-            <ul aria-label={tab === "PENDING" ? "Waiting" : "Dismissed"} className="flex flex-col gap-3">
+            <ul aria-label={TAB_LABEL[tab]} className="flex flex-col gap-3">
               {items.map((item) => (
                 <Card key={item.id} item={item}>
                   {tab === "PENDING" ? (
@@ -173,6 +180,19 @@ export function InboxDrawer({ onClose }: { onClose: () => void }) {
                       </button>
                       <button type="button" onClick={() => void setStatus(item, "DISMISSED")} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
                         Dismiss
+                      </button>
+                    </>
+                  ) : tab === "PROCESSED" ? (
+                    <>
+                      {item.recipeId ? (
+                        <a href={`#/recipes/${item.recipeId}`} onClick={onClose} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-pressed">
+                          Open the recipe
+                        </a>
+                      ) : (
+                        <span className="self-center text-sm text-subtle">The recipe was deleted since.</span>
+                      )}
+                      <button type="button" onClick={() => void act(item, () => api("DELETE", `/api/inbox/${item.id}`))} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-subtle hover:bg-pressed">
+                        Remove from the list
                       </button>
                     </>
                   ) : (
@@ -197,9 +217,10 @@ export function InboxDrawer({ onClose }: { onClose: () => void }) {
             ? { page: pageFor(importing) }
             : { initial: importing.type === "TEXT_NOTE" ? (importing.content ?? importing.title) : (importing.url ?? importing.content ?? "") })}
           onClose={() => setImporting(null)}
-          onImported={() => {
+          onImported={(recipeId) => {
             const item = importing;
-            void api("PATCH", `/api/inbox/${item.id}`, { status: "PROCESSED" })
+            // it's a recipe now: into Imported, with a link to it
+            void api("PATCH", `/api/inbox/${item.id}`, { status: "PROCESSED", recipeId })
               .then(() => changed())
               .catch(() => {});
             setItems((list) => list?.filter((i) => i.id !== item.id) ?? null);
@@ -236,6 +257,7 @@ function Card({ item, children }: { item: InboxItem; children: React.ReactNode }
             <p className="truncate font-semibold">{item.title}</p>
           )}
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle">
+            {item.status === "PROCESSED" && <span className="rounded-full bg-success-subtle px-2 py-0.5 font-semibold text-success">Imported</span>}
             <span className="rounded-full bg-brand-subtle px-2 py-0.5 font-semibold text-action">{TYPE_LABEL[item.type]}</span>
             {site && <span>{site}</span>}
             <span>{ago(item.createdAt)}</span>

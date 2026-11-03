@@ -145,7 +145,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("photos", new Photos(photoDir));
   app.decorate("events", new EventBus());
   app.decorate("jobs", new JobQueue(db));
-  const jobDeps = { db, ai: app.ai, photos: app.photos, jobs: app.jobs, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
+  const jobDeps = { db, ai: app.ai, photos: app.photos, jobs: app.jobs, events: app.events, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
   registerImportJobs(app.jobs, jobDeps);
   registerPhotoImport(app.jobs, jobDeps);
   registerFileImport(app.jobs, jobDeps);

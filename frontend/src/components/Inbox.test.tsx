@@ -17,7 +17,8 @@ const routes = (more: Record<string, any> = {}) =>
   fakeServer({
     "GET /api/ai/status": () => ({ ready: false, photos: false }),
     "GET /api/inbox/count": () => ({ pending: 4 }),
-    "GET /api/inbox": (_: unknown, path: string) => (path.includes("DISMISSED") ? [{ ...items[0], id: 9, title: "Old link", status: "DISMISSED" }] : items),
+    "GET /api/inbox": (_: unknown, path: string) =>
+      path.includes("DISMISSED") ? [{ ...items[0], id: 9, title: "Old link", status: "DISMISSED" }] : path.includes("PROCESSED") ? [{ ...items[0], id: 8, title: "Chili", status: "PROCESSED", recipeId: 31, sentBy: "Culury Companion import" }, { ...items[0], id: 6, title: "Gone soup", status: "PROCESSED", recipeId: null }] : items,
     "PATCH /api/inbox/:id": (b: any, path: string) => ({ ...items.find((i) => path.endsWith(`/${i.id}`)) ?? items[0], status: b.status }),
     "DELETE /api/inbox/:id": () => ({ status: 204 }),
     ...more,
@@ -67,7 +68,7 @@ describe("the inbox drawer", () => {
     await u.click(within(card).getByRole("button", { name: "Import" }));
     expect(await screen.findByRole("dialog", { name: "Add a recipe" })).toBeInTheDocument();
     await waitFor(() => expect(s.writes().find((w) => w.path === "/api/recipes/import")?.body).toEqual({ url: "https://www.example.com/pork-roast" }));
-    await waitFor(() => expect(s.writes().find((w) => w.method === "PATCH")).toMatchObject({ path: "/api/inbox/1", body: { status: "PROCESSED" } }), { timeout: 4000 });
+    await waitFor(() => expect(s.writes().find((w) => w.method === "PATCH")).toMatchObject({ path: "/api/inbox/1", body: { status: "PROCESSED", recipeId: 7 } }), { timeout: 4000 });
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/7?imported=1"));
   });
 
@@ -115,6 +116,23 @@ describe("the inbox drawer", () => {
     await u.click(within(old).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "DELETE", path: "/api/inbox/9" }));
     expect(await screen.findByText("Nothing dismissed.")).toBeInTheDocument();
+  });
+
+  it("Imported: what became recipes (from the inbox, or imported straight from the extension), with a link to each", async () => {
+    const s = routes();
+    const u = userEvent.setup();
+    render(<InboxDrawer onClose={() => {}} />);
+    expect((await screen.findAllByRole("tab")).map((t) => t.textContent)).toEqual(["Waiting", "Imported", "Dismissed"]);
+    await u.click(screen.getByRole("tab", { name: "Imported" }));
+    const list = await screen.findByRole("list", { name: "Imported" });
+    const [chili, gone] = within(list).getAllByRole("listitem");
+    expect(within(chili).getByRole("link", { name: "Open the recipe" })).toHaveAttribute("href", "#/recipes/31");
+    expect(chili).toHaveTextContent(/Imported/);
+    expect(within(chili).queryByRole("button", { name: "Import" })).toBeNull();
+    expect(within(gone).queryByRole("link", { name: "Open the recipe" })).toBeNull(); // the recipe was deleted since
+    expect(gone).toHaveTextContent(/deleted/);
+    await u.click(within(chili).getByRole("button", { name: "Remove from the list" }));
+    await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "DELETE", path: "/api/inbox/8" }));
   });
 
   it("empty: says how things get here", async () => {

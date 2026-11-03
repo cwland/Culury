@@ -514,6 +514,7 @@ export const inboxItems = pgTable(
     metadata: jsonb("metadata").$type<InboxMetadata>(),
     status: text("status").$type<(typeof INBOX_STATUSES)[number]>().notNull().default("PENDING"),
     sentBy: text("sent_by"), // the API key's name, or the person's name, when it came in
+    recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }), // imported: the recipe it became
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   },

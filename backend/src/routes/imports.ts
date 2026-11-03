@@ -8,6 +8,7 @@ import { idParam } from "../lib/validation.js";
 import { jobView } from "../lib/importJobs.js";
 import { userOf } from "./recipes.js";
 import { requireEnhance } from "../lib/enhance.js";
+import { whoSent } from "../lib/inbox.js";
 
 export default async function importRoutes(app: FastifyInstance) {
   const { db, jobs: queue, photos } = app;
@@ -25,6 +26,7 @@ export default async function importRoutes(app: FastifyInstance) {
         force: z.boolean().optional(),
         wait: z.number().int().min(0).max(60).optional(),
         improve: z.boolean().optional(), // then improve it with AI in the background (the Companion's "AI correction")
+        inbox: z.boolean().optional(), // leave a note of it in the inbox's Imported list (the Companion's Import)
       })
       .strict()
       .refine((b) => !!b.url !== !!b.text, "Send a link (url) or pasted text (text)")
@@ -33,7 +35,7 @@ export default async function importRoutes(app: FastifyInstance) {
     if (body.url && !/^https?:\/\/\S+$/i.test(body.url)) throw new HttpError(400, "That doesn't look like a web address (it should start with https://)");
     if (body.text && body.text.length < 20) throw new HttpError(400, "Paste the whole recipe (title, ingredients and steps)");
     if (body.improve) await requireEnhance(db, app.ai); // say so before importing, not after
-    const improve = body.improve ? { improve: true } : {};
+    const improve = { ...(body.improve ? { improve: true } : {}), ...(body.inbox ? { inbox: { sentBy: await whoSent(db, req.auth!), sourceApp: req.auth!.method === "apiKey" ? "Culury Companion" : null } } : {}) };
     const job = body.url
       ? await queue.enqueue("import-url", { url: body.url, force: !!body.force, ...(body.html ? { html: body.html } : {}), ...improve }, userOf(req))
       : await queue.enqueue("import-text", { text: body.text!, ...improve }, userOf(req));

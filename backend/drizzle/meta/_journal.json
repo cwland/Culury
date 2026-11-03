@@ -106,6 +106,13 @@
       "when": 1793632274304,
       "tag": "0014_inbox",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793727039129,
+      "tag": "0015_inbox_recipe",
+      "breakpoints": true
     }
   ]
 }

@@ -75,3 +75,29 @@ describe("importing with AI correction", () => {
     expect((await as("GET", "/api/key-check")).body).toMatchObject({ aiCorrection: false });
   });
 });
+
+describe("a direct import leaves a note in the inbox", () => {
+  it("inbox: true adds an Imported entry with the recipe, from the key that sent it", async () => {
+    const as = await keyed();
+    const r = await as("POST", "/api/recipes/import", { url: "https://example.com/pork", html: page, inbox: true, wait: 10 });
+    const recipeId = r.body.result.recipeId;
+    expect((await t.api("GET", "/api/inbox")).body).toEqual([]); // nothing waiting: it's in already
+    const imported = (await t.api("GET", "/api/inbox?status=PROCESSED")).body;
+    expect(imported).toMatchObject([{ type: "RECIPE_LINK", title: "Pork Roast", url: "https://example.com/pork", status: "PROCESSED", recipeId, sentBy: "Culury Companion import", reviewedAt: expect.any(String) }]);
+  });
+
+  it("the same link waiting in the inbox: that item is the one marked imported", async () => {
+    await t.api("POST", "/api/inbox", { type: "RECIPE_LINK", url: "https://example.com/pork", title: "Pork (to try)" });
+    const as = await keyed();
+    const r = await as("POST", "/api/recipes/import", { url: "https://example.com/pork", html: page, inbox: true, wait: 10 });
+    expect((await t.api("GET", "/api/inbox")).body).toEqual([]);
+    expect((await t.api("GET", "/api/inbox?status=PROCESSED")).body).toMatchObject([{ title: "Pork (to try)", recipeId: r.body.result.recipeId }]);
+  });
+
+  it("already in your recipes, or without inbox: true: no entry", async () => {
+    const as = await keyed();
+    await as("POST", "/api/recipes/import", { url: "https://example.com/pork", html: page, wait: 10 });
+    await as("POST", "/api/recipes/import", { url: "https://example.com/pork", html: page, inbox: true, wait: 10 });
+    expect((await t.api("GET", "/api/inbox?status=PROCESSED")).body).toEqual([]);
+  });
+});

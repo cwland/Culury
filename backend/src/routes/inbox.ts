@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { and, count, desc, eq, sql } from "drizzle-orm";
-import { apiKeys, inboxItems, INBOX_STATUSES, INBOX_TYPES, users } from "../db/schema.js";
+import { apiKeys, inboxItems, INBOX_STATUSES, INBOX_TYPES, recipes } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
+import { whoSent } from "../lib/inbox.js";
 import { KEY_CHECK, keyAllows, type KeyAccess } from "../lib/keyAccess.js";
 import { APP_VERSION } from "../lib/version.js";
 import { isOn } from "../lib/features.js";
@@ -57,6 +58,7 @@ const shown = (i: typeof inboxItems.$inferSelect) => ({
   metadata: i.metadata,
   status: i.status,
   sentBy: i.sentBy,
+  recipeId: i.recipeId,
   createdAt: i.createdAt,
   reviewedAt: i.reviewedAt,
 });
@@ -90,13 +92,10 @@ export default async function inboxRoutes(app: FastifyInstance) {
       if (waiting) return reply.status(200).send({ ...shown(waiting), duplicate: true });
     }
     const auth = req.auth!;
-    const [who] =
-      auth.method === "apiKey"
-        ? await db.select({ name: apiKeys.name }).from(apiKeys).where(eq(apiKeys.id, auth.keyId))
-        : await db.select({ name: users.displayName, username: users.username }).from(users).where(eq(users.id, auth.userId)).then((r) => r.map((u) => ({ name: u.name || u.username })));
+    const sentBy = await whoSent(db, auth);
     const [row] = await db
       .insert(inboxItems)
-      .values({ type: body.type, title: titleOf(body), url: body.url ?? null, content: body.content ?? null, sourceApp: body.sourceApp ?? null, metadata: body.metadata ?? null, sentBy: who?.name ?? null })
+      .values({ type: body.type, title: titleOf(body), url: body.url ?? null, content: body.content ?? null, sourceApp: body.sourceApp ?? null, metadata: body.metadata ?? null, sentBy })
       .returning();
     app.events.emit({ topic: "inbox", by: auth.method === "token" ? auth.userId : null });
     return reply.status(201).send(shown(row));
@@ -121,10 +120,12 @@ export default async function inboxRoutes(app: FastifyInstance) {
   app.patch("/api/inbox/:id", async (req) => {
     requireSignedIn(req);
     const { id } = idParam.parse(req.params);
-    const { status } = z.object({ status: z.enum(INBOX_STATUSES) }).parse(req.body);
+    // recipeId: imported, and this is the recipe it became
+    const { status, recipeId } = z.object({ status: z.enum(INBOX_STATUSES), recipeId: z.number().int().positive().optional() }).parse(req.body);
+    if (recipeId && !(await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, recipeId))).length) throw new HttpError(400, "That recipe isn't in Culury");
     const [row] = await db
       .update(inboxItems)
-      .set({ status, reviewedAt: status === "PENDING" ? null : new Date() })
+      .set({ status, reviewedAt: status === "PENDING" ? null : new Date(), ...(recipeId ? { recipeId } : {}) })
       .where(eq(inboxItems.id, id))
       .returning();
     if (!row) throw notFound("Inbox item");
