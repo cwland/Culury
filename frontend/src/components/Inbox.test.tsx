@@ -135,6 +135,20 @@ describe("the inbox drawer", () => {
     await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "DELETE", path: "/api/inbox/8" }));
   });
 
+  it("switching tabs before a slow list arrives: the tab you're on wins", async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    routes({ "GET /api/inbox": async (_: unknown, path: string) => (path.includes("PROCESSED") ? [{ ...items[0], id: 8, title: "Chili", status: "PROCESSED", recipeId: 31 }] : (await slow, items)) });
+    const u = userEvent.setup();
+    render(<InboxDrawer onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "Imported" }));
+    expect(await screen.findByRole("list", { name: "Imported" })).toHaveTextContent("Chili");
+    release(); // the Waiting list turns up late
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole("list", { name: "Imported" })).toHaveTextContent("Chili");
+    expect(screen.queryByText("Pork Roast")).toBeNull();
+  });
+
   it("empty: says how things get here", async () => {
     routes({ "GET /api/inbox": () => [] });
     render(<InboxDrawer onClose={() => {}} />);

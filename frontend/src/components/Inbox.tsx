@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useLive } from "../live";
 import ImportDialog from "./recipes/ImportDialog";
@@ -103,10 +103,13 @@ export function InboxDrawer({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [importing, setImporting] = useState<InboxItem | null>(null);
 
+  // only the newest list counts: a slow answer for a tab you've left is dropped
+  const asked = useRef(0);
   const load = useCallback(() => {
+    const n = ++asked.current;
     api<InboxItem[]>("GET", `/api/inbox${tab === "PENDING" ? "" : `?status=${tab}`}`)
-      .then(setItems)
-      .catch((e) => setError((e as Error).message));
+      .then((list) => n === asked.current && setItems(list))
+      .catch((e) => n === asked.current && setError((e as Error).message));
   }, [tab]);
   useEffect(() => {
     setItems(null);
