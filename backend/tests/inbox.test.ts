@@ -133,3 +133,33 @@ describe("the inbox, for signed-in people", () => {
     expect((await t.api("PATCH", "/api/inbox/999", { status: "DISMISSED" })).status).toBe(404);
   });
 });
+
+// ---------- for the extension: is this key right, and what may it do? ----------
+
+describe("checking a key", () => {
+  it("any key can ask what it is (and nothing more)", async () => {
+    const key = await makeKey("inbox_push");
+    const r = await withKey(key)("GET", "/api/key-check");
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ app: "Culury", version: expect.any(String), name: "Culury Companion", access: "inbox_push", canPushToInbox: true, canImport: false });
+    const push = await t.api("POST", "/api/keys", { name: "Importer", access: "recipe_push" });
+    expect((await withKey(push.body.key)("GET", "/api/key-check")).body).toMatchObject({ access: "recipe_push", canPushToInbox: false, canImport: true });
+  });
+
+  it("a wrong key gets 401; signed in, it says so", async () => {
+    expect((await withKey("cul_not-a-real-key")("GET", "/api/key-check")).status).toBe(401);
+    expect((await t.api("GET", "/api/key-check")).body).toMatchObject({ app: "Culury", signedIn: true });
+  });
+});
+
+describe("a note sent from a page", () => {
+  it("keeps the page's link, and isn't mistaken for the link itself", async () => {
+    await t.api("POST", "/api/inbox", link);
+    const note = await t.api("POST", "/api/inbox", { type: "TEXT_NOTE", url: link.url, content: "Brine it overnight" });
+    expect(note.status).toBe(201);
+    expect(note.body).toMatchObject({ type: "TEXT_NOTE", url: link.url, title: "Brine it overnight" });
+    // its own first line names it, not the page it was written on
+    const withPage = await t.api("POST", "/api/inbox", { type: "TEXT_NOTE", url: link.url, content: "Less salt next time\nmaybe 2 tbsp", metadata: { pageTitle: "Pork Roast | Example" } });
+    expect(withPage.body.title).toBe("Less salt next time");
+  });
+});

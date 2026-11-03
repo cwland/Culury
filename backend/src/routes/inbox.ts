@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { apiKeys, inboxItems, INBOX_STATUSES, INBOX_TYPES, users } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
+import { KEY_CHECK, keyAllows, type KeyAccess } from "../lib/keyAccess.js";
+import { APP_VERSION } from "../lib/version.js";
 
 // The inbox: links, notes and recipe data sent in by other apps (the Culury Companion browser
 // extension) to look at later. Shared by the household. API keys can only push to it (see
@@ -32,11 +34,12 @@ const pushBody = z
   .refine((b) => b.type === "TEXT_NOTE" || b.url, { message: "A link needs its url", path: ["url"] })
   .refine((b) => b.type !== "TEXT_NOTE" || b.content, { message: "A note needs its text (content)", path: ["content"] });
 
-// What to call it: the title given, the page's title, the note's first line, or the link's site
+// What to call it: the title given, the note's first line, the page's title, or the link's site
 function titleOf(b: z.infer<typeof pushBody>) {
   const firstLine = b.type === "TEXT_NOTE" ? b.content?.trim().split("\n")[0].trim() : undefined;
   const site = b.url ? new URL(b.url).hostname.replace(/^www\./, "") : undefined;
-  return (b.title || b.metadata?.pageTitle || firstLine || site || "Untitled").slice(0, 300);
+  // a note is named by its own first line, not the page it was written on
+  return (b.title || firstLine || b.metadata?.pageTitle || site || "Untitled").slice(0, 300);
 }
 
 function requireSignedIn(req: FastifyRequest) {
@@ -60,11 +63,21 @@ const shown = (i: typeof inboxItems.$inferSelect) => ({
 export default async function inboxRoutes(app: FastifyInstance) {
   const { db } = app;
 
+  // For the Culury Companion extension's connection test: is this key right, and what may it do?
+  app.get(KEY_CHECK, async (req) => {
+    const auth = req.auth!;
+    if (auth.method !== "apiKey") return { app: "Culury", version: APP_VERSION, signedIn: true };
+    const [k] = await db.select({ name: apiKeys.name, access: apiKeys.access }).from(apiKeys).where(eq(apiKeys.id, auth.keyId));
+    const access = k.access as KeyAccess;
+    return { app: "Culury", version: APP_VERSION, name: k.name, access, canPushToInbox: keyAllows(access, "POST", "/api/inbox"), canImport: keyAllows(access, "POST", "/api/recipes/import") };
+  });
+
   // Push something in (an "Inbox only" key, a write or admin key, or a signed-in person)
   app.post("/api/inbox", async (req, reply) => {
     const body = pushBody.parse(req.body);
     // The same link (or, for a note, the same text) while it's still waiting: don't add it twice
-    const same = body.url ? eq(inboxItems.url, body.url) : body.content ? and(eq(inboxItems.type, "TEXT_NOTE"), eq(inboxItems.content, body.content)) : null;
+    // (a note sent from a page keeps the page's link, but it's the text that makes it the same note)
+    const same = body.type === "TEXT_NOTE" ? and(eq(inboxItems.type, "TEXT_NOTE"), eq(inboxItems.content, body.content!)) : body.url ? and(eq(inboxItems.url, body.url), sql`${inboxItems.type} <> 'TEXT_NOTE'`) : null;
     if (same) {
       const [waiting] = await db
         .select()

@@ -31,6 +31,8 @@ const GROCERY = "/api/grocery";
 // The inbox: keys can only push to it (inbox_push, write, admin); reading, changing and clearing it
 // is for signed-in people only, whatever the key
 const INBOX = "/api/inbox";
+// What is this key? Its own name and access only (the Companion extension's connection test)
+export const KEY_CHECK = "/api/key-check";
 const INBOX_PUSHERS: KeyAccess[] = ["inbox_push", "write", "admin"];
 
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");
@@ -38,6 +40,7 @@ const isRead = (method: string) => method === "GET" || method === "HEAD";
 
 // path is the matched route pattern, e.g. "GET /api/recipes/:id" -> method "GET", path "/api/recipes/:id"
 export function keyAllows(access: KeyAccess, method: string, path: string): boolean {
+  if (method === "GET" && path === KEY_CHECK) return true; // any key may ask what it is
   if (NEVER.some((p) => under(path, p))) return false;
   if (ADMIN_ONLY.some((p) => under(path, p))) return access === "admin";
   if (under(path, INBOX)) return method === "POST" && path === INBOX && INBOX_PUSHERS.includes(access);
