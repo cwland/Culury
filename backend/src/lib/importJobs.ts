@@ -124,6 +124,14 @@ async function readPage(ai: AiService, html: string, pageUrl: string) {
   }
 }
 
+// Asked for AI correction (the Companion's direct import): a new recipe is improved in the
+// background, the same way "Improve all automatically" does a batch
+async function improveAfter(queue: JobQueue, job: { id: number; payload: unknown; createdBy: number | null }, result: JobResult) {
+  if ((job.payload as { improve?: boolean }).improve && result.recipeId && !result.duplicateOf)
+    result.improving = (await queue.enqueue("import-improve", { importId: job.id, recipeIds: [result.recipeId], name: result.title ?? "Recipe" }, job.createdBy)).id;
+  return result;
+}
+
 export function registerImportJobs(queue: JobQueue, d: Deps) {
   // A link: schema.org data on the page, or AI on the page's text (or a video's description).
   // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
@@ -179,7 +187,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
       }
       const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
       await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${from}`, detail: [read.why, result.warnings?.join(" ")].filter(Boolean).join(" ") || url });
-      return result;
+      return improveAfter(queue, job, result);
     } catch (e) {
       // Kept from us, no saved copy looked for: remember why, for the import window
       if (e instanceof BlockedError) await remember({ blocked: { ...e.block, url } });
@@ -196,7 +204,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
       const r = plainRead ?? (await recipeWithAi(d.ai, text));
       const result = await store(d, r, job, plainRead ? "text" : "ai");
       await logEvent(d.db, { category: "import", level: "info", source: "Pasted text", event: `Imported "${result.title}"${plainRead ? "" : " with AI"}` });
-      return result;
+      return improveAfter(queue, job, result);
     } catch (e) {
       await logEvent(d.db, { category: "import", level: "warning", source: "Pasted text", event: "Couldn't import a recipe", detail: (e as Error).message });
       throw e;

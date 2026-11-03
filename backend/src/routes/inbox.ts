@@ -6,6 +6,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { KEY_CHECK, keyAllows, type KeyAccess } from "../lib/keyAccess.js";
 import { APP_VERSION } from "../lib/version.js";
+import { isOn } from "../lib/features.js";
 
 // The inbox: links, notes and recipe data sent in by other apps (the Culury Companion browser
 // extension) to look at later. Shared by the household. API keys can only push to it (see
@@ -69,7 +70,9 @@ export default async function inboxRoutes(app: FastifyInstance) {
     if (auth.method !== "apiKey") return { app: "Culury", version: APP_VERSION, signedIn: true };
     const [k] = await db.select({ name: apiKeys.name, access: apiKeys.access }).from(apiKeys).where(eq(apiKeys.id, auth.keyId));
     const access = k.access as KeyAccess;
-    return { app: "Culury", version: APP_VERSION, name: k.name, access, canPushToInbox: keyAllows(access, "POST", "/api/inbox"), canImport: keyAllows(access, "POST", "/api/recipes/import") };
+    // AI correction on import needs AI and AI Enhance (Settings › AI)
+    const aiCorrection = !!(await app.ai.active("recipe")) && (await isOn(db, "aiEnhance"));
+    return { app: "Culury", version: APP_VERSION, name: k.name, access, canPushToInbox: keyAllows(access, "POST", "/api/inbox"), canImport: keyAllows(access, "POST", "/api/recipes/import"), aiCorrection };
   });
 
   // Push something in (an "Inbox only" key, a write or admin key, or a signed-in person)

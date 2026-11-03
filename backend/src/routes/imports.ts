@@ -24,6 +24,7 @@ export default async function importRoutes(app: FastifyInstance) {
         html: z.string().max(8 * 1024 * 1024).optional(),
         force: z.boolean().optional(),
         wait: z.number().int().min(0).max(60).optional(),
+        improve: z.boolean().optional(), // then improve it with AI in the background (the Companion's "AI correction")
       })
       .strict()
       .refine((b) => !!b.url !== !!b.text, "Send a link (url) or pasted text (text)")
@@ -31,9 +32,11 @@ export default async function importRoutes(app: FastifyInstance) {
       .parse(req.body);
     if (body.url && !/^https?:\/\/\S+$/i.test(body.url)) throw new HttpError(400, "That doesn't look like a web address (it should start with https://)");
     if (body.text && body.text.length < 20) throw new HttpError(400, "Paste the whole recipe (title, ingredients and steps)");
+    if (body.improve) await requireEnhance(db, app.ai); // say so before importing, not after
+    const improve = body.improve ? { improve: true } : {};
     const job = body.url
-      ? await queue.enqueue("import-url", { url: body.url, force: !!body.force, ...(body.html ? { html: body.html } : {}) }, userOf(req))
-      : await queue.enqueue("import-text", { text: body.text! }, userOf(req));
+      ? await queue.enqueue("import-url", { url: body.url, force: !!body.force, ...(body.html ? { html: body.html } : {}), ...improve }, userOf(req))
+      : await queue.enqueue("import-text", { text: body.text!, ...improve }, userOf(req));
     const done = body.wait ? await queue.wait(job.id, body.wait * 1000) : job;
     const finished = done && (done.status === "done" || done.status === "failed");
     return reply.status(finished ? 200 : 202).send(jobView(done ?? job));

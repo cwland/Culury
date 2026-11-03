@@ -141,7 +141,7 @@ describe("checking a key", () => {
     const key = await makeKey("inbox_push");
     const r = await withKey(key)("GET", "/api/key-check");
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ app: "Culury", version: expect.any(String), name: "Culury Companion", access: "inbox_push", canPushToInbox: true, canImport: false });
+    expect(r.body).toEqual({ app: "Culury", version: expect.any(String), name: "Culury Companion", access: "inbox_push", canPushToInbox: true, canImport: false, aiCorrection: false });
     const push = await t.api("POST", "/api/keys", { name: "Importer", access: "recipe_push" });
     expect((await withKey(push.body.key)("GET", "/api/key-check")).body).toMatchObject({ access: "recipe_push", canPushToInbox: false, canImport: true });
   });

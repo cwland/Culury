@@ -371,6 +371,7 @@ export interface JobResult {
   recipeId?: number;
   title?: string;
   duplicateOf?: number; // already in your recipes (import again with force to keep both)
+  improving?: number; // asked for AI correction: the import-improve job working on it
   how?: "schema.org" | "ai" | "text" | "photo" | "file" | "pdf"; // how the recipe was read
   format?: string; // import-file: Paprika, Mealie…
   imported?: number; // import-file: recipes added
