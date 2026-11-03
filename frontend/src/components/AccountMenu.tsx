@@ -1,7 +1,8 @@
 import { showWhatsNew, versionLabel } from "../version";
 import { useEffect, useRef, useState } from "react";
 import { initialsOf, useSession } from "../session";
-import { ChefIcon, LogoutIcon, UserIcon } from "./Icons";
+import { ChefIcon, InboxIcon, LogoutIcon, UserIcon } from "./Icons";
+import { openInbox, useInboxWaiting } from "./Inbox";
 
 // The initials button (bottom of the left nav, or "Account" on phones) and its menu
 export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
@@ -25,6 +26,7 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
   useEffect(() => setConfirmAll(false), [open]);
 
   const name = user.displayName?.trim() || user.username;
+  const waiting = useInboxWaiting(); // phones: the inbox lives in this menu
   const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-page";
 
   return (
@@ -41,8 +43,9 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
           {initialsOf(user)}
         </button>
       ) : (
-        <button onClick={() => setOpen((o) => !o)} aria-label="Account menu" title="Account menu" aria-haspopup="menu" aria-expanded={open} className={`flex flex-col items-center text-xs ${open ? "text-primary" : "text-subtle"}`}>
+        <button onClick={() => setOpen((o) => !o)} aria-label={waiting ? `Account menu, ${waiting} in the inbox` : "Account menu"} title="Account menu" aria-haspopup="menu" aria-expanded={open} className={`relative flex flex-col items-center text-xs ${open ? "text-primary" : "text-subtle"}`}>
           <UserIcon />
+          {!!waiting && <span className="absolute -top-1 right-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">{waiting > 99 ? "99+" : waiting}</span>}
           Account
         </button>
       )}
@@ -61,6 +64,12 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
           <a role="menuitem" href="#/settings/profile" onClick={() => setOpen(false)} className={item}>
             <UserIcon className="size-4 text-subtle" /> Profile & security
           </a>
+          {variant === "bar" && (
+            <button role="menuitem" onClick={() => (setOpen(false), openInbox())} className={item}>
+              <InboxIcon className="size-4 text-subtle" /> Inbox
+              {!!waiting && <span className="ml-auto rounded-full bg-error px-1.5 text-xs font-bold text-white">{waiting}</span>}
+            </button>
+          )}
           <button role="menuitem" onClick={() => (setOpen(false), window.dispatchEvent(new Event("culury:tour")))} className={item}>
             <ChefIcon className="size-4 text-subtle" /> Getting started
           </button>

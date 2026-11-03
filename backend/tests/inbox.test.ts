@@ -80,6 +80,12 @@ describe("pushing to the inbox", () => {
     expect((await t.api("GET", "/api/inbox/count")).body).toEqual({ pending: 1 });
   });
 
+  it("the same note sent again while it's waiting isn't added twice either", async () => {
+    const a = (await t.api("POST", "/api/inbox", { type: "TEXT_NOTE", content: "Dry brine overnight" })).body;
+    expect((await t.api("POST", "/api/inbox", { type: "TEXT_NOTE", content: "Dry brine overnight" })).body).toMatchObject({ id: a.id, duplicate: true });
+    expect((await t.api("POST", "/api/inbox", { type: "TEXT_NOTE", content: "Dry brine for 2 days" })).status).toBe(201);
+  });
+
   it("open copies of the app hear about it (for the badge)", async () => {
     const heard: unknown[] = [];
     const off = t.app.events.on((e) => heard.push(e));

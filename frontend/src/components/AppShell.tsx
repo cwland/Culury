@@ -13,6 +13,7 @@ import { api } from "../api";
 import WhatsNew from "./WhatsNew";
 import UpdateBar from "./UpdateBar";
 import { BackgroundPill } from "./BackgroundPill";
+import { InboxButton, InboxDrawer } from "./Inbox";
 import { GearIcon, GroceryIcon, Logo, PantryIcon, PlannerIcon, RecipesIcon } from "./Icons";
 
 type Page = "recipes" | "plan" | "grocery" | "pantry" | "settings";
@@ -47,8 +48,22 @@ export default function AppShell() {
     }
   };
 
+  // The inbox drawer: the rail button, the phone's account menu, or a #/inbox link (the Companion extension)
+  const [inbox, setInbox] = useState(() => window.location.hash === "#/inbox");
   useEffect(() => {
-    const onHash = () => setPage(pageFromHash());
+    const open = () => setInbox(true);
+    window.addEventListener("culury:inbox", open);
+    return () => window.removeEventListener("culury:inbox", open);
+  }, []);
+  useEffect(() => {
+    if (inbox && window.location.hash === "#/inbox") history.replaceState(null, "", "#/recipes");
+  }, [inbox]);
+
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === "#/inbox") return setInbox(true);
+      setPage(pageFromHash());
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -75,6 +90,7 @@ export default function AppShell() {
           ))}
         </div>
         <div className="mt-auto flex flex-col items-center gap-2">
+          <InboxButton onOpen={() => setInbox(true)} />
           <AccountMenu variant="rail" />
           <button type="button" onClick={showWhatsNew} className="rounded px-1 text-[10px] leading-none text-muted hover:text-link hover:underline" title="What's new in this version">
             {versionLabel}
@@ -104,6 +120,7 @@ export default function AppShell() {
         <AccountMenu variant="bar" />
       </nav>
       <TimerTray />
+      {inbox && <InboxDrawer onClose={() => setInbox(false)} />}
       {news && <WhatsNew since={sinceVersion} all={news === "all"} onClose={closeNews} />}
     </div>
   );

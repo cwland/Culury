@@ -108,7 +108,8 @@ export const firstLink = (s: string) => s.match(/https?:\/\/[^\s"'<>]+/)?.[0] ??
 // Add a recipe from a link or pasted text. The import runs on the server; this shows its progress
 // and opens the recipe when it's in.
 // page: sent from your browser (Send to Culury), imported straight away
-export default function ImportDialog({ initial, page, onClose }: { initial?: string; page?: { url: string; html: string }; onClose: () => void }) {
+// onImported: the recipe is in (the inbox marks its item done)
+export default function ImportDialog({ initial, page, onClose, onImported }: { initial?: string; page?: { url: string; html: string }; onClose: () => void; onImported?: (recipeId: number) => void }) {
   const startLink = page ? null : initial ? firstLink(initial) : null;
   const [tab, setTab] = useState<"link" | "text" | "photo" | "file">(initial && !startLink ? "text" : "link");
   const ai = useAiStatus();
@@ -119,6 +120,8 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState("");
   const started = useRef(false);
+  const importedRef = useRef(onImported);
+  importedRef.current = onImported;
   // After picking from a file: review them with AI, improve them all in the background, or just import
   const [then, setThen] = useState<Then | null>(null);
   const pick = async (keep: number[], next: Then) => {
@@ -156,6 +159,7 @@ export default function ImportDialog({ initial, page, onClose }: { initial?: str
     // One recipe (a link, a photo, or a PDF with one recipe in it): open it
     const one = job?.result?.recipeId ?? (job?.result?.format === "PDF" && job.result.recipeIds?.length === 1 ? job.result.recipeIds[0] : null);
     if (job?.status === "done" && one) {
+      importedRef.current?.(one);
       onClose();
       const copy = job.result?.savedCopy; // read from a web archive's copy: the recipe page says so
       const from = copy ? `&copy=${encodeURIComponent(copy.from)}${copy.date ? `&copied=${copy.date}` : ""}` : "";

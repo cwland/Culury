@@ -4,7 +4,7 @@ import { getToken } from "./api";
 // Live updates from the server (GET /api/events, server-sent events). One connection for the whole
 // app, opened with fetch so it can send the login header; it reconnects by itself.
 
-export type Topic = "grocery" | "pantry" | "plan" | "recipes";
+export type Topic = "grocery" | "pantry" | "plan" | "recipes" | "inbox";
 export interface LiveEvent {
   topic: Topic;
   id?: number;

@@ -63,12 +63,13 @@ export default async function inboxRoutes(app: FastifyInstance) {
   // Push something in (an "Inbox only" key, a write or admin key, or a signed-in person)
   app.post("/api/inbox", async (req, reply) => {
     const body = pushBody.parse(req.body);
-    // The same link while it's still waiting: don't add it twice
-    if (body.url) {
+    // The same link (or, for a note, the same text) while it's still waiting: don't add it twice
+    const same = body.url ? eq(inboxItems.url, body.url) : body.content ? and(eq(inboxItems.type, "TEXT_NOTE"), eq(inboxItems.content, body.content)) : null;
+    if (same) {
       const [waiting] = await db
         .select()
         .from(inboxItems)
-        .where(and(eq(inboxItems.url, body.url), eq(inboxItems.status, "PENDING")))
+        .where(and(same, eq(inboxItems.status, "PENDING")))
         .limit(1);
       if (waiting) return reply.status(200).send({ ...shown(waiting), duplicate: true });
     }
