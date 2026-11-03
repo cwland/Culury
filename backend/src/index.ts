@@ -5,6 +5,7 @@ import { runMigrations } from "./db/migrate.js";
 import { buildApp, defaultBackupDir } from "./app.js";
 import { startBackupSchedule } from "./lib/backup.js";
 import { startReminderSchedule } from "./lib/reminders.js";
+import { startDiscoverySchedule } from "./lib/discovery.js";
 import { emailConfigFromEnv } from "./lib/mail.js";
 import { logEvent } from "./lib/appLog.js";
 import { emergencyResetAuth } from "./lib/oauth.js";
@@ -48,6 +49,9 @@ if (process.env.BACKUP_ENABLED !== "false") {
 }
 // Daily meal plan emails (each person picks a time in Settings › Profile)
 startReminderSchedule(db, app.mail, app.now, (err) => app.log.error(err));
+
+// Discovery: check every feed every few hours (DISCOVERY_HOURS, default 3; 0 turns it off)
+startDiscoverySchedule(db, app.fetchOptions, Number(process.env.DISCOVERY_HOURS ?? 3), (err) => app.log.error(err));
 
 // Emergency: EMERGENCY_DISABLE_OAUTH=true turns password sign-in back on (and OAuth off) at start
 if (process.env.EMERGENCY_DISABLE_OAUTH === "true") {

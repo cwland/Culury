@@ -39,6 +39,7 @@ export const users = pgTable("users", {
   dismissedUpdate: text("dismissed_update"), // the newer version whose top bar was dismissed
   // Daily meal plan email at this time ("17:30", server time; null: off), and the last day it went
   remindAt: text("remind_at"),
+  discoveryTags: jsonb("discovery_tags").$type<string[]>().notNull().default([]), // Discovery: this person's filter tags
   remindedOn: date("reminded_on", { mode: "string" }),
   // The OAuth / OpenID Connect identity linked to this account (Settings > Security)
   oauthIssuer: text("oauth_issuer"),
@@ -519,4 +520,39 @@ export const inboxItems = pgTable(
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   },
   (t) => [index("inbox_items_status_idx").on(t.status, t.createdAt)]
+);
+
+// Discovery: RSS / Atom feeds the household subscribes to, and their posts (read with plain code,
+// no AI). Posts are kept until 60 days after they last appeared in their feed.
+export const discoveryFeeds = pgTable("discovery_feeds", {
+  id: serial("id").primaryKey(),
+  url: text("url").notNull().unique(),
+  title: text("title").notNull(),
+  siteUrl: text("site_url"),
+  iconUrl: text("icon_url"),
+  lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const discoveryItems = pgTable(
+  "discovery_items",
+  {
+    id: serial("id").primaryKey(),
+    feedId: integer("feed_id")
+      .notNull()
+      .references(() => discoveryFeeds.id, { onDelete: "cascade" }),
+    guid: text("guid").notNull(),
+    title: text("title").notNull(),
+    link: text("link"),
+    pubDate: timestamp("pub_date", { withTimezone: true }),
+    author: text("author"),
+    categories: jsonb("categories").$type<string[]>().notNull().default([]),
+    description: text("description"),
+    contentHtml: text("content_html"), // made safe when read (lib/rss.ts)
+    thumbnailUrl: text("thumbnail_url"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("discovery_items_feed_guid").on(t.feedId, t.guid), index("discovery_items_sort_idx").on(t.pubDate, t.id)]
 );

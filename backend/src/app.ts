@@ -38,7 +38,8 @@ import { registerAisleSorting } from "./lib/aiHelpers.js";
 import aiRoutes from "./routes/ai.js";
 import shareRoutes from "./routes/share.js";
 import inboxRoutes from "./routes/inbox.js";
-import type { FetchImpl, Resolve } from "./lib/fetchPage.js";
+import discoveryRoutes from "./routes/discovery.js";
+import type { FetchImpl, FetchOptions, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
 import { AiService, type AiFetch } from "./lib/ai.js";
@@ -64,6 +65,7 @@ declare module "fastify" {
     jobs: JobQueue;
     photos: Photos;
     events: EventBus;
+    fetchOptions: FetchOptions; // how pages and feeds are fetched (tests swap in a pretend web)
   }
   interface FastifyRequest {
     auth?: { method: "token"; userId: number; sessionId: number; role: "owner" | "member" } | { method: "apiKey"; keyId: number };
@@ -146,6 +148,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("events", new EventBus());
   app.decorate("jobs", new JobQueue(db));
   const jobDeps = { db, ai: app.ai, photos: app.photos, jobs: app.jobs, events: app.events, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
+  app.decorate("fetchOptions", jobDeps.fetchOptions);
   registerImportJobs(app.jobs, jobDeps);
   registerPhotoImport(app.jobs, jobDeps);
   registerFileImport(app.jobs, jobDeps);
@@ -265,6 +268,7 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(eventRoutes);
   app.register(organizeRoutes);
   app.register(inboxRoutes);
+  app.register(discoveryRoutes);
 
   return app;
 }

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { aisleChoices, categories, collectionRecipes, collections, groceryItems, groceryLists, mealPlan, pantryItems, recipeCategories, recipeVersions, recipeTags, recipeUser, recipes, substitutions, tags, users, inboxItems } from "../db/schema.js";
+import { aisleChoices, categories, collectionRecipes, collections, groceryItems, groceryLists, mealPlan, pantryItems, recipeCategories, recipeVersions, recipeTags, recipeUser, recipes, substitutions, tags, users, inboxItems, discoveryFeeds } from "../db/schema.js";
 import { versionsAfterRestore } from "./versions.js";
 import { refreshSearch } from "./recipes.js";
 import { exportSettings, importSettings, type BackupSecrets, type SettingsSection } from "./settingsBackup.js";
@@ -38,6 +38,8 @@ export const DATA_TABLES: DataTable[] = [
   { key: "aisleChoices", table: aisleChoices },
   { key: "recipeVersions", table: recipeVersions, user: { column: "createdBy", missing: "null" } },
   { key: "inboxItems", table: inboxItems },
+  // Discovery: the feeds (their posts are fetched again after a restore)
+  { key: "discoveryFeeds", table: discoveryFeeds, user: { column: "createdBy", missing: "null" } },
 ];
 
 const sqlName = (t: PgTable) => getTableConfig(t).name;
