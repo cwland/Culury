@@ -26,6 +26,74 @@ const full = {
   organizeChanges: ["Added Soup: it's a stew.", "Added chicken: the main ingredient."],
 };
 
+// Nutrition in the AI check: worked out per ingredient and added up by Culury, the same way as
+// Estimate / Re-analyze, so the number you accept at import is the one Re-analyze gives
+describe("nutrition in the AI check", () => {
+  const perIngredient = {
+    ingredients: [
+      { line: "1 lb chicken breast", grams: 454, calories: 545, fat: 12, saturatedFat: 3, carbs: 0, fiber: 0, sugar: 0, addedSugar: 0, protein: 102, sodium: 300 },
+      { line: "1 onion, diced", grams: 110, calories: 44, fat: 0, saturatedFat: 0, carbs: 10, fiber: 2, sugar: 5, addedSugar: 0, protein: 1, sodium: 4 },
+    ],
+    servingSize: "About 1 cup (250 g)",
+  };
+  const answers = (check: object = full) => (_u: string, body: any) => reply(String(body.messages[0].content).startsWith("You estimate nutrition") ? perIngredient : check);
+
+  it("is worked out per ingredient (of the ingredients as the check suggests them), and added up", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = answers();
+    const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
+    const asked = t.ai.calls.find((c) => String(c.body.messages[0].content).startsWith("You estimate nutrition"))!;
+    expect(asked.body.messages[1].content).toContain("- 1 lb chicken breast\n- 1 onion, diced");
+    // (545 + 44) / 4 servings
+    expect(e.nutrition).toMatchObject({ changed: true, suggested: { calories: 147.3, protein: 25.8, source: "ai", servings: 4, servingSize: "About 1 cup (250 g)" } });
+    expect(e.nutrition.suggested.perIngredient).toEqual([
+      { line: "1 lb chicken breast", grams: 454, calories: 545 },
+      { line: "1 onion, diced", grams: 110, calories: 44 },
+    ]);
+    expect(e.nutrition.changes).toEqual(["Worked out from each ingredient: about 147 kcal per serving."]);
+  });
+
+  it("accepting it gives the same numbers Re-analyze does", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = answers();
+    const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
+    expect((await t.api("POST", `/api/recipes/${r.id}/enhance/apply`, { ingredients: e.ingredients.suggested, nutrition: e.nutrition.suggested })).status).toBe(200);
+    const accepted = (await t.api("GET", `/api/recipes/${r.id}`)).body.nutrition;
+    const again = (await t.api("POST", `/api/recipes/${r.id}/nutrition`)).body;
+    expect(again.calories).toBe(accepted.calories);
+    expect(again.protein).toBe(accepted.protein);
+  });
+
+  it("says how it compares with what was there", async () => {
+    await aiOn();
+    const r = await chili();
+    await t.api("PUT", `/api/recipes/${r.id}/nutrition`, { calories: 410 });
+    t.ai.respond = answers();
+    const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
+    expect(e.nutrition.changes).toEqual(["Worked out from each ingredient: about 147 kcal per serving (was 410)."]);
+  });
+
+  it("if that request fails, the rest of the check still comes through", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = (_u: string, body: any) => (String(body.messages[0].content).startsWith("You estimate nutrition") ? { status: 500, json: { error: { message: "overloaded" } } } : reply(full));
+    const res = await t.api("POST", `/api/recipes/${r.id}/enhance`);
+    expect(res.status).toBe(200);
+    expect(res.body.steps.changed).toBe(true);
+    expect(res.body.nutrition).toEqual({ suggested: null, changes: [], changed: false });
+  });
+
+  it("no ingredients: no nutrition request", async () => {
+    await aiOn();
+    const r = (await t.api("POST", "/api/recipes", { title: "Mystery", steps: ["Cook it."] })).body;
+    t.ai.respond = answers({ steps: ["Cook it until done, about 10 minutes."], stepChanges: ["Added a time."] });
+    await t.api("POST", `/api/recipes/${r.id}/enhance`);
+    expect(t.ai.calls.some((c) => String(c.body.messages[0].content).startsWith("You estimate nutrition"))).toBe(false);
+  });
+});
+
 describe("the AI corrects ingredients; it never adds them", () => {
   const check = async (ingredients: string, suggested: string[], changes: string[] = []) => {
     await aiOn();
@@ -74,14 +142,12 @@ describe("asking AI to check a recipe", () => {
     expect(e.steps).toMatchObject({ suggested: full.steps, changed: true });
     expect(e.steps.changes.length).toBeGreaterThan(0);
     expect(e.ingredients).toMatchObject({ suggested: full.ingredients, changed: true, changes: full.ingredientChanges });
-    expect(e.nutrition.changed).toBe(true);
-    expect(e.nutrition.suggested).toMatchObject({ calories: 320, protein: 48, addedSugar: 1, servingSize: "About 1 cup", source: "ai", servings: 4 });
+    expect(e.nutrition.changed).toBe(false); // nutrition comes from its own per-ingredient request (below)
     expect(e.organize).toMatchObject({ tags: ["spicy", "chicken"], changed: true });
     // what the AI was told
     const sent = t.ai.calls[0].body.messages[1].content as string;
     for (const bit of ["Chili", "1 lb chicken", "Cook the chicken.", "Dinner", "spicy", "Breakfast"]) expect(sent).toContain(bit);
-    expect(t.ai.calls[0].body.messages[0].content).toContain('"addedSugar"');
-    expect(t.ai.calls[0].body.messages[0].content).toContain('"servingSize"');
+    expect(t.ai.calls[0].body.messages[0].content).not.toMatch(/"nutrition"/); // the check doesn't guess nutrition
     // nothing saved
     const after = (await t.api("GET", `/api/recipes/${r.id}`)).body;
     expect(after.steps).toEqual([{ text: "Cook the chicken." }]);
@@ -224,7 +290,7 @@ describe("live progress and fuller instructions", () => {
   it("says what it's doing, step by step, then sends the suggestions", async () => {
     await aiOn();
     const r = await chili();
-    t.ai.respond = () => reply(full);
+    t.ai.respond = (_u: string, body: any) => reply(String(body.messages[0].content).startsWith("You estimate nutrition") ? { ingredients: [{ line: "1 lb chicken breast", calories: 1200 }, { line: "1 onion, diced", calories: 80 }] } : full);
     const lines = await stream(r.id);
     const said = texts(lines);
     expect(said[0]).toBe("Reading “Chili”: 2 ingredients, 1 step");
@@ -232,7 +298,8 @@ describe("live progress and fuller instructions", () => {
     expect(said).toContain("Answer received from OpenAI");
     expect(said.some((s) => /^Instructions: /.test(s))).toBe(true);
     expect(said).toContain("Ingredients: 2 corrected");
-    expect(said).toContain("Nutrition: estimated, 320 kcal per serving");
+    expect(said).toContain("Working out nutrition from each ingredient…");
+    expect(said).toContain("Nutrition: estimated, 320 kcal per serving"); // (1200 + 80) / 4
     expect(said).toContain("Categories and tags: 1 new category, 1 tag added");
     const asking = lines.find((l) => l.text === "Asking OpenAI (tiny)…");
     expect(asking.waiting).toBe(true); // the wizard shows a timer on this line
@@ -272,7 +339,8 @@ describe("live progress and fuller instructions", () => {
     const expanded = ["# Prep and Season", "Pat dry: Pat the chops dry with paper towels so they sear well.", "Season: Season both sides with salt and pepper.", "# Sear", "Brown: Sear 3–5 minutes per side until golden and 145°F inside.", "Rest: Rest 5 minutes on a warm plate."];
     t.ai.respond = () => reply({ steps: expanded, stepMode: "expanded", stepChanges: ["Expanded the steps; 145°F is the USDA safe temperature for pork (was 135)."] });
     const e = (await t.api("POST", `/api/recipes/${brief.id}/enhance`)).body;
-    const prompt = t.ai.calls.at(-1)!.body.messages[1].content as string;
+    const checks = () => t.ai.calls.filter((c) => String(c.body.messages[0].content).startsWith("You check home recipes"));
+    const prompt = checks().at(-1)!.body.messages[1].content as string;
     expect(prompt).toMatch(/brief: expand them/i);
     expect(e.steps).toMatchObject({ suggested: expanded, mode: "expanded", changed: true });
     // a recipe with full steps is only filled in
@@ -288,7 +356,7 @@ describe("live progress and fuller instructions", () => {
     })).body;
     t.ai.respond = () => reply({ steps: ["Season the beef chuck all over with salt and pepper and let it sit at room temperature for 30 minutes.", "x"], stepChanges: ["Filled a gap."] });
     const e2 = (await t.api("POST", `/api/recipes/${detailed.id}/enhance`)).body;
-    expect(t.ai.calls.at(-1)!.body.messages[1].content).toMatch(/detailed: fill gaps only/i);
+    expect(checks().at(-1)!.body.messages[1].content).toMatch(/detailed: fill gaps only/i);
     expect(e2.steps.mode).toBe("filled");
   });
 });

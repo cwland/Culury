@@ -65,7 +65,7 @@ describe("getting the AI's answer as it's written", () => {
     t.ai.respond = () => ({ status: 200, sse: sse(JSON.stringify(answer), { pieces: 10 }), gapMs: 300 });
     const lines = await stream(r.id);
     expect(lines.at(-1).type).toBe("result");
-    expect(t.ai.calls).toHaveLength(1);
+    expect(t.ai.calls.filter((c) => String(c.body.messages[0].content).startsWith("You check home recipes"))).toHaveLength(1); // one check (and its nutrition request)
   });
 
   it("a model that goes quiet is caught, said plainly, and the next service is asked", async () => {

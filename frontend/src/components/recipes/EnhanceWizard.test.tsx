@@ -115,6 +115,23 @@ describe("Improve with AI, one part at a time", () => {
     await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")?.body).toMatchObject({ categories: ["Dinner", "Soup"], tags: ["chili", "weeknight"] }));
   });
 
+  it("edited nutrition doesn't keep the AI's per-ingredient breakdown (it no longer adds up to your numbers)", async () => {
+    const u = userEvent.setup();
+    const nutrition = { suggested: { calories: 410, fat: 22, saturatedFat: 8, carbs: 10, fiber: 3, sugar: 2, protein: 33, sodium: 640, source: "ai", servings: 4, note: null, perIngredient: [{ line: "1 lb ground beef", grams: 454, calories: 1200 }] }, changes: ["Worked out from each ingredient: about 410 kcal per serving."], changed: true };
+    const { server } = open({ "POST /api/recipes/7/enhance": () => suggestion({ steps: { suggested: [], changes: [], changed: false }, ingredients: { suggested: [], changes: [], changed: false }, nutrition, organize: { categories: [], newCategories: [], tags: [], changes: [], changed: false } }) });
+    const part = await screen.findByRole("region", { name: "Nutrition" }, { timeout: 3000 });
+    await u.click(within(part).getByRole("button", { name: "Edit the AI suggestion" }));
+    const calories = within(part).getByRole("textbox", { name: /Calories/ });
+    await u.clear(calories);
+    await u.type(calories, "380");
+    await u.click(within(part).getByRole("button", { name: "Done" }));
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")).toBeTruthy());
+    const sent = server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body.nutrition;
+    expect(sent.calories).toBe(380);
+    expect(sent.perIngredient).toBeUndefined();
+  });
+
   it("nothing to change at all: says so, with a Done", async () => {
     const u = userEvent.setup();
     const none = { suggested: null, changes: [], changed: false };

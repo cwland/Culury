@@ -374,6 +374,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
       const n = { ...base } as Record<string, unknown>;
       for (const [k] of NUTRIENTS) n[k] = draft[k]?.trim() ? Number(draft[k]) : null;
       n.servingSize = draft.servingSize?.trim() || null;
+      delete n.perIngredient; // your numbers: the AI's per-ingredient breakdown no longer adds up to them
       setMine({ ...mine, nutrition: n as unknown as Nutrition });
     }
     setEditing(null);

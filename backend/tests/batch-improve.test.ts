@@ -75,7 +75,8 @@ describe("improving every imported recipe at once", () => {
     const { importId } = await imported(["Chili", "Stew", "Soup"]);
     const seen: number[] = [];
     let batchId = 0;
-    t.ai.respond = async () => {
+    t.ai.respond = async (_u, body) => {
+      if (String(body.messages[0].content).startsWith("You estimate nutrition")) return reply({ ingredients: [{ line: "1 lb beef", calories: 1000 }] }); // the check's own nutrition request
       if (batchId) seen.push(((await t.app.db.select().from(jobs).where(eq(jobs.id, batchId)))[0].result as { done: number }).done);
       return reply(better("x"));
     };
@@ -113,7 +114,7 @@ describe("improving every imported recipe at once", () => {
     t.ai.respond = () => reply(better("stew"));
     const { job } = await improve(importId);
     expect(job.result).toMatchObject({ total: 2, done: 2, improved: 1, failed: [] });
-    expect(t.ai.calls).toHaveLength(1);
+    expect(t.ai.calls.filter((c) => String(c.body.messages[0].content).startsWith("You check home recipes"))).toHaveLength(1);
   });
 
   it("needs Improve with AI on, and an import that brought recipes in", async () => {

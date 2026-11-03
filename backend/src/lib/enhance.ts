@@ -10,6 +10,7 @@ import { AiError } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { notFound } from "./errors.js";
 import { tidyIngredientLine } from "./ingredients.js";
+import { estimateNutrition } from "./aiHelpers.js";
 
 // AI Enhance: the AI checks a recipe (fills gaps in the steps, catches ingredient mistakes,
 // estimates nutrition, suggests categories and tags). Checking saves nothing: the person picks
@@ -48,14 +49,12 @@ export function briefSteps(steps: Step[]) {
 const SYSTEM = `You check home recipes and suggest careful fixes. Reply with JSON only, in this shape:
 {"steps": ["..."], "stepMode": "expanded" or "filled", "stepChanges": ["..."],
  "ingredients": ["..."], "ingredientChanges": ["..."],
- "nutrition": {"calories": 0, "fat": 0, "saturatedFat": 0, "carbs": 0, "fiber": 0, "sugar": 0, "addedSugar": 0, "protein": 0, "sodium": 0, "servingSize": "", "note": ""}, "nutritionChanges": ["..."],
  "categories": ["..."], "tags": ["..."], "organizeChanges": ["..."]}
 Rules:
 - Steps marked DETAILED (fill gaps only, "stepMode": "filled"): keep the recipe's own wording. Change a step only to fix a mistake or add a missing detail (a time, a temperature, a doneness cue, a missing step). Keep every step; lines starting with "# " are headings, keep them.
 - Steps marked BRIEF (expand them, "stepMode": "expanded"): rewrite them as full instructions a home cook can follow. Group them under short headings, each its own line starting with "# " (for example "# Prep and Season", "# Sear the Pork Chops", "# Build the Pan Sauce"). Each step starts with a short label and a colon ("Pat dry: ...", "Deglaze: ..."), then says how and why: pan and heat level, visual and doneness cues, times, resting, scraping up browned bits. Keep every action and the cook's own numbers; add detail, don't drop anything. Never number the lines.
 - Food safety: if a doneness temperature is below the USDA safe minimum (pork 145°F, poultry 165°F, ground meat 160°F), use the safe one and say so in stepChanges.
 - Ingredients: one per line, as written, but with amounts as numbers ("1 lb ground beef", not "One pound of ground beef"). Never add an ingredient, not even salt, pepper, oil or water: only correct and tidy the ones the recipe has (amounts, units, names, prep notes), and you may split a combined line ("salt and pepper") or group lines under "# " headings. Never change a quantity without saying why in ingredientChanges.
-- Nutrition is for ONE serving: grams, except calories (kcal) and sodium (mg), from standard food tables (USDA). "sugar" is total sugars; "addedSugar" is the part from added sugar, syrup, honey and the like. "servingSize": how much one serving is, like "About 1½ cups (340 g)". "note": one short sentence on what you assumed.
 - Categories: choose from the household's categories. Suggest a new one only if none fits.
 - Tags: lowercase, short. Reuse the household's existing tags rather than near-duplicates. Keep the recipe's tags unless one is wrong.
 - Each ...Changes list: one short sentence per change, saying what and why. An empty list if nothing changed.
@@ -104,13 +103,11 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   const ingredients = ingredientLines(r.ingredients);
   const cats = r.categories.map((c) => c.name);
   const servings = r.servings ?? null;
-  const shownNutrition = r.nutrition ? Object.fromEntries(NUMBERS.map((k) => [k, r.nutrition![k]])) : null;
   const user = [
     `Recipe: ${r.title}`,
     `Makes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}`,
     `Ingredients:\n${ingredients.map((l) => `- ${l}`).join("\n") || "(none)"}`,
     `Steps (${briefSteps(r.steps) ? "BRIEF: expand them" : "DETAILED: fill gaps only"}):\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n") || "(none)"}`,
-    `Nutrition now (per serving): ${shownNutrition ? JSON.stringify(shownNutrition) : "none"}`,
     `Its categories: ${cats.join(", ") || "none"}`,
     `Its tags: ${r.tags.join(", ") || "none"}`,
     `The household's categories: ${household.join(", ") || "none"}`,
@@ -128,7 +125,7 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   const { json, service } = await ai.ask("recipe", SYSTEM, user, { maxTokens: 8000, minWaitSec: 180, onProgress, stream: true, signal: o.signal, skip: o.skip });
   onStep({ text: `Answer received from ${service.name}` });
   // Readable JSON but none of the parts ({"error": ...}, {}): not "the recipe looks good"
-  if (!["steps", "ingredients", "nutrition", "categories", "tags"].some((k) => json[k] != null)) {
+  if (!["steps", "ingredients", "categories", "tags"].some((k) => json[k] != null)) {
     await logEvent(db, { category: "ai", level: "warning", source: service.name, event: `${service.name} sent no suggestions for “${r.title}”`, detail: `It said: ${JSON.stringify(json).slice(0, 600)}` });
     throw new AiError(`${service.name} didn't send any suggestions. Try again, or try another AI service.`);
   }
@@ -141,17 +138,22 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   // is dropped, with any change note about it.
   const { kept: sIngredients, dropped } = rawIngredients ? onlyTheRecipes(ingredients, rawIngredients) : { kept: null, dropped: [] as string[] };
 
-  // Nutrition: only an estimate with calories counts
+  // Nutrition: its own request, worked out from each ingredient (as the check suggests them) and
+  // added up here, the same way as Estimate / Re-analyze, so accepting it gives the numbers
+  // Re-analyze would. It failing doesn't stop the rest of the check.
   let sNutrition: Nutrition | null = null;
-  const n = json.nutrition as Record<string, unknown> | undefined;
-  if (n && typeof n === "object" && num(n.calories, 20000) !== null) {
-    sNutrition = {
-      ...(Object.fromEntries(NUMBERS.map((k) => [k, num(n[k], k === "calories" ? 20000 : 100000)])) as Record<(typeof NUMBERS)[number], number | null>),
-      source: "ai",
-      servings: servings ?? (r.yieldText ? null : 4),
-      servingSize: typeof n.servingSize === "string" && n.servingSize.trim() ? n.servingSize.trim().slice(0, 100) : null,
-      note: typeof n.note === "string" && n.note.trim() ? n.note.trim().slice(0, 300) : null,
-    };
+  const nutritionChanges: string[] = [];
+  const forNutrition = (sIngredients ?? ingredients).map((l) => (l.startsWith("# ") ? { raw: l.slice(2), section: l.slice(2) } : { raw: l })) as Ingredient[];
+  if (forNutrition.some((i) => !i.section && i.raw.trim())) {
+    onStep({ text: "Working out nutrition from each ingredient…", waiting: true });
+    try {
+      sNutrition = await estimateNutrition(ai, { title: r.title, servings: r.servings ?? null, yieldText: r.yieldText, ingredients: forNutrition }, { skip: o.skip, signal: o.signal });
+      const was = r.nutrition?.calories;
+      nutritionChanges.push(`Worked out from each ingredient: about ${Math.round(sNutrition.calories!)} kcal per serving${was != null ? ` (was ${Math.round(was)})` : ""}.`);
+    } catch (e) {
+      onStep({ text: `Nutrition couldn't be worked out: ${(e as Error).message}` });
+      await logEvent(db, { category: "ai", level: "warning", source: "Improve with AI", event: `Nutrition couldn't be worked out for “${r.title}”`, detail: (e as Error).message });
+    }
   }
   const sameNutrition = (a: Nutrition | null, b: Nutrition | null) => (!a || !b ? a === b : NUMBERS.every((k) => (a[k] ?? null) === (b[k] ?? null)));
 
@@ -170,7 +172,7 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   const out: Enhancement = {
     steps: { ...stepSection, mode },
     ingredients: section(ingredients, sIngredients, withoutNotesAbout(changesOf("ingredientChanges"), dropped), sameLines),
-    nutrition: section(r.nutrition ?? null, sNutrition, changesOf("nutritionChanges"), sameNutrition),
+    nutrition: section(r.nutrition ?? null, sNutrition, nutritionChanges, sameNutrition),
     organize: organizeChanged
       ? { categories: categoriesOut, newCategories, tags: tagsOut, changes: organizeChanges, changed: true }
       : { categories: cats, newCategories: [], tags: r.tags, changes: [], changed: false },

@@ -74,6 +74,11 @@ export const nutritionInput = z
     servings: z.number().int().min(1).max(1000).nullable().optional(),
     servingSize: z.string().trim().max(100).nullable().default(null),
     note: z.string().trim().max(500).nullable().optional(),
+    // AI estimates: what each ingredient line came to (whole amount), as Estimate / the AI check send it
+    perIngredient: z
+      .array(z.object({ line: z.string().trim().min(1).max(200), grams: z.number().min(0).max(1e6).nullable(), calories: z.number().min(0).max(1e6) }).strict())
+      .max(100)
+      .optional(),
   })
   .strict();
 

@@ -26,12 +26,13 @@ One entry per ingredient line, in the order given. Each entry is for the WHOLE a
 const NUMBERS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "addedSugar", "protein", "sodium"] as const;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }): Promise<Nutrition> {
+// skip: AI services to leave out (ones skipped as too slow during the AI check)
+export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }, opts: { skip?: string[]; signal?: AbortSignal } = {}): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
   if (!lines.length) throw new AiError("Add the ingredients first: nutrition is worked out from them.");
   const servings = r.servings ?? null;
   const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
-  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: 400 + 120 * lines.length });
+  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: 400 + 120 * lines.length, ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
   const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
   const common = {
     source: "ai" as const,
