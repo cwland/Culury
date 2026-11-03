@@ -390,8 +390,12 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
 
       {tab === "recipe" && (
         <div role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe">
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-            <section aria-label="Ingredients" className={`${card} self-start`}>
+          {/* Two columns that each stack on their own (left: ingredients, notes, my notes; right:
+              steps, substitutions), so a short ingredient list doesn't leave the notes far below.
+              On phones the columns dissolve into one, in reading order. */}
+          <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <div className="contents lg:flex lg:flex-col lg:gap-4">
+            <section aria-label="Ingredients" className={`${card} order-1 lg:order-none`}>
               <div className="flex items-center gap-1">
                 <h2 className="text-xl font-bold">Ingredients</h2>
                 {editing !== "ingredients" && pencil("ingredients", "Edit ingredients")}
@@ -429,26 +433,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
               )}
             </section>
 
-            <section aria-label="Steps" className={card}>
-              <div className="flex items-center gap-1">
-                <h2 className="text-xl font-bold">Steps</h2>
-                {editing !== "steps" && pencil("steps", "Edit steps")}
-              </div>
-              {editing === "steps" ? (
-                <form onSubmit={saveSection} className="mt-3">
-                  {field("steps", "Steps", { area: true, rows: 14, hint: "A blank line between steps. A line starting with “# ” is a heading." })}
-                  <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
-                </form>
-              ) : r.steps.length ? (
-                <Steps steps={r.steps} units={prefs.units} recipe={r} />
-              ) : (
-                <p className="mt-2 text-subtle">No steps yet.</p>
-              )}
-            </section>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <section aria-label="Recipe notes" className={card}>
+            <section aria-label="Recipe notes" className={`${card} order-3 lg:order-none`}>
               <div className="flex items-center gap-1">
                 <h2 className="text-xl font-bold">Notes</h2>
                 {editing !== "notes" && pencil("notes", "Edit notes")}
@@ -464,9 +449,29 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
                 <p className="mt-2 text-subtle">No notes yet.</p>
               )}
             </section>
-            <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} />
-            <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} />
+            <MyNotes value={r.me.notes} onSave={(notes) => setMine({ notes })} className="order-4 lg:order-none" />
+            </div>
+            <div className="contents lg:flex lg:flex-col lg:gap-4">
+            <section aria-label="Steps" className={`${card} order-2 lg:order-none`}>
+              <div className="flex items-center gap-1">
+                <h2 className="text-xl font-bold">Steps</h2>
+                {editing !== "steps" && pencil("steps", "Edit steps")}
+              </div>
+              {editing === "steps" ? (
+                <form onSubmit={saveSection} className="mt-3">
+                  {field("steps", "Steps", { area: true, rows: 14, hint: "A blank line between steps. A line starting with “# ” is a heading." })}
+                  <SectionButtons busy={saver.busy} error={saver.error} onCancel={stopEdit} />
+                </form>
+              ) : r.steps.length ? (
+                <Steps steps={r.steps} units={prefs.units} recipe={r} />
+              ) : (
+                <p className="mt-2 text-subtle">No steps yet.</p>
+              )}
+            </section>
+            <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} className="order-5 lg:order-none" />
+            </div>
           </div>
+
         </div>
       )}
       {tab === "nutrition" && (
@@ -653,7 +658,7 @@ function Stars({ value, onChange }: { value: number | null; onChange: (v: number
   );
 }
 
-function MyNotes({ value, onSave }: { value: string | null; onSave: (v: string | null) => Promise<void> }) {
+function MyNotes({ value, onSave, className = "" }: { value: string | null; onSave: (v: string | null) => Promise<void>; className?: string }) {
   const [text, setText] = useState(value ?? "");
   const [saved, setSaved] = useState(false);
   const dirty = text.trim() !== (value ?? "");
@@ -664,7 +669,7 @@ function MyNotes({ value, onSave }: { value: string | null; onSave: (v: string |
     setTimeout(() => setSaved(false), 1500);
   };
   return (
-    <section aria-label="My notes" className={card}>
+    <section aria-label="My notes" className={`${card} ${className}`}>
       <h2 className="flex items-baseline gap-2 text-xl font-bold">
         My notes <span className="text-sm font-normal text-muted">only you see these</span>
       </h2>
@@ -684,7 +689,7 @@ function MyNotes({ value, onSave }: { value: string | null; onSave: (v: string |
   );
 }
 
-function Substitutions({ recipeId, list, onChange }: { recipeId: number; list: Substitution[]; onChange: (l: Substitution[]) => void }) {
+function Substitutions({ recipeId, list, onChange, className = "" }: { recipeId: number; list: Substitution[]; onChange: (l: Substitution[]) => void; className?: string }) {
   const [original, setOriginal] = useState("");
   const [replacement, setReplacement] = useState("");
   const [note, setNote] = useState("");
@@ -708,7 +713,7 @@ function Substitutions({ recipeId, list, onChange }: { recipeId: number; list: S
   };
   const input = "min-w-0 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action";
   return (
-    <section aria-label="Substitutions" className={card}>
+    <section aria-label="Substitutions" className={`${card} ${className}`}>
       <h2 className="text-xl font-bold">Substitutions</h2>
       <p className="mt-1 text-sm text-subtle">What you swapped when you made it, so you remember next time.</p>
       <form onSubmit={add} className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr]">

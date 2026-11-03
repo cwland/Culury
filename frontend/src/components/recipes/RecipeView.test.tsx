@@ -28,6 +28,22 @@ const acceptAll = async (u: ReturnType<typeof userEvent.setup>) => {
   for (let k = 0; k < 6 && screen.queryByRole("button", { name: "Accept change" }); k++) await u.click(screen.getByRole("button", { name: "Accept change" }));
 };
 
+describe("the recipe page's columns", () => {
+  it("left: ingredients, then notes and my notes (right under them); right: steps, then substitutions", async () => {
+    server({ ready: false, photos: false }, recipeJson({ notes: "Good with rice." }));
+    render(<RecipeView id={7} />);
+    await screen.findByRole("region", { name: "Ingredients" });
+    const columnOf = (name: string) => screen.getByRole("region", { name }).parentElement!;
+    const left = columnOf("Ingredients");
+    const right = columnOf("Steps");
+    expect(left).not.toBe(right);
+    expect([...left.children].map((c) => c.getAttribute("aria-label"))).toEqual(["Ingredients", "Recipe notes", "My notes"]);
+    expect([...right.children].map((c) => c.getAttribute("aria-label"))).toEqual(["Steps", "Substitutions"]);
+    // both columns sit side by side in one grid (on phones: one column, ingredients, steps, then the rest)
+    expect(left.parentElement).toBe(right.parentElement);
+  });
+});
+
 describe("fresh herbs", () => {
   it("show the dried amount next to them, and it scales with the recipe", async () => {
     window.location.hash = "#/recipes/7";
