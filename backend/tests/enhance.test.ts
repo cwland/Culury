@@ -66,6 +66,28 @@ describe("nutrition in the AI check", () => {
     expect(again.protein).toBe(accepted.protein);
   });
 
+  it("already worked out per ingredient (Calculate nutrition in Discover, Re-analyze), ingredients unchanged: not asked again", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = answers();
+    await t.api("POST", `/api/recipes/${r.id}/nutrition`); // per ingredient
+    const calls = t.ai.calls.length;
+    t.ai.respond = answers({ ...full, ingredients: ["1 lb chicken", "1 onion"], ingredientChanges: [] });
+    const e = (await t.api("POST", `/api/recipes/${r.id}/enhance`)).body;
+    expect(t.ai.calls.slice(calls).map((c) => String(c.body.messages[0].content).slice(0, 22))).toEqual(["You check home recipes"]);
+    expect(e.nutrition.changed).toBe(false);
+  });
+
+  it("already worked out, but the check changes the ingredients: worked out again", async () => {
+    await aiOn();
+    const r = await chili();
+    t.ai.respond = answers();
+    await t.api("POST", `/api/recipes/${r.id}/nutrition`);
+    const calls = t.ai.calls.length;
+    await t.api("POST", `/api/recipes/${r.id}/enhance`);
+    expect(t.ai.calls.slice(calls).some((c) => String(c.body.messages[0].content).startsWith("You estimate nutrition"))).toBe(true);
+  });
+
   it("says how it compares with what was there", async () => {
     await aiOn();
     const r = await chili();

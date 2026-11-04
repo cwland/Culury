@@ -144,7 +144,11 @@ export async function suggestEnhancements(db: Db, ai: AiService, recipeId: numbe
   let sNutrition: Nutrition | null = null;
   const nutritionChanges: string[] = [];
   const forNutrition = (sIngredients ?? ingredients).map((l) => (l.startsWith("# ") ? { raw: l.slice(2), section: l.slice(2) } : { raw: l })) as Ingredient[];
-  if (forNutrition.some((i) => !i.section && i.raw.trim())) {
+  // Already worked out one ingredient at a time (Re-analyze, or Calculate nutrition in Discover)
+  // and the check leaves the ingredients as they are: nothing new to work out
+  const sameIngredients = !sIngredients || sIngredients.join("\n") === ingredients.join("\n");
+  const alreadyWorkedOut = !!r.nutrition?.perIngredient?.length && !r.nutrition.outdated && sameIngredients;
+  if (!alreadyWorkedOut && forNutrition.some((i) => !i.section && i.raw.trim())) {
     onStep({ text: "Working out nutrition from each ingredient…", waiting: true });
     try {
       sNutrition = await estimateNutrition(ai, { title: r.title, servings: r.servings ?? null, yieldText: r.yieldText, ingredients: forNutrition }, { skip: o.skip, signal: o.signal });

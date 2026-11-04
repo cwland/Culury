@@ -674,7 +674,7 @@ function ImportButton({ post }: { post: DiscoveryItem }) {
       <p role="status" className={pill}>
         <span>
           Imported “{done.title ?? post.title}” into your recipes.
-          {done.fromFeed && " The site kept Culury out, so it was read from the feed's copy of the post."}{" "}
+          {done.fromFeed && " The recipe's site couldn't be read, so it was read from the feed's copy of the post."}{" "}
           <a href={`#/recipes/${done.recipeId}?imported=1`} className={open}>Open the recipe</a>
         </span>
       </p>

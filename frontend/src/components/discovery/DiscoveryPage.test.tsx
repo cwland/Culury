@@ -186,7 +186,7 @@ describe("one post", () => {
       openPost({ "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }), "GET /api/imports/:id": () => job({ status: "done", result: { recipeId: 31, title: "Crispy Air Fryer Chicken", fromFeed: true } }) });
       const u = userEvent.setup();
       await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
-      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/The site kept Culury out, so it was read from the feed's copy/), { timeout: 4000 });
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/The recipe's site couldn't be read, so it was read from the feed's copy/), { timeout: 4000 });
     });
 
     it("already in your recipes: says so, with the link", async () => {
