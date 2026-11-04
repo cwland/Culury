@@ -661,6 +661,8 @@ function ImportButton({ post }: { post: DiscoveryItem }) {
   }, [job, busy]);
   useEffect(() => {
     if (job?.status === "failed") (setError(job.error ?? "That couldn't be imported"), setJob(null));
+    // imported: straight to the new recipe, where the AI check wizard opens
+    if (job?.status === "done" && job.result?.recipeId && !job.result.duplicateOf) window.location.hash = `#/recipes/${job.result.recipeId}?imported=1`;
   }, [job]);
 
   const start = async () => {
@@ -676,14 +678,10 @@ function ImportButton({ post }: { post: DiscoveryItem }) {
   const saved = done ? null : post.recipeId;
   const pill = "inline-flex items-center gap-2 rounded-lg bg-success-subtle px-3 py-2 text-sm text-success";
   const open = "font-semibold underline";
-  if (done?.recipeId)
+  if (done?.recipeId && !done.duplicateOf)
     return (
       <p role="status" className={pill}>
-        <span>
-          Imported “{done.title ?? post.title}” into your recipes.
-          {done.fromFeed && " The recipe's site couldn't be read, so it was read from the feed's copy of the post."}{" "}
-          <a href={`#/recipes/${done.recipeId}?imported=1`} className={open}>Open the recipe</a>
-        </span>
+        Imported. Opening the recipe…
       </p>
     );
   if (done?.duplicateOf)

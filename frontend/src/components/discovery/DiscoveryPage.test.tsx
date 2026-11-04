@@ -186,7 +186,7 @@ describe("one post", () => {
       return s;
     };
 
-    it("imports it, then says so with a link to the new recipe", async () => {
+    it("imports it, then goes straight to the new recipe and its AI check wizard", async () => {
       let polls = 0;
       const s = openPost({
         "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }),
@@ -195,18 +195,8 @@ describe("one post", () => {
       const u = userEvent.setup();
       await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
       expect(await screen.findByText(/Importing/)).toBeInTheDocument();
-      const done = await screen.findByRole("status", {}, { timeout: 4000 });
-      await waitFor(() => expect(done).toHaveTextContent("Imported “Crispy Air Fryer Chicken” into your recipes"), { timeout: 4000 });
-      expect(within(done).getByRole("link", { name: "Open the recipe" })).toHaveAttribute("href", "#/recipes/31?imported=1");
-      expect(screen.queryByRole("button", { name: "Import Recipe" })).toBeNull();
+      await waitFor(() => expect(window.location.hash).toBe("#/recipes/31?imported=1"), { timeout: 4000 });
       expect(s.writes().map((w) => w.path)).toEqual(["/api/discovery/items/5/import"]);
-    });
-
-    it("read from the feed's copy: says so", async () => {
-      openPost({ "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }), "GET /api/imports/:id": () => job({ status: "done", result: { recipeId: 31, title: "Crispy Air Fryer Chicken", fromFeed: true } }) });
-      const u = userEvent.setup();
-      await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
-      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/The recipe's site couldn't be read, so it was read from the feed's copy/), { timeout: 4000 });
     });
 
     it("already in your recipes: says so, with the link", async () => {
