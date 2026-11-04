@@ -196,18 +196,28 @@ describe("one post", () => {
     expect(screen.queryByRole("article", { name: "The post" })).toBeNull();
   });
 
-  it("as the feed sent it: picture, title, author, feed, date, its text, and Open original site", async () => {
+  it("picture, title, author, feed, date and Open original site; the feed's post isn't repeated at the bottom", async () => {
     routes();
     window.location.hash = "#/discover/5";
     render(<DiscoveryPage />);
     expect(await screen.findByRole("heading", { level: 1, name: "Crispy Air Fryer Chicken" })).toBeInTheDocument();
     expect(screen.getByText(/Deb · Test Kitchen · 2 days ago/)).toBeInTheDocument();
-    const post = screen.getByRole("article", { name: "The post" });
-    expect(within(post).getByText("dry").tagName).toBe("STRONG");
-    expect(within(post).getByRole("img", { name: "In the pan" })).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Recipe preview" });
+    expect(screen.queryByRole("article", { name: "The post" })).toBeNull();
+    expect(screen.queryByText("From the feed")).toBeNull();
     expect(screen.getByRole("link", { name: /Open original site/ })).toHaveAttribute("href", "https://kitchen.example.com/p5");
     expect(screen.getByRole("link", { name: /Open original site/ })).toHaveAttribute("target", "_blank");
     expect(screen.getByRole("link", { name: /Discover/ })).toHaveAttribute("href", "#/discover");
+  });
+
+  it("a post without a link (no recipe to preview): the feed's post is shown, made safe", async () => {
+    routes({ "GET /api/discovery/items/5": () => ({ ...item(5, "Crispy Air Fryer Chicken"), link: null, contentHtml: '<p>Pat the thighs <strong>dry</strong>.</p><img src="https://cdn.example.com/in.jpg" alt="In the pan">' }) });
+    window.location.hash = "#/discover/5";
+    render(<DiscoveryPage />);
+    const post = await screen.findByRole("article", { name: "The post" });
+    expect(within(post).getByText("dry").tagName).toBe("STRONG");
+    expect(within(post).getByRole("img", { name: "In the pan" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Recipe preview" })).toBeNull();
   });
 
   describe("Import Recipe", () => {
@@ -285,7 +295,7 @@ describe("one post", () => {
       // nothing saved, nothing sent; the feed's post is still below
       expect(s.writes()).toEqual([]);
       expect(screen.getByRole("button", { name: "Import Recipe" })).toBeInTheDocument();
-      expect(screen.getByRole("article", { name: "The post" })).toHaveTextContent("The story of this roast.");
+      expect(screen.queryByRole("article", { name: "The post" })).toBeNull(); // not repeated below the preview
     });
 
     it("read from the feed's post: says so, and why the site couldn't be used", async () => {

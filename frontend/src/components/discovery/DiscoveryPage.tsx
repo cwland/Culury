@@ -514,19 +514,19 @@ function Post({ id }: { id: number }) {
               )}
             </div>
             {p.link && <Preview id={p.id} postTitle={p.title} preview={preview} error={previewError} onChange={setPreview} />}
-            {/* the post as the feed sent it, made safe on the server (lib/rss.ts sanitizeHtml) */}
-            {p.contentHtml ? (
-              <>
-                {p.link && <h2 className="mt-8 border-t border-line pt-6 text-sm font-semibold uppercase tracking-wide text-subtle">From the feed</h2>}
-                <article aria-label="The post" className="feed-post mt-4" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
-              </>
-            ) : (
-              !p.description && (
-                <article aria-label="The post" className="mt-6 text-subtle">
-                  The feed sent no text for this post: open the original site to read it.
-                </article>
-              )
-            )}
+            {/* No link, so no recipe to preview: the post as the feed sent it, made safe on the
+                server (lib/rss.ts sanitizeHtml). With a link, the description above and the preview
+                cover it. */}
+            {!p.link &&
+              (p.contentHtml ? (
+                <article aria-label="The post" className="feed-post mt-6" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
+              ) : (
+                !p.description && (
+                  <article aria-label="The post" className="mt-6 text-subtle">
+                    The feed sent no text for this post.
+                  </article>
+                )
+              ))}
           </div>
         </div>
       )}
