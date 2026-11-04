@@ -40,7 +40,7 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
   const stale = value?.servings && servings && value.servings !== servings;
 
   return (
-    <section aria-label="Nutrition" className="rounded-2xl bg-container p-5 sm:p-6">
+    <section aria-label="Nutrition" className="@container rounded-2xl bg-container p-5 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-xl font-bold">Nutrition</h2>
         {value && <span className="mr-auto text-sm text-subtle">per serving</span>}
@@ -90,13 +90,18 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
               The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Re-analyze them with AI, or edit them (the buttons at the top)." : "Edit them to match (the pencil at the top)."}
             </p>
           )}
-          <NutritionFacts value={value} />
-          {!value.outdated && <CaloriesByIngredient value={value} className="mt-5" />}
-          <p className="mt-3 text-xs text-muted">
-            {SOURCE[value.source]}
-            {value.servings ? `, for ${value.servings} servings` : ""}. {value.note}
-            {stale ? ` The recipe now makes ${servings}: estimate again.` : ""}
-          </p>
+          {/* the label, with each ingredient's calories beside it when there's room (stacked on phones) */}
+          <div className={!value.outdated && value.perIngredient?.length ? "grid gap-x-8 gap-y-5 @2xl:grid-cols-2" : ""}>
+            <div>
+              <NutritionFacts value={value} />
+              <p className="mt-3 text-xs text-muted">
+                {SOURCE[value.source]}
+                {value.servings ? `, for ${value.servings} servings` : ""}. {value.note}
+                {stale ? ` The recipe now makes ${servings}: estimate again.` : ""}
+              </p>
+            </div>
+            {!value.outdated && <CaloriesByIngredient value={value} className="@2xl:mt-3" />}
+          </div>
         </>
       )}
       {error && <p role="alert" className="mt-3 text-sm text-error">{error}</p>}
