@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { api } from "../../api";
 import { Popup } from "../Popup";
 import type { ImportJob } from "../recipes/ImportDialog";
-import { NutritionFacts } from "../recipes/NutritionCard";
+import { CaloriesByIngredient, NutritionFacts } from "../recipes/NutritionCard";
 import type { Nutrition } from "../../recipes";
 import { BackIcon, ChefIcon, DiscoverIcon, FeedIcon, LinkOutIcon, RefreshIcon } from "../Icons";
 
@@ -50,7 +50,7 @@ export interface PreviewRecipe {
   totalMinutes: number | null;
   imageUrl: string | null;
   sourceUrl: string | null;
-  nutrition: (Nutrition & { perIngredient?: { line: string; grams: number | null; calories: number }[] }) | null;
+  nutrition: Nutrition | null;
 }
 export interface RecipePreview {
   recipe: PreviewRecipe | null;
@@ -618,20 +618,7 @@ function Preview({ id, postTitle, preview: pv, error, onChange }: { id: number; 
                   <p className="text-sm">per serving{n.servings ? `, ${n.servings} servings` : ""}</p>
                   <NutritionFacts value={n} />
                 </div>
-                {!!n.perIngredient?.length && (
-                  <div>
-                    <h3 className="font-semibold">Calories by ingredient</h3>
-                    <p className="text-xs text-subtle">The whole amount of each, worked out one at a time and added up.</p>
-                    <ul aria-label="Calories by ingredient" className="mt-2 text-sm">
-                      {n.perIngredient.map((x) => (
-                        <li key={x.line} className="flex justify-between gap-3 border-t border-line py-1.5">
-                          <span>{x.line}</span>
-                          <span className="shrink-0 font-semibold">{Math.round(x.calories).toLocaleString()} kcal</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                <CaloriesByIngredient value={n} />
               </section>
             )}
           </div>

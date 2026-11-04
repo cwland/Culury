@@ -91,6 +91,7 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
             </p>
           )}
           <NutritionFacts value={value} />
+          {!value.outdated && <CaloriesByIngredient value={value} className="mt-5" />}
           <p className="mt-3 text-xs text-muted">
             {SOURCE[value.source]}
             {value.servings ? `, for ${value.servings} servings` : ""}. {value.note}
@@ -215,5 +216,25 @@ export function NutritionFacts({ value }: { value: Nutrition }) {
         </p>
       )}
     </>
+  );
+}
+
+// Each ingredient's calories (the whole amount), when nutrition was worked out one ingredient at a
+// time: the recipe page and Discover's recipe preview both show it
+export function CaloriesByIngredient({ value, className = "" }: { value: Nutrition; className?: string }) {
+  if (!value.perIngredient?.length) return null;
+  return (
+    <div className={className}>
+      <h3 className="font-semibold">Calories by ingredient</h3>
+      <p className="text-xs text-subtle">The whole amount of each, worked out one at a time and added up.</p>
+      <ul aria-label="Calories by ingredient" className="mt-2 text-sm">
+        {value.perIngredient.map((x) => (
+          <li key={x.line} className="flex justify-between gap-3 border-t border-line py-1.5">
+            <span>{x.line}</span>
+            <span className="shrink-0 font-semibold">{Math.round(x.calories).toLocaleString()} kcal</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

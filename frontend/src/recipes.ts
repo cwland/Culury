@@ -91,6 +91,7 @@ export interface Nutrition {
   servingSize?: string | null; // "About 1½ cups (340 g)"
   note?: string | null;
   outdated?: boolean; // the ingredients changed since these numbers
+  perIngredient?: { line: string; grams: number | null; calories: number }[]; // worked out one ingredient at a time (AI)
 }
 // A points-style estimate (like the ones diet programs use) from calories, saturated fat, sugar and
 // protein. Only added sugar counts when it's known (fruit and milk sugar don't), else total sugar.

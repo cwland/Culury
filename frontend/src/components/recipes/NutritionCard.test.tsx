@@ -15,6 +15,22 @@ beforeEach(() => {
 });
 
 describe("nutrition facts", () => {
+  it("worked out per ingredient: shows the calories of each, biggest first", () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+    card(facts({ perIngredient: [{ line: "1 (5-pound) pork butt", grams: 2268, calories: 5600 }, { line: "3 tbsp brown sugar", grams: 36, calories: 140 }] }));
+    const by = screen.getByRole("list", { name: "Calories by ingredient" });
+    expect(within(by).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["1 (5-pound) pork butt5,600 kcal", "3 tbsp brown sugar140 kcal"]);
+  });
+
+  it("no per-ingredient numbers (typed in, from the site), or the ingredients changed since: no list", () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+    const { unmount } = card(facts());
+    expect(screen.queryByRole("list", { name: "Calories by ingredient" })).toBeNull();
+    unmount();
+    card(facts({ outdated: true, perIngredient: [{ line: "1 onion", grams: 110, calories: 44 }] }));
+    expect(screen.queryByRole("list", { name: "Calories by ingredient" })).toBeNull();
+  });
+
   it("shows added sugars under total sugars, with its daily value", async () => {
     fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
     card(facts());
