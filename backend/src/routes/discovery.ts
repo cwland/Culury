@@ -88,6 +88,8 @@ export default async function discoveryRoutes(app: FastifyInstance) {
       .object({
         feed: z.coerce.number().int().positive().optional(),
         match: z.enum(["all", "tags"]).default("all"),
+        tags: z.string().max(2000).optional(), // the ones you picked, comma-separated: posts matching any
+
         limit: z.coerce.number().int().min(1).max(100).default(48),
         before: z
           .string()
@@ -95,14 +97,15 @@ export default async function discoveryRoutes(app: FastifyInstance) {
           .optional(),
       })
       .parse(req.query);
-    const tags = (await tagsOf(app, userOf(req))).map((t) => t.trim()).filter(Boolean);
+    const picked = (q.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 50);
+    const tags = picked.length ? picked : (await tagsOf(app, userOf(req))).map((t) => t.trim()).filter(Boolean);
     const where: SQL[] = [];
     if (q.feed) where.push(eq(discoveryItems.feedId, q.feed));
     if (q.before) {
       const [ms, id] = q.before.split("_").map(Number);
       where.push(sql`(${sortKey}, ${discoveryItems.id}) < (${new Date(ms).toISOString()}::timestamptz, ${id})`);
     }
-    if (q.match === "tags") {
+    if (q.match === "tags" || picked.length) {
       if (!tags.length) return { items: [], more: false, next: null, tags };
       // the same as matchTags: title, categories and summary, any case, part of a word
       const hay = sql`lower(${discoveryItems.title} || ' ' || ${discoveryItems.categories}::text || ' ' || coalesce(${discoveryItems.description}, ''))`;

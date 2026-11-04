@@ -108,6 +108,18 @@ describe("your tags", () => {
   });
 });
 
+describe("filtering by the tags you pick", () => {
+  it("?tags= only posts matching any of those (any case, part of a word), each saying which", async () => {
+    serve(FEED, rss(item(1, " (Air Fryer)"), item(2, " chicken soup"), item(3, " keto bowl")));
+    await add();
+    await t.api("PUT", "/api/discovery/tags", { tags: ["air fryer", "KETO", "chicken"] });
+    const pick = async (tags: string[]) => (await t.api("GET", `/api/discovery/items?tags=${encodeURIComponent(tags.join(","))}`)).body.items.map((i: any) => [i.title, i.matchedTags]);
+    expect(await pick(["keto"])).toEqual([["Recipe 3 keto bowl", ["keto"]]]);
+    expect(await pick(["Air Fryer", "chicken"])).toEqual([["Recipe 2 chicken soup", ["chicken"]], ["Recipe 1 (Air Fryer)", ["Air Fryer"]]]);
+    expect((await t.api("GET", "/api/discovery/items?tags=")).body.items).toHaveLength(3); // none picked: everything
+  });
+});
+
 describe("keeping feeds fresh", () => {
   it("a refresh adds new posts and updates changed ones, without doubles", async () => {
     serve(FEED, rss(item(1)));

@@ -59,7 +59,23 @@ export interface RecipePreview {
   problem: string | null;
   canAi: boolean;
 }
-type Mode = "all" | "tags";
+// The tags you've highlighted to filter by, remembered in this browser
+const PICKED = "culury.discover.tags";
+const readPicked = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(PICKED) ?? "[]");
+    return Array.isArray(v) ? v.filter((t) => typeof t === "string") : [];
+  } catch {
+    return [];
+  }
+};
+const keepPicked = (tags: string[]) => {
+  try {
+    localStorage.setItem(PICKED, JSON.stringify(tags));
+  } catch {
+    /* private window: just this visit */
+  }
+};
 
 export const ago = (iso: string | null) => {
   if (!iso) return "";
@@ -95,8 +111,8 @@ const button = "flex items-center gap-2 rounded-lg border border-line bg-contain
 function Grid() {
   const [feeds, setFeeds] = useState<DiscoveryFeed[] | null>(null);
   const [feed, setFeed] = useState<number | "all">("all");
-  const [mode, setMode] = useState<Mode>("all");
   const [tags, setTags] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>(readPicked);
   const [items, setItems] = useState<DiscoveryItem[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -116,7 +132,7 @@ function Grid() {
       const n = ++asked.current;
       const q = new URLSearchParams();
       if (feed !== "all") q.set("feed", String(feed));
-      if (mode === "tags") q.set("match", "tags");
+      if (picked.length) q.set("tags", picked.join(","));
       if (more && after) q.set("before", after);
       api<{ items: DiscoveryItem[]; more: boolean; next: string | null }>("GET", `/api/discovery/items?${q}`)
         .then((r) => {
@@ -126,12 +142,19 @@ function Grid() {
         })
         .catch((e) => setError((e as Error).message));
     },
-    [feed, mode]
+    [feed, picked]
   );
   useEffect(() => {
     loadFeeds();
     api<{ tags: string[] }>("GET", "/api/discovery/tags")
-      .then((r) => setTags(r.tags))
+      .then((r) => {
+        setTags(r.tags);
+        setPicked((old) => {
+          const still = old.filter((t) => r.tags.includes(t));
+          if (still.length !== old.length) keepPicked(still);
+          return still.length === old.length ? old : still;
+        });
+      })
       .catch(() => {});
   }, [loadFeeds]);
   useEffect(() => {
@@ -139,13 +162,17 @@ function Grid() {
     loadItems();
   }, [loadItems]);
 
+  const pick = (next: string[]) => {
+    setPicked(next);
+    keepPicked(next);
+  };
+  // a tag highlighted (filter by it) or not
+  const toggle = (t: string) => pick(picked.includes(t) ? picked.filter((x) => x !== t) : [...picked, t]);
   const saveTags = (next: string[]) => {
     setTags(next);
+    if (picked.some((t) => !next.includes(t))) pick(picked.filter((t) => next.includes(t))); // removed: not filtering by it
     void api<{ tags: string[] }>("PUT", "/api/discovery/tags", { tags: next })
-      .then((r) => {
-        setTags(r.tags);
-        if (mode === "tags") loadItems(); // which posts match changed
-      })
+      .then((r) => setTags(r.tags))
       .catch((e) => setError((e as Error).message));
   };
   const refresh = async () => {
@@ -212,31 +239,16 @@ function Grid() {
                   ))}
                 </select>
               </label>
-              <div role="radiogroup" aria-label="Show" className="inline-flex rounded-lg bg-page p-1 text-sm font-semibold">
-                {(
-                  [
-                    ["all", "Show all"],
-                    ["tags", "Filter by tags"],
-                  ] as const
-                ).map(([m, label]) => (
-                  <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)} className={`rounded-md px-3 py-1.5 ${mode === m ? "bg-container shadow-sm" : "text-subtle"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
-            <Tags tags={tags} onChange={saveTags} />
+            <Tags tags={tags} picked={picked} onToggle={toggle} onChange={saveTags} />
           </div>
 
-          {mode === "tags" && !tags.length && <p className="mt-6 text-center text-subtle">Add a tag (like keto, air fryer or chicken) to see the posts that mention it.</p>}
-          {items && !items.length && (mode === "all" || tags.length > 0) && (
-            <p className="mt-6 text-center text-subtle">{mode === "tags" ? "No posts match your tags yet." : "No posts yet: try Refresh, or check Feeds."}</p>
-          )}
+          {items && !items.length && <p className="mt-6 text-center text-subtle">{picked.length ? "No posts match the tags you picked yet." : "No posts yet: try Refresh, or check Feeds."}</p>}
           {!!items?.length && (
             <ul aria-label="Recipes from your feeds" className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
               {items.map((i) => (
                 <li key={i.id}>
-                  <Card item={i} showTags={mode === "tags"} />
+                  <Card item={i} showTags={picked.length > 0} />
                 </li>
               ))}
             </ul>
@@ -302,8 +314,9 @@ function FeedImage({ src, className, none = false }: { src: string | null; class
   );
 }
 
-// Your tags, as chips: Enter or a comma adds one, × removes it
-function Tags({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
+// Your tags: the box adds them (Enter or a comma); under it, a chip for each. Click a chip to
+// filter by it (highlighted), again to stop; several highlighted show posts matching any. × removes it.
+function Tags({ tags, picked, onToggle, onChange }: { tags: string[]; picked: string[]; onToggle: (t: string) => void; onChange: (t: string[]) => void }) {
   const [text, setText] = useState("");
   const addAll = (parts: string[]) => {
     const next = [...tags];
@@ -324,27 +337,39 @@ function Tags({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => v
     setText(rest.trimStart());
   };
   return (
-    <form onSubmit={add} className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-semibold text-subtle">Your tags</span>
-      <ul aria-label="Your tags" className="contents">
-        {tags.map((t) => (
-          <li key={t} className="flex items-center gap-1 rounded-full bg-brand-subtle py-1 pl-3 pr-1 text-sm font-semibold text-action">
-            {t}
-            <button type="button" aria-label={`Remove ${t}`} title={`Remove ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className="flex size-5 items-center justify-center rounded-full hover:bg-action/15">
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
-      <input
-        aria-label="Add a tag"
-        placeholder={tags.length ? "Add a tag" : "Add a tag, like keto or air fryer"}
-        value={text}
-        maxLength={40}
-        onChange={(e) => typed(e.target.value)}
-        className="min-w-40 flex-1 rounded-lg border border-line bg-page px-3 py-1.5 text-sm outline-none focus:border-action"
-      />
-    </form>
+    <div className="flex flex-col gap-2">
+      <form onSubmit={add} className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-subtle">Tags</span>
+        <input
+          aria-label="Add a tag"
+          placeholder={tags.length ? "Add a tag" : "Add a tag, like keto or air fryer"}
+          value={text}
+          maxLength={40}
+          onChange={(e) => typed(e.target.value)}
+          className="min-w-40 flex-1 rounded-lg border border-line bg-page px-3 py-1.5 text-sm outline-none focus:border-action"
+        />
+      </form>
+      {!!tags.length && (
+        <>
+          <ul aria-label="Your tags" className="flex flex-wrap gap-2">
+            {tags.map((t) => {
+              const on = picked.includes(t);
+              return (
+                <li key={t} className={`flex items-center rounded-full border text-sm font-semibold transition ${on ? "border-action bg-action text-white" : "border-line bg-page text-ink hover:border-action"}`}>
+                  <button type="button" aria-pressed={on} onClick={() => onToggle(t)} className="py-1 pl-3 pr-1.5">
+                    {t}
+                  </button>
+                  <button type="button" aria-label={`Remove ${t}`} title={`Remove ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))} className={`mr-1 flex size-5 items-center justify-center rounded-full ${on ? "hover:bg-white/20" : "text-subtle hover:bg-pressed"}`}>
+                    ×
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-subtle">{picked.length ? "Showing posts that mention any highlighted tag. Click a tag again to stop filtering by it." : "Click a tag to see only the posts that mention it."}</p>
+        </>
+      )}
+    </div>
   );
 }
 

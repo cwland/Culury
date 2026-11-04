@@ -21,7 +21,7 @@ const routes = (more: Record<string, any> = {}) =>
     "GET /api/discovery/feeds": () => feeds,
     "GET /api/discovery/tags": () => ({ tags: ["keto"] }),
     "PUT /api/discovery/tags": (b: any) => ({ tags: b.tags }),
-    "GET /api/discovery/items": (_: unknown, path: string) => (path.includes("match=tags") ? page([item(3, "Keto Pancakes", { matchedTags: ["keto"] })]) : path.includes("before=") ? page([item(9, "An older one")]) : page([item(5, "Crispy Air Fryer Chicken"), item(3, "Keto Pancakes", { matchedTags: ["keto"], thumbnailUrl: null })], true)),
+    "GET /api/discovery/items": (_: unknown, path: string) => (path.includes("tags=keto") ? page([item(3, "Keto Pancakes", { matchedTags: ["keto"] })]) : path.includes("before=") ? page([item(9, "An older one")]) : page([item(5, "Crispy Air Fryer Chicken"), item(3, "Keto Pancakes", { matchedTags: ["keto"], thumbnailUrl: null })], true)),
     "POST /api/discovery/feeds": (b: any) => ({ status: 201, json: { ...feeds[0], id: 7, url: b.url, title: "New Feed", items: 4 } }),
     "DELETE /api/discovery/feeds/:id": () => ({ status: 204 }),
     "POST /api/discovery/refresh": () => ({ feeds: 2, added: 3, failed: 1 }),
@@ -66,6 +66,8 @@ describe("the Discovery page", () => {
     render(<DiscoveryPage />);
     const tags = await screen.findByRole("list", { name: "Your tags" });
     expect(within(tags).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["keto×"]);
+    // the chips are under the box you add them with
+    expect(screen.getByRole("textbox", { name: "Add a tag" }).compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await u.type(screen.getByRole("textbox", { name: "Add a tag" }), "air fryer{Enter}");
     await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "PUT", path: "/api/discovery/tags", body: { tags: ["keto", "air fryer"] } }));
     await u.click(within(tags).getByRole("button", { name: "Remove keto" }));
@@ -83,16 +85,46 @@ describe("the Discovery page", () => {
     expect(screen.getByRole("textbox", { name: "Add a tag" })).toHaveValue("");
   });
 
-  it("Filter by tags: only matching posts, each with the tags it matched", async () => {
+  it("click a tag to filter by it (highlighted), click again for everything; no Show all / Filter switch", async () => {
+    localStorage.clear();
+    const s = routes();
+    const u = userEvent.setup();
+    render(<DiscoveryPage />);
+    expect(await cards()).toHaveLength(2);
+    expect(screen.queryByRole("radio")).toBeNull();
+    const keto = screen.getByRole("button", { name: "keto", pressed: false });
+    await u.click(keto);
+    expect(screen.getByRole("button", { name: "keto", pressed: true })).toBeInTheDocument();
+    await waitFor(() => expect(s.sent.some((r) => r.path.includes("tags=keto"))).toBe(true));
+    await waitFor(async () => expect(await cards()).toHaveLength(1));
+    expect(within((await cards())[0]).getByText("keto")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "keto", pressed: true }));
+    await waitFor(async () => expect(await cards()).toHaveLength(2));
+    expect(s.sent.filter((r) => r.path.startsWith("/api/discovery/items?")).at(-1)!.path).not.toContain("tags=");
+  });
+
+  it("several tags highlighted: posts matching any of them", async () => {
+    localStorage.clear();
+    const s = routes({ "GET /api/discovery/tags": () => ({ tags: ["keto", "air fryer", "chicken"] }) });
+    const u = userEvent.setup();
+    render(<DiscoveryPage />);
+    await cards();
+    await u.click(screen.getByRole("button", { name: "keto" }));
+    await u.click(screen.getByRole("button", { name: "chicken" }));
+    await waitFor(() => expect(s.sent.some((r) => decodeURIComponent(r.path).includes("tags=keto,chicken"))).toBe(true));
+    expect(screen.getByRole("button", { name: "air fryer", pressed: false })).toBeInTheDocument();
+  });
+
+  it("removing a highlighted tag stops filtering by it", async () => {
+    localStorage.clear();
     const s = routes();
     const u = userEvent.setup();
     render(<DiscoveryPage />);
     await cards();
-    await u.click(screen.getByRole("radio", { name: "Filter by tags" }));
-    await waitFor(() => expect(s.sent.some((r) => r.path.includes("match=tags"))).toBe(true));
-    const [only] = await cards();
-    expect(within(only).getByText("keto")).toBeInTheDocument();
-    await waitFor(async () => expect(await cards()).toHaveLength(1));
+    await u.click(screen.getByRole("button", { name: "keto" }));
+    await waitFor(() => expect(s.sent.some((r) => r.path.includes("tags=keto"))).toBe(true));
+    await u.click(screen.getByRole("button", { name: "Remove keto" }));
+    await waitFor(() => expect(s.sent.filter((r) => r.path.startsWith("/api/discovery/items?")).at(-1)!.path).not.toContain("tags="));
   });
 
   it("Show more loads the next page", async () => {
