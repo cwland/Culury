@@ -144,6 +144,26 @@ describe("the Discovery page", () => {
 });
 
 describe("one post", () => {
+  it("the feed's description is under the picture and title, above the recipe preview", async () => {
+    routes();
+    window.location.hash = "#/discover/5";
+    render(<DiscoveryPage />);
+    const summary = await screen.findByText("Crispy Air Fryer Chicken, the post.");
+    const title = screen.getByRole("heading", { level: 1 });
+    const preview = await screen.findByRole("region", { name: "Recipe preview" });
+    expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText("Crispy Air Fryer Chicken, the post.")).toHaveLength(1);
+  });
+
+  it("only a description from the feed: shown once, under the title", async () => {
+    routes({ "GET /api/discovery/items/5": () => ({ ...item(5, "Crispy Air Fryer Chicken"), contentHtml: null }) });
+    window.location.hash = "#/discover/5";
+    render(<DiscoveryPage />);
+    expect(await screen.findAllByText("Crispy Air Fryer Chicken, the post.")).toHaveLength(1);
+    expect(screen.queryByRole("article", { name: "The post" })).toBeNull();
+  });
+
   it("as the feed sent it: picture, title, author, feed, date, its text, and Open original site", async () => {
     routes();
     window.location.hash = "#/discover/5";

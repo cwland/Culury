@@ -478,6 +478,8 @@ function Post({ id }: { id: number }) {
           <div className="p-5 sm:p-8">
             <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{p.title}</h1>
             <p className="mt-2 text-sm text-subtle">{[p.author, p.feedTitle, ago(p.pubDate)].filter(Boolean).join(" · ")}</p>
+            {/* the feed's short description, under the picture and title */}
+            {p.description && <p className="mt-3 leading-relaxed text-ink">{p.description}</p>}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {p.link && (p.recipeId != null || preview?.recipe) && <ImportButton post={p} />}
               {p.link && (
@@ -488,13 +490,17 @@ function Post({ id }: { id: number }) {
             </div>
             {p.link && <Preview id={p.id} postTitle={p.title} preview={preview} error={previewError} onChange={setPreview} />}
             {/* the post as the feed sent it, made safe on the server (lib/rss.ts sanitizeHtml) */}
-            {p.link && <h2 className="mt-8 border-t border-line pt-6 text-sm font-semibold uppercase tracking-wide text-subtle">From the feed</h2>}
             {p.contentHtml ? (
-              <article aria-label="The post" className="feed-post mt-4" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
+              <>
+                {p.link && <h2 className="mt-8 border-t border-line pt-6 text-sm font-semibold uppercase tracking-wide text-subtle">From the feed</h2>}
+                <article aria-label="The post" className="feed-post mt-4" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
+              </>
             ) : (
-              <article aria-label="The post" className="mt-4 text-subtle">
-                {p.description ?? "The feed sent no text for this post: open the original site to read it."}
-              </article>
+              !p.description && (
+                <article aria-label="The post" className="mt-6 text-subtle">
+                  The feed sent no text for this post: open the original site to read it.
+                </article>
+              )
             )}
           </div>
         </div>
@@ -525,7 +531,8 @@ function Preview({ id, postTitle, preview: pv, error, onChange }: { id: number; 
   };
   const r = pv?.recipe;
   const n = r?.nutrition;
-  const button = "inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed disabled:opacity-60";
+  // Read with AI / Calculate nutrition: clearly buttons (green outline, tinted), next to the green Import
+  const button = "inline-flex items-center gap-2 rounded-lg border-2 border-action bg-brand-subtle px-4 py-2 text-sm font-semibold text-action hover:bg-action hover:text-white disabled:opacity-60";
   const alert = (text: string) => (
     <p role="alert" className="mt-3 rounded-lg bg-error-subtle px-3 py-2 text-sm text-error">
       {text}
