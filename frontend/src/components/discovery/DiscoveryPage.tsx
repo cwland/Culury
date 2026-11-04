@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { api } from "../../api";
 import { Popup } from "../Popup";
 import type { ImportJob } from "../recipes/ImportDialog";
+import { NutritionFacts } from "../recipes/NutritionCard";
+import type { Nutrition } from "../../recipes";
 import { BackIcon, ChefIcon, DiscoverIcon, FeedIcon, LinkOutIcon, RefreshIcon } from "../Icons";
 
 // Discovery: recipes from the household's RSS / Atom feeds, as cards. Fetching, reading, filtering
@@ -34,6 +36,28 @@ export interface DiscoveryItem {
   recipeId: number | null; // in your recipes: imported from here, or saved from the same link
   contentHtml?: string | null;
   feedSite?: string | null;
+}
+// The recipe on a post's page, read when it's opened (nothing saved until Import Recipe)
+export interface PreviewRecipe {
+  title: string;
+  description: string | null;
+  ingredients: string[];
+  steps: (string | { section: string })[];
+  servings: number | null;
+  yieldText: string | null;
+  prepMinutes: number | null;
+  cookMinutes: number | null;
+  totalMinutes: number | null;
+  imageUrl: string | null;
+  sourceUrl: string | null;
+  nutrition: (Nutrition & { perIngredient?: { line: string; grams: number | null; calories: number }[] }) | null;
+}
+export interface RecipePreview {
+  recipe: PreviewRecipe | null;
+  how: "schema.org" | "text" | "ai" | null;
+  from: "site" | "feed" | null;
+  problem: string | null;
+  canAi: boolean;
 }
 type Mode = "all" | "tags";
 
@@ -421,14 +445,25 @@ function Feeds({ feeds, onChanged, onClose }: { feeds: DiscoveryFeed[]; onChange
 function Post({ id }: { id: number }) {
   const [p, setP] = useState<DiscoveryItem | null>(null);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<RecipePreview | null>(null);
+  const [previewError, setPreviewError] = useState("");
   useEffect(() => {
     setP(null);
+    setPreview(null);
+    setPreviewError("");
     api<DiscoveryItem>("GET", `/api/discovery/items/${id}`)
-      .then(setP)
+      .then((post) => {
+        setP(post);
+        // the recipe on its page, read with plain code (no AI)
+        if (post.link)
+          api<RecipePreview>("GET", `/api/discovery/items/${id}/recipe`)
+            .then(setPreview)
+            .catch((e) => setPreviewError((e as Error).message));
+      })
       .catch((e) => setError((e as Error).message));
   }, [id]);
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
       <a href="#/discover" className="inline-flex items-center gap-1 text-sm font-semibold text-subtle hover:text-ink">
         <BackIcon className="size-4" /> Discover
       </a>
@@ -444,18 +479,20 @@ function Post({ id }: { id: number }) {
             <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{p.title}</h1>
             <p className="mt-2 text-sm text-subtle">{[p.author, p.feedTitle, ago(p.pubDate)].filter(Boolean).join(" · ")}</p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {p.link && <ImportButton post={p} />}
+              {p.link && (p.recipeId != null || preview?.recipe) && <ImportButton post={p} />}
               {p.link && (
                 <a href={p.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed">
                   Open original site <LinkOutIcon />
                 </a>
               )}
             </div>
+            {p.link && <Preview id={p.id} postTitle={p.title} preview={preview} error={previewError} onChange={setPreview} />}
             {/* the post as the feed sent it, made safe on the server (lib/rss.ts sanitizeHtml) */}
+            {p.link && <h2 className="mt-8 border-t border-line pt-6 text-sm font-semibold uppercase tracking-wide text-subtle">From the feed</h2>}
             {p.contentHtml ? (
-              <article aria-label="The post" className="feed-post mt-6" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
+              <article aria-label="The post" className="feed-post mt-4" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
             ) : (
-              <article aria-label="The post" className="mt-6 text-subtle">
+              <article aria-label="The post" className="mt-4 text-subtle">
                 {p.description ?? "The feed sent no text for this post: open the original site to read it."}
               </article>
             )}
@@ -463,6 +500,138 @@ function Post({ id }: { id: number }) {
         </div>
       )}
     </div>
+  );
+}
+
+const minutes = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}`);
+const howRead = (pv: RecipePreview) =>
+  pv.how === "ai" ? `Read with AI from ${pv.from === "feed" ? "the feed's post" : "the recipe's site"}` : pv.from === "feed" ? "Read from the feed's post, without AI" : "Read from the recipe's site, without AI";
+
+// The staging area: the recipe as read from its page, before anything is saved. Read with AI and
+// Calculate nutrition are the only AI here, and only when pressed.
+function Preview({ id, postTitle, preview: pv, error, onChange }: { id: number; postTitle: string; preview: RecipePreview | null; error: string; onChange: (p: RecipePreview) => void }) {
+  const [busy, setBusy] = useState<"" | "ai" | "nutrition">("");
+  const [failed, setFailed] = useState("");
+  const run = async (what: "ai" | "nutrition") => {
+    setBusy(what);
+    setFailed("");
+    try {
+      onChange(await api<RecipePreview>("POST", `/api/discovery/items/${id}/recipe/${what}`));
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+  const r = pv?.recipe;
+  const n = r?.nutrition;
+  const button = "inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed disabled:opacity-60";
+  const alert = (text: string) => (
+    <p role="alert" className="mt-3 rounded-lg bg-error-subtle px-3 py-2 text-sm text-error">
+      {text}
+    </p>
+  );
+  return (
+    <section aria-label="Recipe preview" className="mt-6 rounded-xl border border-line p-4 sm:p-6">
+      {!pv && !error && <p className="text-sm text-subtle">Reading the recipe from its page…</p>}
+      {error && alert(error)}
+      {pv && !r && (
+        <div>
+          <p className="text-sm text-subtle">{pv.problem ?? "No recipe was found on its page."}</p>
+          {pv.canAi ? (
+            <button type="button" onClick={() => void run("ai")} disabled={!!busy} className={`${button} mt-3`}>
+              <ChefIcon className="size-4" /> {busy === "ai" ? "Reading with AI…" : "Read with AI"}
+            </button>
+          ) : (
+            <p className="mt-2 text-sm text-subtle">Turn on AI in Settings › AI to read it with AI, or open the original site.</p>
+          )}
+        </div>
+      )}
+      {pv && r && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-subtle">{howRead(pv)}</p>
+          {pv.from === "feed" && pv.problem && <p className="mt-1 text-xs text-subtle">The recipe's site: {pv.problem}</p>}
+          {/* the recipe's own name, when the post calls it something else */}
+          {r.title.trim().toLowerCase() !== postTitle.trim().toLowerCase() && <h2 className="mt-2 text-xl font-bold">{r.title}</h2>}
+          {(() => {
+            const facts = [r.servings ? `Serves ${r.servings}` : r.yieldText, r.prepMinutes ? `Prep ${minutes(r.prepMinutes)}` : null, r.cookMinutes ? `Cook ${minutes(r.cookMinutes)}` : !r.prepMinutes && r.totalMinutes ? `Total ${minutes(r.totalMinutes)}` : null].filter(Boolean);
+            return facts.length ? <p className="mt-1 text-sm text-subtle">{facts.join(" · ")}</p> : null;
+          })()}
+          <div className="mt-4 grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <div>
+              <h3 className="font-semibold">Ingredients</h3>
+              <ul aria-label="Ingredients" className="mt-2 space-y-1.5 text-sm">
+                {r.ingredients.map((line, i) =>
+                  /:\s*$/.test(line) ? (
+                    <li key={i} role="presentation" className="pt-2 font-semibold text-subtle">
+                      {line.replace(/:\s*$/, "")}
+                    </li>
+                  ) : (
+                    <li key={i} className="flex gap-2">
+                      <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-action" />
+                      <span>{line}</span>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-semibold">Steps</h3>
+              <ol aria-label="Steps" className="mt-2 space-y-3 text-sm">
+                {(() => {
+                  let n = 0;
+                  return r.steps.map((st, i) =>
+                    typeof st === "string" ? (
+                      <li key={i} className="flex gap-3">
+                        <span aria-hidden className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-xs font-bold text-action">
+                          {++n}
+                        </span>
+                        <span>{st}</span>
+                      </li>
+                    ) : (
+                      <li key={i} role="presentation" className="pt-1 font-semibold text-subtle">
+                        {st.section}
+                      </li>
+                    ),
+                  );
+                })()}
+              </ol>
+            </div>
+          </div>
+          <div className="mt-5 border-t border-line pt-4">
+            {pv.canAi && (
+              <button type="button" onClick={() => void run("nutrition")} disabled={!!busy} className={button}>
+                {busy === "nutrition" ? "Calculating…" : n ? "Recalculate" : "Calculate nutrition"}
+              </button>
+            )}
+            {n && (
+              <section aria-label="Nutrition" className="mt-4 grid gap-6 md:grid-cols-2">
+                <div className="rounded-xl border-2 border-ink p-3">
+                  <h3 className="text-2xl font-black">Nutrition Facts</h3>
+                  <p className="text-sm">per serving{n.servings ? `, ${n.servings} servings` : ""}</p>
+                  <NutritionFacts value={n} />
+                </div>
+                {!!n.perIngredient?.length && (
+                  <div>
+                    <h3 className="font-semibold">Calories by ingredient</h3>
+                    <p className="text-xs text-subtle">The whole amount of each, worked out one at a time and added up.</p>
+                    <ul aria-label="Calories by ingredient" className="mt-2 text-sm">
+                      {n.perIngredient.map((x) => (
+                        <li key={x.line} className="flex justify-between gap-3 border-t border-line py-1.5">
+                          <span>{x.line}</span>
+                          <span className="shrink-0 font-semibold">{Math.round(x.calories).toLocaleString()} kcal</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
+        </>
+      )}
+      {failed && alert(failed)}
+    </section>
   );
 }
 
