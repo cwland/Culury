@@ -35,6 +35,7 @@ export const users = pgTable("users", {
   theme: text("theme"), // Settings > Profile > Appearance (null: the default)
   colorMode: text("color_mode"), // light, dark or system (null: system)
   units: text("units").$type<"original" | "metric" | "us">().notNull().default("original"), // how amounts show to start with (As is, Metric, US)
+  keepAwake: boolean("keep_awake").notNull().default(true), // Cook mode keeps the screen on
   setupDoneAt: timestamp("setup_done_at", { withTimezone: true }), // through the setup wizard (null: not yet)
   dismissedUpdate: text("dismissed_update"), // the newer version whose top bar was dismissed
   // Daily meal plan email at this time ("17:30", server time; null: off), and the last day it went

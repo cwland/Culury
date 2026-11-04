@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
+import { SessionContext } from "../../session";
 import { api } from "../../api";
 import { ingredientLine, recipeUnits, stepUses } from "../../cooking";
 import type { Recipe } from "../../recipes";
@@ -35,10 +36,15 @@ const writeProgress = (id: number, p: Omit<Progress, "at">) => {
   }
 };
 
-// Keep the screen on while cooking (browsers allow it on https:// and localhost)
-function useWakeLock() {
-  const [state, setState] = useState<"on" | "off" | "unsupported">("off");
+// Keep the screen on while cooking (browsers allow it on https:// and localhost), unless you've
+// switched that off (Settings › Profile, or the setup wizard)
+function useWakeLock(wanted: boolean) {
+  const [state, setState] = useState<"on" | "off" | "unsupported" | "declined">("off");
   useEffect(() => {
+    if (!wanted) {
+      setState("declined");
+      return;
+    }
     if (!("wakeLock" in navigator) || !window.isSecureContext) {
       setState("unsupported");
       return;
@@ -64,7 +70,7 @@ function useWakeLock() {
       document.removeEventListener("visibilitychange", onVisible);
       void lock?.release().catch(() => {});
     };
-  }, []);
+  }, [wanted]);
   return state;
 }
 
@@ -76,7 +82,7 @@ export default function CookMode({ id }: { id: number }) {
   const [checked, setChecked] = useState<Set<number>>(new Set(saved?.checked ?? []));
   const [drawer, setDrawer] = useState(false);
   const prefs = useCookPrefs(id);
-  const wake = useWakeLock();
+  const wake = useWakeLock(useContext(SessionContext)?.user.keepAwake ?? true);
   useLockBodyScroll();
 
   useEffect(() => {
@@ -202,9 +208,9 @@ export default function CookMode({ id }: { id: number }) {
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{r.title}</h1>
         <span
           className={`hidden rounded-full px-3 py-1 text-xs font-semibold sm:inline ${wake === "on" ? "bg-success-subtle text-success" : "bg-page text-muted"}`}
-          title={wake === "unsupported" ? "Browsers only keep the screen on for https:// addresses (and localhost)" : undefined}
+          title={wake === "unsupported" ? "Browsers only keep the screen on for https:// addresses (and localhost)" : wake === "declined" ? "Switched off in Settings › Profile" : undefined}
         >
-          {wake === "on" ? "Screen stays on" : wake === "unsupported" ? "Screen may sleep (needs https)" : "Screen may sleep"}
+          {wake === "on" ? "Screen stays on" : wake === "unsupported" ? "Screen may sleep (needs https)" : wake === "declined" ? "Screen may sleep (your choice)" : "Screen may sleep"}
         </span>
         <button type="button" onClick={() => setDrawer(true)} className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-semibold lg:hidden">
           <RecipesIcon className="size-4" /> Ingredients

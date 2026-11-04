@@ -3,6 +3,9 @@ import ThemePicker from "./ThemePicker";
 import OrganizeSettings from "./OrganizeSettings";
 import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
 import { SavedCopiesSwitch } from "./SavedCopiesSwitch";
+import { DiscoveryRefreshSwitch } from "./DiscoveryRefreshSwitch";
+import CookingPrefs from "./CookingPrefs";
+import MailCaptureSettings from "./MailCaptureSettings";
 import { SendToCulury } from "./SendToCulury";
 import { PublicLinksSwitch } from "./PublicLinksSwitch";
 import { UpdatesSettings } from "./UpdateBar";
@@ -91,6 +94,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
       return (
         <>
           <ProfileSettings />
+          <CookingPrefs />
           <ReminderSettings />
           <ThemePicker />
         </>
@@ -101,6 +105,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
           {owner && <RecipeVersionSwitch />}
           {owner && <SavedCopiesSwitch />}
           {owner && <PublicLinksSwitch />}
+          {owner && <DiscoveryRefreshSwitch />}
           <SendToCulury />
           <OrganizeSettings />
         </>
@@ -137,6 +142,7 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
     case "email":
       return (
         <>
+          <MailCaptureSettings />
           <EmailSettings />
         </>
       );

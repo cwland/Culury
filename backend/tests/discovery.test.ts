@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { setupTestApp, type TestApp } from "./helpers.js";
-import { refreshAllFeeds } from "../src/lib/discovery.js";
+import { refreshAllFeeds, scheduledRefresh } from "../src/lib/discovery.js";
 import { readFileSync } from "node:fs";
 
 // Discovery: RSS feeds the household subscribes to, read and filtered with plain code (no AI)
@@ -143,6 +143,18 @@ describe("feeds on your own network", () => {
 });
 
 describe("keeping feeds fresh", () => {
+  it("the timed check follows the Discovery refresh switch (on unless switched off)", async () => {
+    serve(FEED, rss(item(1)));
+    await add();
+    serve(FEED, rss(item(1), item(2)));
+    await t.api("PUT", "/api/settings/features", { discoveryRefresh: false });
+    expect(await scheduledRefresh(t.app.db, t.app.fetchOptions)).toBeNull();
+    expect((await t.api("GET", "/api/discovery/items")).body.items).toHaveLength(1);
+    await t.api("PUT", "/api/settings/features", { discoveryRefresh: true });
+    expect(await scheduledRefresh(t.app.db, t.app.fetchOptions)).toMatchObject({ added: 1 });
+    // Refresh (by hand) works either way
+  });
+
   it("a refresh adds new posts and updates changed ones, without doubles", async () => {
     serve(FEED, rss(item(1)));
     await add();

@@ -1,3 +1,4 @@
+import { isOn } from "./features.js";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { discoveryFeeds, discoveryItems } from "../db/schema.js";
@@ -75,13 +76,19 @@ export async function refreshAllFeeds(db: Db, opts: FetchOptions = {}) {
 }
 
 // Every few hours (DISCOVERY_HOURS, 0 turns it off); one at a time
+// The timed check: only while the Discovery refresh switch is on (null: switched off)
+export async function scheduledRefresh(db: Db, opts: FetchOptions) {
+  if (!(await isOn(db, "discoveryRefresh"))) return null;
+  return refreshAllFeeds(db, opts);
+}
+
 export function startDiscoverySchedule(db: Db, opts: FetchOptions, hours: number, onError: (e: unknown) => void) {
   if (!(hours > 0)) return () => {};
   let running = false;
   const run = async () => {
     if (running) return;
     running = true;
-    await refreshAllFeeds(db, opts).catch(onError);
+    await scheduledRefresh(db, opts).catch(onError);
     running = false;
   };
   const timer = setInterval(run, hours * 3600_000);

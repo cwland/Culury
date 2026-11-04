@@ -23,6 +23,12 @@ describe("first-run setup", () => {
     expect((await t.api("PATCH", "/api/profile", { units: "imperial" })).status).toBe(400);
   });
 
+  it("Cook mode keeps the screen awake unless you switch it off (each person's own choice)", async () => {
+    expect((await me()).keepAwake).toBe(true);
+    expect((await t.api("PATCH", "/api/profile", { keepAwake: false })).body.keepAwake).toBe(false);
+    expect((await me()).keepAwake).toBe(false);
+  });
+
   it("a profile save answers with the whole account (the app keeps it as the signed-in user)", async () => {
     const r = await t.api("PATCH", "/api/profile", { displayName: "Cory Landers" });
     expect(r.body).toMatchObject({ displayName: "Cory Landers", role: "owner", units: expect.any(String), setupDone: false });

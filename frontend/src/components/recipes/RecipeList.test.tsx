@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import RecipeList from "./RecipeList";
+import RecipeList, { hintAddRecipe } from "./RecipeList";
 import { fakeServer } from "../../test/fakeServer";
 
 const summary = (id: number, title: string) => ({ id, title, imageUrl: null, totalMinutes: null, rating: null, favorite: false, pinned: false, tags: [], categories: [] });
@@ -83,5 +83,26 @@ describe("browsing the recipe list", () => {
     const { lastList } = setup();
     await u.click(await sidebar().findByRole("button", { name: "No tags" }));
     await waitFor(() => expect(lastList().getAll("tag")).toEqual(["none"]));
+  });
+});
+
+describe("after the setup wizard", () => {
+  it("Add recipe is pointed out (glowing, with a note) until you click it or Got it", async () => {
+    const u = userEvent.setup();
+    hintAddRecipe();
+    setup();
+    const add = await screen.findByRole("button", { name: "Add recipe" });
+    expect(add).toHaveAttribute("data-hint", "true");
+    const note = screen.getByRole("status", { name: "Tip" });
+    expect(note).toHaveTextContent(/import your first recipe by hand or from a link/);
+    await u.click(within(note).getByRole("button", { name: "Got it" }));
+    expect(screen.queryByRole("status", { name: "Tip" })).toBeNull();
+    expect(add).not.toHaveAttribute("data-hint");
+  });
+
+  it("not pointed out otherwise", async () => {
+    setup();
+    expect(await screen.findByRole("button", { name: "Add recipe" })).not.toHaveAttribute("data-hint");
+    expect(screen.queryByRole("status", { name: "Tip" })).toBeNull();
   });
 });

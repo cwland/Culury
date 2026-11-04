@@ -77,3 +77,20 @@
 .feed-post table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .feed-post td, .feed-post th { border: 1px solid var(--color-line); padding: 0.35em 0.6em; text-align: left; }
 .feed-post pre { white-space: pre-wrap; }
+
+/* After the setup wizard: Add recipe glows, and its tip pops in */
+@keyframes culury-glow {
+  0% { box-shadow: 0 0 0 0 rgba(32, 179, 91, 0.55); }
+  70% { box-shadow: 0 0 0 14px rgba(32, 179, 91, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(32, 179, 91, 0); }
+}
+@keyframes culury-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.hint-glow { animation: culury-glow 1.6s ease-out infinite; }
+.hint-pop { animation: culury-pop 0.35s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .hint-glow, .hint-pop { animation: none; }
+  .hint-glow { box-shadow: 0 0 0 4px rgba(32, 179, 91, 0.45); }
+}

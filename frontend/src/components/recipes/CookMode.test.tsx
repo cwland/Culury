@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CookMode from "./CookMode";
+import { SessionContext, type User } from "../../session";
 import { fakeServer, recipeJson } from "../../test/fakeServer";
 
 const chili = recipeJson({
@@ -77,5 +78,40 @@ describe("fresh herbs in Cook Mode", () => {
     fakeServer({ "GET /api/recipes/7": () => recipeJson({ ingredients: [{ raw: "3 sprigs fresh thyme", quantity: 3, quantityMax: null, unit: "sprig", name: "fresh thyme", note: null }] }), "GET /api/recipes/7/me": () => ({}) });
     render(<CookMode id={7} />);
     expect(await screen.findByRole("list", { name: "Ingredients checklist" })).toHaveTextContent("(about ¾ tsp dried)");
+  });
+});
+
+describe("keeping the screen awake", () => {
+  const lock = () => {
+    const request = vi.fn(async () => ({ release: vi.fn(async () => {}), addEventListener: vi.fn() }));
+    Object.defineProperty(navigator, "wakeLock", { value: { request }, configurable: true });
+    Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
+    return request;
+  };
+  afterEach(() => {
+    delete (navigator as unknown as Record<string, unknown>).wakeLock;
+  });
+  const as = (keepAwake: boolean) => {
+    fakeServer({ "GET /api/recipes/7": () => chili, "GET /api/recipes/7/me": () => ({}) });
+    const user = { id: 1, username: "cory", displayName: null, email: null, role: "owner", keepAwake } as User;
+    render(
+      <SessionContext.Provider value={{ user, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <CookMode id={7} />
+      </SessionContext.Provider>,
+    );
+  };
+
+  it("on (the default): the screen is kept on", async () => {
+    const request = lock();
+    as(true);
+    expect(await screen.findByText("Screen stays on")).toBeInTheDocument();
+    expect(request).toHaveBeenCalledWith("screen");
+  });
+
+  it("switched off in your preferences: the screen may sleep, and says where to change it", async () => {
+    const request = lock();
+    as(false);
+    expect(await screen.findByText("Screen may sleep (your choice)")).toBeInTheDocument();
+    expect(request).not.toHaveBeenCalled();
   });
 });

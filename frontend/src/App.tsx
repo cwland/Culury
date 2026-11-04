@@ -5,6 +5,7 @@ import AuthScreen from "./components/AuthScreen";
 import AppShell from "./components/AppShell";
 import { APP_VERSION } from "./version";
 import SetupWizard from "./components/SetupWizard";
+import { hintAddRecipe } from "./components/recipes/RecipeList";
 import GettingStarted from "./components/GettingStarted";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { SessionContext, type User } from "./session";
@@ -163,22 +164,21 @@ export default function App() {
         },
       }}
     >
-      {auth.user.setupDone === false ? (
+      {/* The first sign-in: the setup wizard over the app; then Add recipe is pointed out */}
+      <AppShell />
+      {auth.user.setupDone === false && (
         <SetupWizard
           user={auth.user}
           onDone={(user) => {
             // a new account has nothing "new" to read about: skip What's new for this version
             setAuth({ status: "in", user: { ...user, seenVersion: APP_VERSION } });
             void api("PUT", "/api/auth/seen-version", { version: APP_VERSION }).catch(() => {});
-            setTour(true);
+            window.location.hash = "#/recipes";
+            hintAddRecipe();
           }}
         />
-      ) : (
-        <>
-          <AppShell />
-          {tour && <GettingStarted onClose={() => setTour(false)} />}
-        </>
       )}
+      {tour && <GettingStarted onClose={() => setTour(false)} />}
     </SessionContext.Provider>
   );
 }

@@ -35,7 +35,8 @@ export default function AppShell() {
   const [page, setPage] = useState<Page>(pageFromHash);
   const { user, setUser } = useSession();
   // "What's new": once per version after signing in (until dismissed), and from the version number
-  const [news, setNews] = useState<"new" | "all" | null>(() => (isNewer(APP_VERSION, user.seenVersion) ? "new" : null));
+  // (not during first-run setup: the wizard is over the app, and finishing it marks the version seen)
+  const [news, setNews] = useState<"new" | "all" | null>(() => (user.setupDone !== false && isNewer(APP_VERSION, user.seenVersion) ? "new" : null));
   const [sinceVersion] = useState(user.seenVersion ?? null);
   useEffect(() => {
     const open = () => setNews("all");

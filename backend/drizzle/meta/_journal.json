@@ -134,6 +134,13 @@
       "when": 1793823374222,
       "tag": "0018_discovery_preview",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793830132837,
+      "tag": "0019_keep_awake",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,7 @@ export const publicUser = (u: typeof users.$inferSelect) => ({
   role: u.role,
   remindAt: u.remindAt,
   units: u.units,
+  keepAwake: u.keepAwake,
   setupDone: !!u.setupDoneAt,
 });
 

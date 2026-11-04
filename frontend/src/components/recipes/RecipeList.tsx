@@ -9,6 +9,12 @@ import ImportDialog from "./ImportDialog";
 type Filters = { q: string; tag: string[]; category: string; collection: string; favorite: string; sort: string };
 // Open the import dialog from anywhere (the empty state, the menu)
 export const openImport = () => window.dispatchEvent(new Event("culury:import"));
+// After the setup wizard: Add recipe glows, with a tip, until it's clicked or the tip is closed
+let hintPending = false;
+export const hintAddRecipe = () => {
+  hintPending = true;
+  window.dispatchEvent(new Event("culury:hint-add"));
+};
 const KEYS = ["q", "category", "collection", "favorite", "sort"] as const;
 const fromParams = (p: URLSearchParams): Filters => ({ ...(Object.fromEntries(KEYS.map((k) => [k, p.get(k) ?? ""])) as Omit<Filters, "tag">), tag: p.getAll("tag") });
 const toParams = (f: Filters) => {
@@ -42,6 +48,16 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
     return () => window.removeEventListener("culury:import", open);
   }, []);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [hint, setHint] = useState(hintPending);
+  useEffect(() => {
+    const on = () => setHint(true);
+    window.addEventListener("culury:hint-add", on);
+    return () => window.removeEventListener("culury:hint-add", on);
+  }, []);
+  const endHint = () => {
+    hintPending = false;
+    setHint(false);
+  };
 
   useEffect(() => {
     void Promise.all([api<TagInfo[]>("GET", "/api/tags"), api<TagInfo[]>("GET", "/api/categories"), api<CollectionInfo[]>("GET", "/api/collections")]).then(([t, c, col]) => {
@@ -140,9 +156,22 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="mr-auto text-2xl font-semibold">{heading}</h1>
-          <button type="button" onClick={() => setImporting({})} className="flex items-center gap-1.5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed">
-            <PlusIcon className="size-4" /> Add recipe
-          </button>
+          <div className="relative">
+            <button type="button" data-hint={hint || undefined} onClick={() => (endHint(), setImporting({}))} className={`flex items-center gap-1.5 rounded bg-primary px-4 py-2.5 font-semibold text-white hover:bg-primary-pressed ${hint ? "hint-glow" : ""}`}>
+              <PlusIcon className="size-4" /> Add recipe
+            </button>
+            {hint && (
+              <div role="status" aria-label="Tip" className="hint-pop absolute right-0 top-full z-30 mt-3 w-72 rounded-2xl bg-primary p-4 text-sm text-white shadow-[0_12px_32px_rgba(16,24,32,0.3)]">
+                <span aria-hidden className="absolute -top-1.5 right-8 size-3 rotate-45 bg-primary" />
+                <p>
+                  <span aria-hidden>👆 </span>To import your first recipe by hand or from a link, click <strong>Add recipe</strong> any time.
+                </p>
+                <button type="button" onClick={endHint} className="mt-3 rounded-lg bg-white/15 px-3 py-1.5 font-semibold hover:bg-white/25">
+                  Got it
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         {collection?.description && <p className="mt-1 text-subtle">{collection.description}</p>}
 

@@ -6,6 +6,7 @@ import { buildApp, defaultBackupDir } from "./app.js";
 import { startBackupSchedule } from "./lib/backup.js";
 import { startReminderSchedule } from "./lib/reminders.js";
 import { startDiscoverySchedule } from "./lib/discovery.js";
+import { startMailCaptureSchedule } from "./lib/mailCapture.js";
 import { emailConfigFromEnv } from "./lib/mail.js";
 import { logEvent } from "./lib/appLog.js";
 import { emergencyResetAuth } from "./lib/oauth.js";
@@ -52,6 +53,9 @@ startReminderSchedule(db, app.mail, app.now, (err) => app.log.error(err));
 
 // Discovery: check every feed every few hours (DISCOVERY_HOURS, default 3; 0 turns it off)
 startDiscoverySchedule(db, app.fetchOptions, Number(process.env.DISCOVERY_HOURS ?? 3), (err) => app.log.error(err));
+
+// Recipes sent by email: check the mailbox every few minutes (MAIL_CAPTURE_MINUTES, default 5; 0 turns it off)
+startMailCaptureSchedule(app.mailCapture, Number(process.env.MAIL_CAPTURE_MINUTES ?? 5), (err) => app.log.error(err));
 
 // Emergency: EMERGENCY_DISABLE_OAUTH=true turns password sign-in back on (and OAuth off) at start
 if (process.env.EMERGENCY_DISABLE_OAUTH === "true") {

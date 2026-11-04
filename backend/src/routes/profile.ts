@@ -39,6 +39,7 @@ export default async function profileRoutes(app: FastifyInstance) {
         theme: z.enum(["fresh", "harbor", "terracotta-sage", "slate-rose", "midnight-coral"]).optional(),
         colorMode: z.enum(["light", "dark", "system"]).optional(),
         units: z.enum(["original", "metric", "us"], { error: "Choose As is, Metric or US" }).optional(),
+        keepAwake: z.boolean().optional(),
       })
       .parse(req.body);
 
@@ -55,6 +56,7 @@ export default async function profileRoutes(app: FastifyInstance) {
         theme: body.theme,
         colorMode: body.colorMode,
         units: body.units,
+        keepAwake: body.keepAwake,
       })
       .where(eq(users.id, userId))
       .returning();

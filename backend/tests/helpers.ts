@@ -15,6 +15,7 @@ import type { EmailConfig, MailMessage } from "../src/lib/mail.js";
 import type { UpdateFetch } from "../src/lib/updates.js";
 import type { AiFetch } from "../src/lib/ai.js";
 import type { RateLimitOptions } from "../src/lib/security.js";
+import type { CaptureConfig, OpenMailbox } from "../src/lib/mailCapture.js";
 
 // Tests use their own database so they never touch your real recipes.
 // Create it once with: createdb culury_test
@@ -95,7 +96,19 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
   };
   // The app's clock ("today"); tests can set clock.date
   const clock = { date: null as Date | null };
+  // Fake IMAP mailbox for email capture: messages arrive in mailbox.messages; fail = can't connect
+  const mailbox = { messages: [] as { uid: number; source: string; seen?: boolean }[], opened: [] as CaptureConfig[], fail: "" };
+  const openMailbox: OpenMailbox = async (cfg) => {
+    mailbox.opened.push(cfg);
+    if (mailbox.fail) throw new Error(mailbox.fail);
+    return {
+      unread: async () => mailbox.messages.filter((m) => !m.seen).map((m) => ({ uid: m.uid, source: Buffer.from(m.source) })),
+      markRead: async (uids) => mailbox.messages.forEach((m) => uids.includes(m.uid) && (m.seen = true)),
+      close: async () => {},
+    };
+  };
   const app = buildApp({
+    openMailbox,
     now: () => clock.date ?? new Date(),
     aiFetch,
     aiTimeScale: opts.aiTimeScale,
@@ -150,7 +163,11 @@ export async function setupTestApp(opts: { email?: boolean; pages?: Record<strin
     ai,
     github,
     clock,
+    mailbox,
     async reset() {
+      mailbox.messages.length = 0;
+      mailbox.opened.length = 0;
+      mailbox.fail = "";
       clock.date = null;
       web.pages = {};
       web.calls.length = 0;
