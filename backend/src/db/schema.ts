@@ -368,6 +368,14 @@ export const substitutions = pgTable(
 // ---------- Background jobs ----------
 // Work that takes a while (importing a recipe from a link, reading pasted text with AI) runs in
 // the background, picked up by the worker in lib/jobs.ts. Finished jobs are kept 30 days.
+// A discovered post's recipe, shown before it's saved: read with plain code, or with AI when asked
+export interface RecipePreview {
+  recipe: import("../lib/importRecipe.js").ImportedRecipe | null;
+  how: "schema.org" | "text" | "ai" | null;
+  from: "site" | "feed" | null; // the recipe's own page, or the feed's copy of the post
+  problem: string | null; // why the site's page couldn't give the recipe
+}
+
 export interface JobResult {
   recipeId?: number;
   title?: string;
@@ -553,6 +561,8 @@ export const discoveryItems = pgTable(
     contentHtml: text("content_html"), // made safe when read (lib/rss.ts)
     thumbnailUrl: text("thumbnail_url"),
     recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }), // imported: the recipe it became
+    preview: jsonb("preview").$type<RecipePreview>(), // the recipe on its page, read when the post was opened (lib/discoveryPreview.ts)
+    previewAt: timestamp("preview_at", { withTimezone: true }),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -145,7 +145,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
   // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
   // archive is tried next, unless that's switched off in Settings › Recipes.
   queue.handle("import-url", async (job) => {
-    const { url, force, html: sent, feedCopy, discoveryItemId } = job.payload as { url: string; force?: boolean; html?: string; feedCopy?: string; discoveryItemId?: number };
+    const { url, force, html: sent, feedCopy, discoveryItemId, preview } = job.payload as { url: string; force?: boolean; html?: string; feedCopy?: string; discoveryItemId?: number; preview?: { recipe: ImportedRecipe; how: JobResult["how"] | null; fromFeed: boolean } };
     const remember = (result: JobResult) => d.db.update(jobs).set({ result }).where(eq(jobs.id, job.id));
     // From Discovery: the post remembers the recipe it became (or the one already saved)
     const linked = async (result: JobResult) => {
@@ -159,7 +159,9 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         if (dup) return linked(await alreadySaved(d, url, dup));
       }
       let read: Read;
-      try {
+      // From Discovery, the recipe as it was shown: saved as is (no reading the page again)
+      if (preview) read = { r: preview.recipe, how: preview.how === "schema.org" || preview.how === "ai" || preview.how === "text" ? preview.how : "schema.org", info: pageInfo("", url), sourceUrl: preview.recipe.sourceUrl ?? url, fromFeed: preview.fromFeed || undefined };
+      else try {
         // Sent from your browser (Send to Culury): that page, not a fetch
         const page = sent ? { url, contentType: "text/html", body: Buffer.from(sent, "utf8") } : await fetchUrl(url, d.fetchOptions);
         if (!/html|xml|text\/plain/i.test(page.contentType) && page.contentType) throw new Error(`That link is a ${page.contentType.split(";")[0]}, not a web page. Reading recipes from photos and files comes later.`);
@@ -203,14 +205,14 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         }
       }
       const { r, how, info, sourceUrl, savedCopy } = read;
-      const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName ?? (savedCopy ? new URL(url).hostname.replace(/^www\./, "") : undefined) }, job, how);
+      const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName ?? (savedCopy ? new URL(url).hostname.replace(/^www\./, "") : preview ? r.sourceName : undefined) }, job, how);
       if (savedCopy) result.savedCopy = savedCopy;
       if (read.fromFeed) result.fromFeed = true;
       if (sent) {
         result.sent = true;
         await d.db.update(jobs).set({ payload: sql`${jobs.payload} - 'html'` }).where(eq(jobs.id, job.id)); // imported: the copy isn't needed
       }
-      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : read.fromFeed ? " from the feed's copy (Discovery)" : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
+      const from = preview ? " (as shown in Discover)" : savedCopy ? ` from a saved copy (${savedCopy.from})` : read.fromFeed ? " from the feed's copy (Discovery)" : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
       await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${from}`, detail: [read.why, result.warnings?.join(" ")].filter(Boolean).join(" ") || url });
       return linked(await improveAfter(queue, job, result, d));
     } catch (e) {

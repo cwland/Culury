@@ -7,6 +7,8 @@ import { idParam } from "../lib/validation.js";
 import { newFeedRow, readFeedAt, refreshAllFeeds, refreshFeed, storeItems } from "../lib/discovery.js";
 import { matchTags } from "../lib/rss.js";
 import { jobView } from "../lib/importJobs.js";
+import { feedCopyOf, fresh, previewNutrition, previewWithAi, readPreview } from "../lib/discoveryPreview.js";
+import { AiError } from "../lib/ai.js";
 
 // Discovery: the household's RSS / Atom feeds and their posts, and each person's filter tags.
 // Everything here is plain code: no AI. (Importing a post into your recipes is the normal import.)
@@ -23,7 +25,6 @@ const sortKey = sql`coalesce(${discoveryItems.pubDate}, ${discoveryItems.firstSe
 // In your recipes: the recipe this post became, or one saved from the same link (written out in
 // full: inside a subquery a bare column name would mean the subquery's own table)
 const recipeOf = sql<number | null>`coalesce("discovery_items"."recipe_id", (select r.id from recipes r where r.source_url = "discovery_items"."link" order by r.id limit 1))`;
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 async function tagsOf(app: FastifyInstance, userId: number | null) {
   if (!userId) return [];
@@ -136,16 +137,65 @@ export default async function discoveryRoutes(app: FastifyInstance) {
     return { ...r, matchedTags: matchTags(r, await tagsOf(app, userOf(req))) };
   });
 
-  // Import Recipe: the normal import of the post's link; if the site keeps Culury out (or the page
-  // has no recipe), the feed's copy of the post is read instead. The post then shows In your recipes.
-  app.post("/api/discovery/items/:id/import", async (req, reply) => {
-    const { id } = idParam.parse(req.params);
+  // ---------- the recipe on a post's page (shown before it's saved) ----------
+
+  const postWithLink = async (id: number) => {
     const [p] = await db.select().from(discoveryItems).where(eq(discoveryItems.id, id));
     if (!p) throw notFound("Post");
-    if (!p.link) throw new HttpError(400, "This post has no link to a recipe page to import");
-    const body = p.contentHtml ?? (p.description ? `<p>${esc(p.description)}</p>` : "");
-    const feedCopy = `<!DOCTYPE html><html><head><title>${esc(p.title)}</title></head><body><h1>${esc(p.title)}</h1>${body}</body></html>`;
-    const job = await app.jobs.enqueue("import-url", { url: p.link, feedCopy, discoveryItemId: p.id }, userOf(req));
+    if (!p.link) throw new HttpError(400, "This post has no link to a recipe page");
+    return p as typeof p & { link: string };
+  };
+  const deps = () => ({ db, ai: app.ai, fetchOptions: app.fetchOptions });
+  // AI off: 409 (turn it on in Settings › AI); the AI found no recipe or couldn't be read: 422
+  const asHttp = async <T>(fn: () => Promise<T>) => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof AiError) throw new HttpError(/Settings › AI|AI is off/.test(e.message) ? 409 : 422, e.message);
+      throw e;
+    }
+  };
+  const view = async (preview: Awaited<ReturnType<typeof readPreview>>) => ({ ...preview, canAi: !!(await app.ai.active()) });
+
+  // Plain code, no AI: the page's recipe data, or the feed post's own Ingredients / Instructions.
+  // Kept for a day (?fresh=1 reads the page again).
+  app.get("/api/discovery/items/:id/recipe", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const { fresh: again } = z.object({ fresh: z.enum(["1", "true"]).optional() }).parse(req.query);
+    const p = await postWithLink(id);
+    return view((!again && fresh(p)) || (await readPreview(deps(), p)));
+  });
+
+  // Read with AI (asked for): the page's text, or the feed's copy when the site keeps Culury out
+  app.post("/api/discovery/items/:id/recipe/ai", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const p = await postWithLink(id);
+    return view(await asHttp(() => previewWithAi(deps(), p)));
+  });
+
+  // Calculate nutrition (asked for): per ingredient, added up per serving
+  app.post("/api/discovery/items/:id/recipe/nutrition", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const p = await postWithLink(id);
+    const preview = fresh(p);
+    if (!preview?.recipe) throw new HttpError(400, "There's no recipe shown for this post to work out nutrition for");
+    return view(await asHttp(() => previewNutrition(deps(), p.id, preview)));
+  });
+
+  // Import Recipe: the recipe as shown (no reading the page again, no AI). Without one shown, the
+  // normal import of the post's link, falling back to the feed's copy of the post. The post then
+  // shows In your recipes.
+  app.post("/api/discovery/items/:id/import", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const p = await postWithLink(id).catch((e) => {
+      if (e instanceof HttpError && e.statusCode === 400) throw new HttpError(400, "This post has no link to a recipe page to import");
+      throw e;
+    });
+    const shown = fresh(p);
+    const payload = shown?.recipe
+      ? { url: p.link, discoveryItemId: p.id, preview: { recipe: shown.recipe, how: shown.how, fromFeed: shown.from === "feed" } }
+      : { url: p.link, feedCopy: feedCopyOf(p), discoveryItemId: p.id };
+    const job = await app.jobs.enqueue("import-url", payload, userOf(req));
     return reply.status(202).send(jobView(job));
   });
 
