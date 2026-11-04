@@ -14,11 +14,13 @@ import WhatsNew from "./WhatsNew";
 import UpdateBar from "./UpdateBar";
 import { BackgroundPill } from "./BackgroundPill";
 import { InboxButton, InboxDrawer } from "./Inbox";
-import { GearIcon, GroceryIcon, Logo, PantryIcon, PlannerIcon, RecipesIcon } from "./Icons";
+import { DiscoverIcon, GearIcon, GroceryIcon, Logo, PantryIcon, PlannerIcon, RecipesIcon } from "./Icons";
+import DiscoveryPage from "./discovery/DiscoveryPage";
 
-type Page = "recipes" | "plan" | "grocery" | "pantry" | "settings";
+type Page = "recipes" | "discover" | "plan" | "grocery" | "pantry" | "settings";
 const PAGES: { id: Page; label: string; icon: JSX.Element }[] = [
   { id: "recipes", label: "Recipes", icon: <RecipesIcon /> },
+  { id: "discover", label: "Discover", icon: <DiscoverIcon /> },
   { id: "plan", label: "Meal plan", icon: <PlannerIcon /> },
   { id: "grocery", label: "Grocery", icon: <GroceryIcon /> },
   { id: "pantry", label: "Pantry", icon: <PantryIcon /> },
@@ -100,12 +102,12 @@ export default function AppShell() {
 
       <BackgroundPill />
       <main className="min-w-0 flex-1 pb-16 sm:pb-0">
-        {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : page === "plan" ? <PlannerPage /> : page === "grocery" ? <GroceryPage /> : <PantryPage />}
+        {page === "settings" ? <SettingsPage /> : page === "recipes" ? <RecipesPage /> : page === "discover" ? <DiscoveryPage /> : page === "plan" ? <PlannerPage /> : page === "grocery" ? <GroceryPage /> : <PantryPage />}
       </main>
 
       {/* Bottom bar on phones */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-center justify-around border-t border-line bg-container sm:hidden">
-        {PAGES.map((p) => (
+        {PAGES.filter((p) => p.id !== "settings").map((p) => ( // Settings: in the Account menu on phones
           <a
             key={p.id}
             href={`#/${p.id}`}

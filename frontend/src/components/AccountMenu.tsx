@@ -1,7 +1,7 @@
 import { showWhatsNew, versionLabel } from "../version";
 import { useEffect, useRef, useState } from "react";
 import { initialsOf, useSession } from "../session";
-import { ChefIcon, InboxIcon, LogoutIcon, UserIcon } from "./Icons";
+import { ChefIcon, GearIcon, InboxIcon, LogoutIcon, UserIcon } from "./Icons";
 import { openInbox, useInboxWaiting } from "./Inbox";
 
 // The initials button (bottom of the left nav, or "Account" on phones) and its menu
@@ -64,6 +64,12 @@ export default function AccountMenu({ variant }: { variant: "rail" | "bar" }) {
           <a role="menuitem" href="#/settings/profile" onClick={() => setOpen(false)} className={item}>
             <UserIcon className="size-4 text-subtle" /> Profile & security
           </a>
+          {variant === "bar" && (
+            // phones: the bottom bar has Discover in Settings' place
+            <a role="menuitem" href="#/settings" onClick={() => setOpen(false)} className={item}>
+              <GearIcon className="size-4 text-subtle" /> Settings
+            </a>
+          )}
           {variant === "bar" && (
             <button role="menuitem" onClick={() => (setOpen(false), openInbox())} className={item}>
               <InboxIcon className="size-4 text-subtle" /> Inbox

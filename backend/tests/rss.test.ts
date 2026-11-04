@@ -78,7 +78,7 @@ describe("reading RSS 2.0", () => {
   });
 
   it("the post's own text, made safe (no scripts; links and pictures made absolute)", () => {
-    expect(f.items[0].contentHtml).toBe('<p>Pat the thighs dry.</p><img src="https://kitchen.example.com/img/thighs.jpg" alt="Thighs">');
+    expect(f.items[0].contentHtml).toBe('<p>Pat the thighs dry.</p><img src="https://kitchen.example.com/img/thighs.jpg" alt="Thighs" loading="lazy" referrerpolicy="no-referrer">');
     expect(f.items[1].contentHtml).toBe("<p>A cozy vegan soup.</p>"); // no content: the description
   });
 });

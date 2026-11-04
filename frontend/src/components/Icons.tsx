@@ -2,6 +2,9 @@
 // name and default size, so screens just use <RecipesIcon /> etc.
 import {
   ArrowLeft,
+  Compass,
+  RefreshCw,
+  Rss,
   Inbox as LucideInbox,
   BookOpen,
   ChefHat,
@@ -84,6 +87,9 @@ export const ServingsIcon = icon(Users, "size-4", 1.8);
 export const FilterIcon = icon(SlidersHorizontal, "size-4", 1.8);
 export const ShareIcon = icon(Share2, "size-4", 1.8);
 export const InboxIcon = icon(LucideInbox, "size-5", 1.8);
+export const DiscoverIcon = icon(Compass, "size-5", 1.8);
+export const RefreshIcon = icon(RefreshCw, "size-4", 1.8);
+export const FeedIcon = icon(Rss, "size-4", 1.8);
 export const InfoIcon = icon(Info, "size-4", 2);
 export const MailIcon = icon(Mail, "size-4", 1.8);
 

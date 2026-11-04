@@ -81,7 +81,8 @@ export function sanitizeHtml(html: string, base: string): string {
         if (tag === "img") {
           const src = absolute(el.attribs.src ?? el.attribs["data-src"], base);
           if (!src) continue;
-          attrs = ` src="${escAttr(src)}"${el.attribs.alt ? ` alt="${escAttr(el.attribs.alt)}"` : ""}`;
+          // lazy, and without telling the site which page shows it
+          attrs = ` src="${escAttr(src)}"${el.attribs.alt ? ` alt="${escAttr(el.attribs.alt)}"` : ""} loading="lazy" referrerpolicy="no-referrer"`;
         }
         out.push(`<${tag}${attrs}>`);
         if (VOID.has(tag)) continue;
