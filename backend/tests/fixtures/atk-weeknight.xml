@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>America's Test Kitchen: Weeknight</title>
+    <link>https://www.americastestkitchen.com/recipes/weeknight?s=everest_search_published_date_desc</link>
+    <description>New recipes: America's Test Kitchen: Weeknight</description>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 04 Nov 2026 21:30:10 +0000</lastBuildDate>
+    <generator>atk_rss.py</generator>
+    <atom:link href="http://192.168.50.191:8180/atk-weeknight.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>Potato, Artichoke, and Sun-Dried Tomato Tarts</title>
+      <link>https://www.americastestkitchen.com/recipes/100233-potato-artichoke-and-sun-dried-tomato-tarts</link>
+      <guid isPermaLink="false">atk-recipe-100233</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:10 +0000</pubDate>
+      <category>Quick</category>
+      <description>By Jessica Rudolph. Quick.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/10-26%20Dinner%20Tonight/SFS_Potato_Artichoke_and_Sun_Dried_Tomato_Tart_64030" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/10-26%20Dinner%20Tonight/SFS_Potato_Artichoke_and_Sun_Dried_Tomato_Tart_64030"/>
+    </item>
+    <item>
+      <title>Palak Chicken</title>
+      <link>https://www.americastestkitchen.com/recipes/17777-palak-chicken</link>
+      <guid isPermaLink="false">atk-recipe-17777</guid>
+      <dc:creator>Steve Dunn</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:09 +0000</pubDate>
+      <category>Quick</category>
+      <category>Gluten Free</category>
+      <category>Under 45 mins</category>
+      <description>By Steve Dunn. ★ 3.9 (11 ratings). Quick · Gluten Free · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Palak-Inspired_Chicken_52361_yrbq4g" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Palak-Inspired_Chicken_52361_yrbq4g"/>
+    </item>
+    <item>
+      <title>Hearty Chickpea Soup with Fennel and Pancetta</title>
+      <link>https://www.americastestkitchen.com/recipes/12670-hearty-chickpea-soup-with-fennel-and-pancetta</link>
+      <guid isPermaLink="false">atk-recipe-12670</guid>
+      <dc:creator>Eric Haessler</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:08 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 1 hour</category>
+      <description>By Eric Haessler. ★ 3.1 (7 ratings). Quick · Under 1 hour.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Chickpea_Soup_with_Fennel_and_Pancetta_61689_mhzptl" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Chickpea_Soup_with_Fennel_and_Pancetta_61689_mhzptl"/>
+    </item>
+    <item>
+      <title>Pork Tenderloin with White Beans and Romesco</title>
+      <link>https://www.americastestkitchen.com/recipes/100076-pork-tenderloin-with-white-beans-and-romesco</link>
+      <guid isPermaLink="false">atk-recipe-100076</guid>
+      <dc:creator>Malcolm Jackson</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:07 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Malcolm Jackson. ★ 4.4 (32 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Pan-Roasted_Pork_Tenderloin_White_Beans_Romesco_2650_m3fqhs" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Pan-Roasted_Pork_Tenderloin_White_Beans_Romesco_2650_m3fqhs"/>
+    </item>
+    <item>
+      <title>Crispy Bean-and-Cheese Tacos</title>
+      <link>https://www.americastestkitchen.com/recipes/17860-crispy-bean-and-cheese-tacos</link>
+      <guid isPermaLink="false">atk-recipe-17860</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:06 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Jessica Rudolph. ★ 3.6 (11 ratings). Vegetarian · Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Crispy_Bean_and_Cheese_Tacos_61633" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Crispy_Bean_and_Cheese_Tacos_61633"/>
+    </item>
+    <item>
+      <title>Roasted Butternut Squash Pizza</title>
+      <link>https://www.americastestkitchen.com/recipes/100074-roasted-butternut-squash-pizza</link>
+      <guid isPermaLink="false">atk-recipe-100074</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:05 +0000</pubDate>
+      <category>Quick</category>
+      <category>Vegetarian</category>
+      <description>By Jessica Rudolph. ★ 5.0 (5 ratings). Quick · Vegetarian.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Butternut_Squash_Pizza_61594" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Butternut_Squash_Pizza_61594"/>
+    </item>
+    <item>
+      <title>Cilantro-Lime Bean Salad with Roasted Squash, Cabbage, and Jicama</title>
+      <link>https://www.americastestkitchen.com/recipes/100073-cilantro-lime-bean-salad-with-roasted-squash-cabbage-and-jícama</link>
+      <guid isPermaLink="false">atk-recipe-100073</guid>
+      <dc:creator>Claudia Catalano</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:04 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <description>By Claudia Catalano. ★ 4.8 (5 ratings). Vegetarian · Quick.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Cilantro_Lime_Black_Bean_Salad_16" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Cilantro_Lime_Black_Bean_Salad_16"/>
+    </item>
+    <item>
+      <title>Somali Meat Sauce with Pasta (Suugo Suqaar)</title>
+      <link>https://www.americastestkitchen.com/recipes/100063-somali-meat-sauce-with-pasta-suugo-suqaar</link>
+      <guid isPermaLink="false">atk-recipe-100063</guid>
+      <dc:creator>Annie Petito</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:03 +0000</pubDate>
+      <category>Quick</category>
+      <description>By Annie Petito. ★ 3.3 (19 ratings). Quick.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Suugo_Suquaar_0198" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Suugo_Suquaar_0198"/>
+    </item>
+    <item>
+      <title>Marry Me Chicken</title>
+      <link>https://www.americastestkitchen.com/recipes/17861-marry-me-chicken</link>
+      <guid isPermaLink="false">atk-recipe-17861</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:02 +0000</pubDate>
+      <category>Quick</category>
+      <description>By Jessica Rudolph. ★ 4.2 (92 ratings). Quick.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Marry_Me_Chicken_61552" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Marry_Me_Chicken_61552"/>
+    </item>
+    <item>
+      <title>Black Bean Hummus</title>
+      <link>https://www.americastestkitchen.com/recipes/17863-black-bean-hummus</link>
+      <guid isPermaLink="false">atk-recipe-17863</guid>
+      <dc:creator>Morgan Bolling</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:01 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Morgan Bolling. ★ 4.3 (13 ratings). Vegetarian · Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Black_Bean_Hummus-32_uzfaki" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Black_Bean_Hummus-32_uzfaki"/>
+    </item>
+    <item>
+      <title>Flank Steak with Wilted Spinach, Goat Cheese, and Pear Salad</title>
+      <link>https://www.americastestkitchen.com/recipes/17862-flank-steak-with-wilted-spinach-goat-cheese-and-pear-salad</link>
+      <guid isPermaLink="false">atk-recipe-17862</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:30:00 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Jessica Rudolph. ★ 4.3 (3 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Steak_with_Wilted_Spinach__Goat_Cheese__and_Pear_Salad_61713_gpi5a2" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Steak_with_Wilted_Spinach__Goat_Cheese__and_Pear_Salad_61713_gpi5a2"/>
+    </item>
+    <item>
+      <title>Lasagna Soup</title>
+      <link>https://www.americastestkitchen.com/recipes/17866-lasagna-soup</link>
+      <guid isPermaLink="false">atk-recipe-17866</guid>
+      <dc:creator>Kelly Song</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:59 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 1 hour</category>
+      <description>By Kelly Song. ★ 4.3 (84 ratings). Quick · Under 1 hour.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Lasanga_Soup-19_x0wetg" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Lasanga_Soup-19_x0wetg"/>
+    </item>
+    <item>
+      <title>Hearty Bean Salad with Roasted Carrots and Halloumi</title>
+      <link>https://www.americastestkitchen.com/recipes/17864-hearty-bean-salad-with-roasted-carrots-and-halloumi</link>
+      <guid isPermaLink="false">atk-recipe-17864</guid>
+      <dc:creator>Claudia Catalano</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:58 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Claudia Catalano. ★ 4.2 (14 ratings). Vegetarian · Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Bean_Salad_Roasted_Carrots_Pomegranate_Halloumi_24_1_mwre81" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Bean_Salad_Roasted_Carrots_Pomegranate_Halloumi_24_1_mwre81"/>
+    </item>
+    <item>
+      <title>Spanakopita Beans</title>
+      <link>https://www.americastestkitchen.com/recipes/100006-spanakopita-beans</link>
+      <guid isPermaLink="false">atk-recipe-100006</guid>
+      <dc:creator>Bryan Roof</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:57 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Bryan Roof. ★ 4.3 (38 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Spanakopita_Beans-36_m43gem" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Spanakopita_Beans-36_m43gem"/>
+    </item>
+    <item>
+      <title>Grilled Sage Pork with Cranberry-Apple Relish</title>
+      <link>https://www.americastestkitchen.com/recipes/17843-grilled-pork-with-cranberry-apple-relish</link>
+      <guid isPermaLink="false">atk-recipe-17843</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:56 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Jessica Rudolph. ★ 4.5 (11 ratings). Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Grilled_Pork_with_Cranberry-Apple_Relish_61742" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/09-26%20Dinner%20Tonight/SFS_Grilled_Pork_with_Cranberry-Apple_Relish_61742"/>
+    </item>
+    <item>
+      <title>Chicken Pizzaiola</title>
+      <link>https://www.americastestkitchen.com/recipes/17823-chicken-pizzaiola</link>
+      <guid isPermaLink="false">atk-recipe-17823</guid>
+      <dc:creator>Eric Haessler</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:55 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 1 hour</category>
+      <description>By Eric Haessler. ★ 4.3 (74 ratings). Quick · Under 1 hour.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Chicken_Pizzaiola_with_Provolone_And_Capicola-36" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Chicken_Pizzaiola_with_Provolone_And_Capicola-36"/>
+    </item>
+    <item>
+      <title>Chicken, Green Bean, and Shiitake Stir-Fry</title>
+      <link>https://www.americastestkitchen.com/recipes/17821-chicken-green-bean-and-shiitake-stir-fry</link>
+      <guid isPermaLink="false">atk-recipe-17821</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:54 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Jessica Rudolph. ★ 4.5 (35 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Web%20Reshoots/2026/07-July/SFS_Stir-Fried_Chicken_Green_Beans_and_Shiitakes-24" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Web%20Reshoots/2026/07-July/SFS_Stir-Fried_Chicken_Green_Beans_and_Shiitakes-24"/>
+    </item>
+    <item>
+      <title>Crispy Za'atar Chicken Cutlets with Sweet Potato Wedges</title>
+      <link>https://www.americastestkitchen.com/recipes/17837-crispy-zaatar-chicken-cutlets-with-sweet-potato-wedges</link>
+      <guid isPermaLink="false">atk-recipe-17837</guid>
+      <dc:creator>Joe Gitter</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:53 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Joe Gitter. ★ 4.1 (86 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_CrispyZaatarChickenSweetPotatoWedges_016_e98m4g" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_CrispyZaatarChickenSweetPotatoWedges_016_e98m4g"/>
+    </item>
+    <item>
+      <title>Chicken Caesar Wedge Salad with Frico Crumble</title>
+      <link>https://www.americastestkitchen.com/recipes/17835-chicken-caesar-wedge-salad-with-frico-crumble</link>
+      <guid isPermaLink="false">atk-recipe-17835</guid>
+      <dc:creator>Steve Dunn</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:52 +0000</pubDate>
+      <category>Make Ahead</category>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Steve Dunn. ★ 4.2 (6 ratings). Make Ahead · Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Chicken_Caesar_Wedge_Salad_with_Frico_Crumble_52329_rlopaq" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_Chicken_Caesar_Wedge_Salad_with_Frico_Crumble_52329_rlopaq"/>
+    </item>
+    <item>
+      <title>Quick Pasta Pomodoro</title>
+      <link>https://www.americastestkitchen.com/recipes/17820-quick-pasta-pomodoro</link>
+      <guid isPermaLink="false">atk-recipe-17820</guid>
+      <dc:creator>Bryan Roof</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:51 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Bryan Roof. ★ 4.1 (18 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Quick_Pomodoro_Sauce-24" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Quick_Pomodoro_Sauce-24"/>
+    </item>
+    <item>
+      <title>Seared Halloumi Flatbread with Kale-Apple Salad</title>
+      <link>https://www.americastestkitchen.com/recipes/17822-seared-halloumi-flatbread-with-kale-apple-salad</link>
+      <guid isPermaLink="false">atk-recipe-17822</guid>
+      <dc:creator>Sara Mayer</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:50 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Sara Mayer. ★ 4.7 (3 ratings). Vegetarian · Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Seared_Halloumi_and_Apple_Flatbread-25" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Seared_Halloumi_and_Apple_Flatbread-25"/>
+    </item>
+    <item>
+      <title>Creamy Corn-Miso Pasta</title>
+      <link>https://www.americastestkitchen.com/recipes/17819-creamy-corn-miso-pasta</link>
+      <guid isPermaLink="false">atk-recipe-17819</guid>
+      <dc:creator>Bryan Roof</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:49 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Bryan Roof. ★ 4.3 (28 ratings). Vegetarian · Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_20-Minute_Miso_Corn_Pasta-32" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_20-Minute_Miso_Corn_Pasta-32"/>
+    </item>
+    <item>
+      <title>Grilled Salmon with Charred Red Cabbage Slaw</title>
+      <link>https://www.americastestkitchen.com/recipes/17818-grilled-salmon-with-charred-red-cabbage-slaw</link>
+      <guid isPermaLink="false">atk-recipe-17818</guid>
+      <dc:creator>Sam Block</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:48 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Sam Block. ★ 3.9 (8 ratings). Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Grilled_Salmon_with_Charred_Red_Cabbage_Slaw-19" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Grilled_Salmon_with_Charred_Red_Cabbage_Slaw-19"/>
+    </item>
+    <item>
+      <title>Broccoli–White Bean Pasta Salad</title>
+      <link>https://www.americastestkitchen.com/recipes/17817-broccoli-white-bean-pasta-salad</link>
+      <guid isPermaLink="false">atk-recipe-17817</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:47 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Jessica Rudolph. ★ 3.5 (13 ratings). Vegetarian · Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Broccoli-Basil_Pasta_Salad_57714" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Broccoli-Basil_Pasta_Salad_57714"/>
+    </item>
+    <item>
+      <title>Aglio e Olio with Pecorino</title>
+      <link>https://www.americastestkitchen.com/recipes/17816-rose-s-aglio-e-olio-with-pecorino</link>
+      <guid isPermaLink="false">atk-recipe-17816</guid>
+      <dc:creator>Bryan Roof</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:46 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Bryan Roof. ★ 4.9 (11 ratings). Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Pecorino_Aglio_e_Olio_57737" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Pecorino_Aglio_e_Olio_57737"/>
+    </item>
+    <item>
+      <title>Swordfish Piccata</title>
+      <link>https://www.americastestkitchen.com/recipes/17785-swordfish-piccata</link>
+      <guid isPermaLink="false">atk-recipe-17785</guid>
+      <dc:creator>Jessica Rudolph</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:45 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 30 mins</category>
+      <description>By Jessica Rudolph. ★ 4.2 (11 ratings). Quick · Under 30 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Swordfish_Piccata-26" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Dinner%20Tonight/08-26%20Dinner%20Tonight/SFS_Swordfish_Piccata-26"/>
+    </item>
+    <item>
+      <title>Honey-Glazed Drumsticks with Corn and Pineapple Salad</title>
+      <link>https://www.americastestkitchen.com/recipes/17828-honey-glazed-drumsticks-with-corn-and-pineapple-salad</link>
+      <guid isPermaLink="false">atk-recipe-17828</guid>
+      <dc:creator>Malcolm Jackson</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:44 +0000</pubDate>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Malcolm Jackson. ★ 4.0 (19 ratings). Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_HoneyRoastedChickenDrumsticksCornPineappleSalad-58_rwugqu" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/SFS_HoneyRoastedChickenDrumsticksCornPineappleSalad-58_rwugqu"/>
+    </item>
+    <item>
+      <title>Creamy Elote Pasta Salad</title>
+      <link>https://www.americastestkitchen.com/recipes/17815-creamy-elote-pasta-salad</link>
+      <guid isPermaLink="false">atk-recipe-17815</guid>
+      <dc:creator>Kelly Song</dc:creator>
+      <pubDate>Wed, 04 Nov 2026 21:29:43 +0000</pubDate>
+      <category>Vegetarian</category>
+      <category>Quick</category>
+      <category>Under 45 mins</category>
+      <description>By Kelly Song. ★ 3.9 (26 ratings). Vegetarian · Quick · Under 45 mins.</description>
+      <media:content url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Elote-Style_Corn_Pasta-24" medium="image"/>
+      <media:thumbnail url="https://res.cloudinary.com/hksqkdlah/image/upload/c_fill,dpr_2.0,f_auto,fl_lossy.progressive.strip_profile,q_auto:low,w_400,h_300/Fast%20Track%20Recipes/2026/SFS_Elote-Style_Corn_Pasta-24"/>
+    </item>
+  </channel>
+</rss>

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { setupTestApp, type TestApp } from "./helpers.js";
 import { refreshAllFeeds } from "../src/lib/discovery.js";
+import { readFileSync } from "node:fs";
 
 // Discovery: RSS feeds the household subscribes to, read and filtered with plain code (no AI)
 let t: TestApp;
@@ -117,6 +118,27 @@ describe("filtering by the tags you pick", () => {
     expect(await pick(["keto"])).toEqual([["Recipe 3 keto bowl", ["keto"]]]);
     expect(await pick(["Air Fryer", "chicken"])).toEqual([["Recipe 2 chicken soup", ["chicken"]], ["Recipe 1 (Air Fryer)", ["Air Fryer"]]]);
     expect((await t.api("GET", "/api/discovery/items?tags=")).body.items).toHaveLength(3); // none picked: everything
+  });
+});
+
+describe("feeds on your own network", () => {
+  // e.g. the America's Test Kitchen feed a daily script writes to nginx on the Docker host
+  it("a feed on a LAN address (192.168.x.x) subscribes and reads, pictures and all", async () => {
+    const LAN = "http://192.168.50.191:8180/atk-weeknight.xml";
+    serve(LAN, readFileSync(new URL("./fixtures/atk-weeknight.xml", import.meta.url), "utf8"));
+    const r = await add(LAN);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ title: "America's Test Kitchen: Weeknight", items: 28 });
+    const [first] = (await t.api("GET", "/api/discovery/items")).body.items;
+    expect(first).toMatchObject({ title: "Potato, Artichoke, and Sun-Dried Tomato Tarts", link: "https://www.americastestkitchen.com/recipes/100233-potato-artichoke-and-sun-dried-tomato-tarts", author: "Jessica Rudolph" });
+    expect(first.thumbnailUrl).toMatch(/^https:\/\/res\.cloudinary\.com\//);
+  });
+
+  it("the server's own address (localhost) is still refused", async () => {
+    serve("http://127.0.0.1:8180/feed.xml", rss(item(1)));
+    const r = await add("http://127.0.0.1:8180/feed.xml");
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/server itself/);
   });
 });
 
