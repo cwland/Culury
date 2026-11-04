@@ -13,6 +13,7 @@ export interface ImportJob {
     recipeId?: number;
     title?: string;
     duplicateOf?: number;
+    fromFeed?: boolean; // Discovery: read from the feed's copy of the post
     how?: "schema.org" | "ai" | "text" | "photo" | "file";
     warnings?: string[];
     // a file from another app

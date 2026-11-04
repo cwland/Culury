@@ -10,7 +10,8 @@ const feeds = [
   { id: 1, url: "https://kitchen.example.com/feed", title: "Test Kitchen", siteUrl: "https://kitchen.example.com/", iconUrl: null, lastFetchedAt: ago(1), lastError: null, items: 2 },
   { id: 2, url: "https://other.example.com/feed", title: "Other Eats", siteUrl: null, iconUrl: null, lastFetchedAt: ago(2), lastError: "That page couldn't be reached (404)", items: 1 },
 ];
-const item = (id: number, title: string, more: object = {}) => ({ id, feedId: 1, feedTitle: "Test Kitchen", feedIcon: null, title, link: `https://kitchen.example.com/p${id}`, pubDate: ago(48), author: "Deb", categories: [], description: `${title}, the post.`, thumbnailUrl: `https://cdn.example.com/${id}.jpg`, matchedTags: [], ...more });
+const item = (id: number, title: string, more: object = {}) => ({ id, feedId: 1, feedTitle: "Test Kitchen", feedIcon: null, title, link: `https://kitchen.example.com/p${id}`, pubDate: ago(48), author: "Deb", categories: [], description: `${title}, the post.`, thumbnailUrl: `https://cdn.example.com/${id}.jpg`, matchedTags: [], recipeId: null, ...more });
+const job = (over: object) => ({ id: 40, kind: "import-url", status: "queued", source: "https://kitchen.example.com/p5", result: null, error: null, createdAt: ago(0), ...over });
 const page = (items: object[], more = false) => ({ items, more, next: more ? "1700000000000_9" : null, tags: [] });
 const routes = (more: Record<string, any> = {}) =>
   fakeServer({
@@ -28,6 +29,14 @@ const cards = async () => within(await screen.findByRole("list", { name: "Recipe
 beforeEach(() => (window.location.hash = "#/discover"));
 
 describe("the Discovery page", () => {
+  it("a post already in your recipes says so on its card", async () => {
+    routes({ "GET /api/discovery/items": () => page([item(5, "Crispy Air Fryer Chicken", { recipeId: 31 }), item(3, "Keto Pancakes")]) });
+    render(<DiscoveryPage />);
+    const [saved, notYet] = await cards();
+    expect(within(saved).getByText("In your recipes")).toBeInTheDocument();
+    expect(within(notYet).queryByText("In your recipes")).toBeNull();
+  });
+
   it("shows posts from every feed as cards: picture, title, feed and when", async () => {
     routes();
     render(<DiscoveryPage />);
@@ -143,5 +152,66 @@ describe("one post", () => {
     expect(screen.getByRole("link", { name: /Open original site/ })).toHaveAttribute("href", "https://kitchen.example.com/p5");
     expect(screen.getByRole("link", { name: /Open original site/ })).toHaveAttribute("target", "_blank");
     expect(screen.getByRole("link", { name: /Discover/ })).toHaveAttribute("href", "#/discover");
+  });
+
+  describe("Import Recipe", () => {
+    const openPost = (more: Record<string, any>, post: object = {}) => {
+      const s = routes({ "GET /api/discovery/items/5": () => ({ ...item(5, "Crispy Air Fryer Chicken"), contentHtml: "<p>Hi</p>", ...post }), ...more });
+      window.location.hash = "#/discover/5";
+      render(<DiscoveryPage />);
+      return s;
+    };
+
+    it("imports it, then says so with a link to the new recipe", async () => {
+      let polls = 0;
+      const s = openPost({
+        "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }),
+        "GET /api/imports/:id": () => (++polls > 1 ? job({ status: "done", result: { recipeId: 31, title: "Crispy Air Fryer Chicken" } }) : job({ status: "running" })),
+      });
+      const u = userEvent.setup();
+      await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
+      expect(await screen.findByText(/Importing/)).toBeInTheDocument();
+      const done = await screen.findByRole("status", {}, { timeout: 4000 });
+      await waitFor(() => expect(done).toHaveTextContent("Imported “Crispy Air Fryer Chicken” into your recipes"), { timeout: 4000 });
+      expect(within(done).getByRole("link", { name: "Open the recipe" })).toHaveAttribute("href", "#/recipes/31?imported=1");
+      expect(screen.queryByRole("button", { name: "Import Recipe" })).toBeNull();
+      expect(s.writes().map((w) => w.path)).toEqual(["/api/discovery/items/5/import"]);
+    });
+
+    it("read from the feed's copy: says so", async () => {
+      openPost({ "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }), "GET /api/imports/:id": () => job({ status: "done", result: { recipeId: 31, title: "Crispy Air Fryer Chicken", fromFeed: true } }) });
+      const u = userEvent.setup();
+      await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/The site kept Culury out, so it was read from the feed's copy/), { timeout: 4000 });
+    });
+
+    it("already in your recipes: says so, with the link", async () => {
+      openPost({ "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }), "GET /api/imports/:id": () => job({ status: "done", result: { duplicateOf: 8, title: "Crispy Air Fryer Chicken" } }) });
+      const u = userEvent.setup();
+      await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Already in your recipes"), { timeout: 4000 });
+      expect(screen.getByRole("link", { name: "Open the recipe" })).toHaveAttribute("href", "#/recipes/8");
+    });
+
+    it("it couldn't be imported: says why, and can be tried again", async () => {
+      openPost({ "POST /api/discovery/items/5/import": () => ({ status: 202, json: job({}) }), "GET /api/imports/:id": () => job({ status: "failed", error: "That page couldn't be reached (404). The feed's copy of the post didn't have the recipe either." }) });
+      const u = userEvent.setup();
+      await u.click(await screen.findByRole("button", { name: "Import Recipe" }));
+      expect(await screen.findByRole("alert", {}, { timeout: 4000 })).toHaveTextContent(/feed's copy of the post didn't have the recipe either/);
+      expect(screen.getByRole("button", { name: "Import Recipe" })).toBeEnabled();
+    });
+
+    it("a post already in your recipes: In your recipes, with the link, instead of Import", async () => {
+      openPost({}, { recipeId: 31 });
+      expect(await screen.findByText("In your recipes")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Open the recipe" })).toHaveAttribute("href", "#/recipes/31");
+      expect(screen.queryByRole("button", { name: "Import Recipe" })).toBeNull();
+    });
+
+    it("a post without a link can't be imported", async () => {
+      openPost({}, { link: null });
+      await screen.findByRole("heading", { level: 1 });
+      expect(screen.queryByRole("button", { name: "Import Recipe" })).toBeNull();
+    });
   });
 });

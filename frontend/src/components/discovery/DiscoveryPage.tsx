@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api";
 import { Popup } from "../Popup";
+import type { ImportJob } from "../recipes/ImportDialog";
 import { BackIcon, ChefIcon, DiscoverIcon, FeedIcon, LinkOutIcon, RefreshIcon } from "../Icons";
 
 // Discovery: recipes from the household's RSS / Atom feeds, as cards. Fetching, reading, filtering
@@ -30,6 +31,7 @@ export interface DiscoveryItem {
   description: string | null;
   thumbnailUrl: string | null;
   matchedTags: string[];
+  recipeId: number | null; // in your recipes: imported from here, or saved from the same link
   contentHtml?: string | null;
   feedSite?: string | null;
 }
@@ -248,6 +250,7 @@ function Card({ item, showTags }: { item: DiscoveryItem; showTags: boolean }) {
           <span className="min-w-0 truncate">{item.feedTitle}</span>
           {item.pubDate && <span className="shrink-0">· {ago(item.pubDate)}</span>}
         </p>
+        {item.recipeId != null && <p className="mt-2"><span className="rounded-full bg-success-subtle px-2 py-0.5 text-xs font-semibold text-success">In your recipes</span></p>}
         {showTags && !!item.matchedTags.length && (
           <p className="mt-2 flex flex-wrap gap-1">
             {item.matchedTags.map((t) => (
@@ -440,11 +443,14 @@ function Post({ id }: { id: number }) {
           <div className="p-5 sm:p-8">
             <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{p.title}</h1>
             <p className="mt-2 text-sm text-subtle">{[p.author, p.feedTitle, ago(p.pubDate)].filter(Boolean).join(" · ")}</p>
-            {p.link && (
-              <a href={p.link} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed">
-                Open original site <LinkOutIcon />
-              </a>
-            )}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {p.link && <ImportButton post={p} />}
+              {p.link && (
+                <a href={p.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed">
+                  Open original site <LinkOutIcon />
+                </a>
+              )}
+            </div>
             {/* the post as the feed sent it, made safe on the server (lib/rss.ts sanitizeHtml) */}
             {p.contentHtml ? (
               <article aria-label="The post" className="feed-post mt-6" dangerouslySetInnerHTML={{ __html: p.contentHtml }} />
@@ -457,5 +463,75 @@ function Post({ id }: { id: number }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Import Recipe: the recipe's own site first; if it keeps Culury out, the feed's copy of the post
+// (the server decides). Then a link to the recipe, or why it couldn't be imported.
+function ImportButton({ post }: { post: DiscoveryItem }) {
+  const [job, setJob] = useState<ImportJob | null>(null);
+  const [error, setError] = useState("");
+  const busy = !!job && (job.status === "queued" || job.status === "running");
+  useEffect(() => {
+    if (!job || !busy) return;
+    const t = setTimeout(
+      () =>
+        void api<ImportJob>("GET", `/api/imports/${job.id}`)
+          .then(setJob)
+          .catch((e) => (setError((e as Error).message), setJob(null))),
+      900,
+    );
+    return () => clearTimeout(t);
+  }, [job, busy]);
+  useEffect(() => {
+    if (job?.status === "failed") (setError(job.error ?? "That couldn't be imported"), setJob(null));
+  }, [job]);
+
+  const start = async () => {
+    setError("");
+    try {
+      setJob(await api<ImportJob>("POST", `/api/discovery/items/${post.id}/import`));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const done = job?.status === "done" ? job.result : null;
+  const saved = done ? null : post.recipeId;
+  const pill = "inline-flex items-center gap-2 rounded-lg bg-success-subtle px-3 py-2 text-sm text-success";
+  const open = "font-semibold underline";
+  if (done?.recipeId)
+    return (
+      <p role="status" className={pill}>
+        <span>
+          Imported “{done.title ?? post.title}” into your recipes.
+          {done.fromFeed && " The site kept Culury out, so it was read from the feed's copy of the post."}{" "}
+          <a href={`#/recipes/${done.recipeId}?imported=1`} className={open}>Open the recipe</a>
+        </span>
+      </p>
+    );
+  if (done?.duplicateOf)
+    return (
+      <p role="status" className={pill}>
+        Already in your recipes. <a href={`#/recipes/${done.duplicateOf}`} className={open}>Open the recipe</a>
+      </p>
+    );
+  if (saved != null)
+    return (
+      <p className={pill}>
+        <span>In your recipes</span>·<a href={`#/recipes/${saved}`} className={open}>Open the recipe</a>
+      </p>
+    );
+  return (
+    <>
+      <button type="button" onClick={() => void start()} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
+        <ChefIcon className="size-4" /> {busy ? "Importing…" : "Import Recipe"}
+      </button>
+      {error && (
+        <p role="alert" className="w-full rounded-lg bg-error-subtle px-3 py-2 text-sm text-error">
+          {error}
+        </p>
+      )}
+    </>
   );
 }

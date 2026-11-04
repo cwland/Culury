@@ -392,6 +392,7 @@ export interface JobResult {
   savedCopy?: { from: string; url: string; date?: string }; // import-url: read from a web archive's copy
   savedCopies?: { from: string; outcome: "none" | "captcha" | "failed" | "no-recipe"; link?: string }[]; // import-url (failed): the archives tried
   sent?: boolean; // import-url: the page came from your browser (Send to Culury)
+  fromFeed?: boolean; // import-url from Discovery: the site kept Culury out, so the feed's copy of the post was read
   trying?: string; // import-url (running): the archive being asked now
   blocked?: { reason: "captcha" | "paywall" | "refused" | "rate-limited" | "unavailable"; by?: string; url: string }; // import-url (failed): why the site kept it from us
 }
@@ -551,6 +552,7 @@ export const discoveryItems = pgTable(
     description: text("description"),
     contentHtml: text("content_html"), // made safe when read (lib/rss.ts)
     thumbnailUrl: text("thumbnail_url"),
+    recipeId: integer("recipe_id").references(() => recipes.id, { onDelete: "set null" }), // imported: the recipe it became
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },

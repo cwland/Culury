@@ -6,6 +6,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { newFeedRow, readFeedAt, refreshAllFeeds, refreshFeed, storeItems } from "../lib/discovery.js";
 import { matchTags } from "../lib/rss.js";
+import { jobView } from "../lib/importJobs.js";
 
 // Discovery: the household's RSS / Atom feeds and their posts, and each person's filter tags.
 // Everything here is plain code: no AI. (Importing a post into your recipes is the normal import.)
@@ -19,6 +20,10 @@ const webUrl = z
 
 const userOf = (req: FastifyRequest) => (req.auth?.method === "token" ? req.auth.userId : null);
 const sortKey = sql`coalesce(${discoveryItems.pubDate}, ${discoveryItems.firstSeenAt})`;
+// In your recipes: the recipe this post became, or one saved from the same link (written out in
+// full: inside a subquery a bare column name would mean the subquery's own table)
+const recipeOf = sql<number | null>`coalesce("discovery_items"."recipe_id", (select r.id from recipes r where r.source_url = "discovery_items"."link" order by r.id limit 1))`;
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 async function tagsOf(app: FastifyInstance, userId: number | null) {
   if (!userId) return [];
@@ -103,7 +108,7 @@ export default async function discoveryRoutes(app: FastifyInstance) {
       where.push(or(...tags.map((t) => sql`strpos(${hay}, ${t.toLowerCase()}) > 0`))!);
     }
     const rows = await db
-      .select({ id: discoveryItems.id, feedId: discoveryItems.feedId, feedTitle: discoveryFeeds.title, feedIcon: discoveryFeeds.iconUrl, title: discoveryItems.title, link: discoveryItems.link, pubDate: discoveryItems.pubDate, author: discoveryItems.author, categories: discoveryItems.categories, description: discoveryItems.description, thumbnailUrl: discoveryItems.thumbnailUrl, sort: sql<string>`(extract(epoch from ${sortKey}) * 1000)::bigint` })
+      .select({ id: discoveryItems.id, feedId: discoveryItems.feedId, feedTitle: discoveryFeeds.title, feedIcon: discoveryFeeds.iconUrl, title: discoveryItems.title, link: discoveryItems.link, pubDate: discoveryItems.pubDate, author: discoveryItems.author, categories: discoveryItems.categories, description: discoveryItems.description, thumbnailUrl: discoveryItems.thumbnailUrl, recipeId: recipeOf, sort: sql<string>`(extract(epoch from ${sortKey}) * 1000)::bigint` })
       .from(discoveryItems)
       .innerJoin(discoveryFeeds, eq(discoveryFeeds.id, discoveryItems.feedId))
       .where(where.length ? and(...where) : undefined)
@@ -123,12 +128,25 @@ export default async function discoveryRoutes(app: FastifyInstance) {
   app.get("/api/discovery/items/:id", async (req) => {
     const { id } = idParam.parse(req.params);
     const [r] = await db
-      .select({ id: discoveryItems.id, feedId: discoveryItems.feedId, feedTitle: discoveryFeeds.title, feedIcon: discoveryFeeds.iconUrl, feedSite: discoveryFeeds.siteUrl, title: discoveryItems.title, link: discoveryItems.link, pubDate: discoveryItems.pubDate, author: discoveryItems.author, categories: discoveryItems.categories, description: discoveryItems.description, contentHtml: discoveryItems.contentHtml, thumbnailUrl: discoveryItems.thumbnailUrl })
+      .select({ id: discoveryItems.id, feedId: discoveryItems.feedId, feedTitle: discoveryFeeds.title, feedIcon: discoveryFeeds.iconUrl, feedSite: discoveryFeeds.siteUrl, title: discoveryItems.title, link: discoveryItems.link, pubDate: discoveryItems.pubDate, author: discoveryItems.author, categories: discoveryItems.categories, description: discoveryItems.description, contentHtml: discoveryItems.contentHtml, thumbnailUrl: discoveryItems.thumbnailUrl, recipeId: recipeOf })
       .from(discoveryItems)
       .innerJoin(discoveryFeeds, eq(discoveryFeeds.id, discoveryItems.feedId))
       .where(eq(discoveryItems.id, id));
     if (!r) throw notFound("Post");
     return { ...r, matchedTags: matchTags(r, await tagsOf(app, userOf(req))) };
+  });
+
+  // Import Recipe: the normal import of the post's link; if the site keeps Culury out (or the page
+  // has no recipe), the feed's copy of the post is read instead. The post then shows In your recipes.
+  app.post("/api/discovery/items/:id/import", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const [p] = await db.select().from(discoveryItems).where(eq(discoveryItems.id, id));
+    if (!p) throw notFound("Post");
+    if (!p.link) throw new HttpError(400, "This post has no link to a recipe page to import");
+    const body = p.contentHtml ?? (p.description ? `<p>${esc(p.description)}</p>` : "");
+    const feedCopy = `<!DOCTYPE html><html><head><title>${esc(p.title)}</title></head><body><h1>${esc(p.title)}</h1>${body}</body></html>`;
+    const job = await app.jobs.enqueue("import-url", { url: p.link, feedCopy, discoveryItemId: p.id }, userOf(req));
+    return reply.status(202).send(jobView(job));
   });
 
   // ---------- your tags ----------

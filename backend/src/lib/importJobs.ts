@@ -1,7 +1,7 @@
 import { asc, eq, ilike, sql } from "drizzle-orm";
 import { readRecipeFile, type FileRecipe, type ReadResult } from "./fileImport.js";
 import type { Db } from "../db/index.js";
-import { categories, jobs, recipeUser, recipes, type JobResult } from "../db/schema.js";
+import { categories, discoveryItems, jobs, recipeUser, recipes, type JobResult } from "../db/schema.js";
 import type { AiService } from "./ai.js";
 import { logEvent } from "./appLog.js";
 import { fetchUrl, type FetchOptions } from "./fetchPage.js";
@@ -95,6 +95,7 @@ interface Read {
   sourceUrl: string;
   savedCopy?: JobResult["savedCopy"];
   why?: string; // the site kept it from us: why (for the log)
+  fromFeed?: boolean; // Discovery: read from the feed's copy of the post
 }
 
 // Blocked, and no saved copy either (a plain Error, so it isn't remembered twice)
@@ -144,12 +145,18 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
   // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
   // archive is tried next, unless that's switched off in Settings › Recipes.
   queue.handle("import-url", async (job) => {
-    const { url, force, html: sent } = job.payload as { url: string; force?: boolean; html?: string };
+    const { url, force, html: sent, feedCopy, discoveryItemId } = job.payload as { url: string; force?: boolean; html?: string; feedCopy?: string; discoveryItemId?: number };
     const remember = (result: JobResult) => d.db.update(jobs).set({ result }).where(eq(jobs.id, job.id));
+    // From Discovery: the post remembers the recipe it became (or the one already saved)
+    const linked = async (result: JobResult) => {
+      const recipeId = result.recipeId ?? result.duplicateOf;
+      if (discoveryItemId && recipeId) await d.db.update(discoveryItems).set({ recipeId }).where(eq(discoveryItems.id, discoveryItemId));
+      return result;
+    };
     try {
       if (!force) {
         const dup = await findDuplicate(d.db, url);
-        if (dup) return alreadySaved(d, url, dup);
+        if (dup) return linked(await alreadySaved(d, url, dup));
       }
       let read: Read;
       try {
@@ -161,10 +168,19 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         const sourceUrl = info.canonical && new URL(info.canonical).hostname === new URL(page.url).hostname ? info.canonical : page.url;
         if (!force && sourceUrl !== url) {
           const dup = await findDuplicate(d.db, sourceUrl);
-          if (dup) return alreadySaved(d, url, dup);
+          if (dup) return linked(await alreadySaved(d, url, dup));
         }
         read = { ...(await readPage(d.ai, html, page.url)), sourceUrl };
       } catch (e) {
+        // From Discovery: the site couldn't be read (kept out, gone, no recipe there), so the feed's
+        // copy of the post is read instead, the same way (its recipe data, or AI on its text)
+        if (feedCopy) {
+          try {
+            read = { ...(await readPage(d.ai, feedCopy, url)), sourceUrl: url, why: `${(e as Error).message} Read from the feed's copy of the post instead.`, fromFeed: true };
+          } catch (err) {
+            throw new Error(`${(e as Error).message} The feed's copy of the post didn't have the recipe either${err instanceof AiError ? ` (${(err as Error).message})` : ""}.`);
+          }
+        } else {
         if (!(e instanceof BlockedError)) throw e;
         if (sent || !(await isOn(d.db, "savedCopies"))) throw e; // you had the page open: no archives
         // Kept from us: look for a saved copy (saying which archive, for the import window)
@@ -184,17 +200,19 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         const original = new URL(url).hostname;
         const canonical = found.recipe.info.canonical;
         read = { ...found.recipe, sourceUrl: canonical && /^https?:/.test(canonical) && new URL(canonical).hostname === original ? canonical : url, savedCopy: { from: found.copy.from, url: found.copy.url, ...(found.copy.date ? { date: found.copy.date } : {}) }, why: e.message };
+        }
       }
       const { r, how, info, sourceUrl, savedCopy } = read;
       const result = await store(d, { ...r, imageUrl: r.imageUrl ?? info.image, sourceUrl, sourceName: info.siteName ?? (savedCopy ? new URL(url).hostname.replace(/^www\./, "") : undefined) }, job, how);
       if (savedCopy) result.savedCopy = savedCopy;
+      if (read.fromFeed) result.fromFeed = true;
       if (sent) {
         result.sent = true;
         await d.db.update(jobs).set({ payload: sql`${jobs.payload} - 'html'` }).where(eq(jobs.id, job.id)); // imported: the copy isn't needed
       }
-      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
+      const from = savedCopy ? ` from a saved copy (${savedCopy.from})` : read.fromFeed ? " from the feed's copy (Discovery)" : sent ? " (sent from your browser)" : how === "ai" ? " with AI" : "";
       await logEvent(d.db, { category: "import", level: result.warnings ? "warning" : "info", source: info.siteName ?? url, event: `Imported "${result.title}"${from}`, detail: [read.why, result.warnings?.join(" ")].filter(Boolean).join(" ") || url });
-      return improveAfter(queue, job, result, d);
+      return linked(await improveAfter(queue, job, result, d));
     } catch (e) {
       // Kept from us, no saved copy looked for: remember why, for the import window
       if (e instanceof BlockedError) await remember({ blocked: { ...e.block, url } });
