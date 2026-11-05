@@ -151,22 +151,36 @@ describe("the setup wizard", () => {
   });
 
   describe("Email", () => {
-    it("send recipes in: a Gmail mailbox, tested, saved with you as the allowed sender", async () => {
+    it("one email account for sending and receiving: address and app password once, one Test, Next saves both", async () => {
+      const s = routes({ "POST /api/settings/email/test": () => ({ ok: true, to: "cory@example.com" }) });
+      const u = userEvent.setup();
+      render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
+      expect(within(step()).getByRole("radio", { name: "Send and receive" })).toBeChecked();
+      await u.type(within(step()).getByLabelText("Email address"), "recipes@gmail.com");
+      await u.type(within(step()).getByLabelText("App password"), "abcd efgh");
+      expect(within(step()).getByLabelText("Only from")).toHaveValue("cory@example.com");
+      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
+      await u.click(within(step()).getByRole("button", { name: "Test sending and receiving" }));
+      expect(await within(step()).findByText(/Receiving: Connected to imap\.gmail\.com/)).toBeInTheDocument();
+      expect(within(step()).getByText("Sending: sent a test email to cory@example.com")).toBeInTheDocument();
+      await next(u);
+      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/mail-capture")?.body).toEqual({ enabled: true, host: "imap.gmail.com", port: 993, secure: true, username: "recipes@gmail.com", password: "abcd efgh", mailbox: "INBOX", allowedSenders: ["cory@example.com"] }));
+      expect(s.writes().find((w) => w.path === "/api/settings/email")?.body).toMatchObject({ host: "smtp.gmail.com", username: "recipes@gmail.com", fromAddress: "recipes@gmail.com" });
+      expect(await screen.findByRole("region", { name: "Step 5 of 6: Recipe & Meal Planning" })).toBeInTheDocument();
+    });
+
+    it("Receive only: only the mailbox is tested and saved", async () => {
       const s = routes();
       const u = userEvent.setup();
       render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
-      const inbound = within(step()).getByRole("group", { name: "Send recipes to Culury by email" });
-      await u.click(within(inbound).getByRole("button", { name: /Set it up/ }));
-      await u.selectOptions(within(inbound).getByLabelText("Provider"), "gmail");
-      await u.type(within(inbound).getByLabelText("Email address"), "recipes@gmail.com");
-      await u.type(within(inbound).getByLabelText("App password"), "abcd efgh");
-      expect(within(inbound).getByLabelText("Only from")).toHaveValue("cory@example.com");
-      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
-      await u.click(within(inbound).getByRole("button", { name: "Test the mailbox" }));
-      expect(await within(inbound).findByText(/Connected to imap\.gmail\.com/)).toBeInTheDocument();
+      await u.click(within(step()).getByRole("radio", { name: "Receive only" }));
+      expect(within(step()).queryByLabelText("Culury's address")).toBeNull();
+      await u.type(within(step()).getByLabelText("Email address"), "recipes@gmail.com");
+      await u.type(within(step()).getByLabelText("App password"), "pw");
+      await u.click(within(step()).getByRole("button", { name: "Test the mailbox" }));
+      await within(step()).findByText(/^Receiving:/);
       await next(u);
-      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/mail-capture")?.body).toEqual({ enabled: true, host: "imap.gmail.com", port: 993, secure: true, username: "recipes@gmail.com", password: "abcd efgh", mailbox: "INBOX", allowedSenders: ["cory@example.com"] }));
-      expect(await screen.findByRole("region", { name: "Step 5 of 6: Recipe & Meal Planning" })).toBeInTheDocument();
+      await waitFor(() => expect(s.writes().filter((w) => w.method === "PUT").map((w) => w.path)).toEqual(["/api/settings/mail-capture"]));
     });
 
     it("manual setup details: the ports", async () => {
@@ -175,23 +189,6 @@ describe("the setup wizard", () => {
       render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
       await u.click(within(step()).getByText("Manual setup details"));
       expect(within(step()).getByText(/993/)).toBeVisible();
-    });
-
-    it("send email out (password resets, sharing, meal plans): tested before it's saved", async () => {
-      const s = routes();
-      const u = userEvent.setup();
-      render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
-      const out = within(step()).getByRole("group", { name: "Let Culury send email" });
-      await u.click(within(out).getByRole("button", { name: /Set it up/ }));
-      await u.selectOptions(within(out).getByLabelText("Provider"), "gmail");
-      await u.type(within(out).getByLabelText("Username"), "cory@gmail.com");
-      await u.type(within(out).getByLabelText("Password"), "app-password");
-      await u.type(within(out).getByLabelText("From address"), "cory@gmail.com");
-      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
-      await u.click(within(out).getByRole("button", { name: "Send a test email" }));
-      await within(out).findByText("Sent a test email to cory@example.com.");
-      await next(u);
-      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/email")?.body).toMatchObject({ host: "smtp.gmail.com", username: "cory@gmail.com" }));
     });
 
     it("Skip Email Setup", async () => {

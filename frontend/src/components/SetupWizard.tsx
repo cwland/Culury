@@ -3,9 +3,8 @@ import { api } from "../api";
 import { forgetAiStatus } from "../ai";
 import { addPasskey, passkeyError, passkeysAvailable } from "../passkeys";
 import { initialsOf, type User } from "../session";
-import { PRESETS } from "./EmailSettings";
 import { PROVIDERS } from "./AiSettings";
-import { IMAP } from "./MailCaptureSettings";
+import { useEmailAccount } from "./EmailAccount";
 import { Logo } from "./Icons";
 
 // The first sign-in: a cheerful wizard over the app (the app shows, blurred, behind it).
@@ -489,181 +488,17 @@ function AiPrefs({ step, aiOn }: StepProps & { aiOn: boolean }) {
 }
 
 // ---------- 4. email ----------
-
-function Section({ title, intro, open, setOpen, children }: { title: string; intro: string; open: boolean; setOpen: (v: boolean) => void; children: ReactNode }) {
-  return (
-    <fieldset aria-label={title} className="flex flex-col gap-3 rounded-2xl border border-line p-4">
-      <legend className="px-1 font-semibold">{title}</legend>
-      <p className="-mt-1 text-sm text-subtle">{intro}</p>
-      {open ? (
-        children
-      ) : (
-        <button type="button" onClick={() => setOpen(true)} className={`${secondary} self-start`}>
-          Set it up
-        </button>
-      )}
-    </fieldset>
-  );
-}
-
+// One email account to send, receive, or both (the same form as Settings › Email)
 function Email({ user, step }: StepProps & { user: User }) {
-  // in: a mailbox Culury checks
-  const [inOpen, setInOpen] = useState(false);
-  const [inPreset, setInPreset] = useState("gmail");
-  const inP = IMAP.find((p) => p.id === inPreset);
-  const [inHost, setInHost] = useState("");
-  const [inPort, setInPort] = useState("993");
-  const [inSecure, setInSecure] = useState(true);
-  const [inUser, setInUser] = useState("");
-  const [inPass, setInPass] = useState("");
-  const [allowed, setAllowed] = useState(user.email ?? "");
-  const [inTested, setInTested] = useState<Result>(null);
-  // out: Culury sends email
-  const [outOpen, setOutOpen] = useState(false);
-  const [outPreset, setOutPreset] = useState("gmail");
-  const outP = PRESETS.find((p) => p.id === outPreset);
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("587");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [from, setFrom] = useState("");
-  const [appUrl, setAppUrl] = useState(window.location.origin);
-  const [outTested, setOutTested] = useState<Result>(null);
-  const [busy, setBusy] = useState("");
+  const a = useEmailAccount(user);
   const [manual, setManual] = useState(false);
-
-  const capture = { enabled: true, host: inP?.host ?? inHost.trim(), port: inP ? 993 : Number(inPort), secure: inP ? true : inSecure, username: inUser.trim(), password: inPass, mailbox: "INBOX", allowedSenders: allowed.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean) };
-  const sending = { enabled: true, host: outP?.host ?? host.trim(), port: outP?.port ?? Number(port), security: outP?.security ?? (Number(port) === 465 ? "ssl" : "starttls"), username: username.trim(), password, fromName: "Culury", fromAddress: from.trim(), appUrl: appUrl.trim() };
-  const inFilled = inOpen && !!(capture.username || capture.password || (!inP && capture.host));
-  const outFilled = outOpen && !!(sending.username || sending.password || sending.fromAddress || (!outP && sending.host));
-  const inOk = !inFilled || !!inTested?.ok;
-  const outOk = !outFilled || !!outTested?.ok;
-  const inChanged = <T,>(set: (v: T) => void) => (v: T) => (set(v), setInTested(null));
-  const outChanged = <T,>(set: (v: T) => void) => (v: T) => (set(v), setOutTested(null));
-  useEffect(() =>
-    step(inOk && outOk, async () => {
-      if (inFilled) await api("PUT", "/api/settings/mail-capture", capture);
-      if (outFilled) await api("PUT", "/api/settings/email", sending);
-    })
-  );
-  const test = async (which: "in" | "out") => {
-    setBusy(which);
-    try {
-      if (which === "in") setInTested({ ok: true, text: (await api<{ message: string }>("POST", "/api/settings/mail-capture/test", capture)).message });
-      else setOutTested({ ok: true, text: (await api<{ message: string }>("POST", "/api/settings/email/test", { settings: sending, ...(user.email ? { to: user.email } : {}) })).message });
-    } catch (e) {
-      (which === "in" ? setInTested : setOutTested)({ ok: false, text: (e as Error).message });
-    }
-    setBusy("");
-  };
-
+  useEffect(() => step(!a.filled || a.tested, async () => (a.filled ? a.save() : undefined)));
   return (
     <>
-      <p className="text-subtle">Both are optional, and you can set them up later in Settings › Email.</p>
-      <Section title="Send recipes to Culury by email" intro="Forward a recipe email or a link to a mailbox Culury checks every few minutes. Links land in your Inbox, and a recipe written in an email lands as a note you can import with one click." open={inOpen} setOpen={setInOpen}>
-        <label className={label}>
-          Provider
-          <select value={inPreset} onChange={(e) => inChanged(setInPreset)(e.target.value)} className={field}>
-            {IMAP.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-            <option value="custom">Another mail server (IMAP)</option>
-          </select>
-        </label>
-        {inP && <p className="-mt-2 text-sm text-subtle">{inP.hint}</p>}
-        {!inP && (
-          <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <label className={label}>
-              IMAP server
-              <input value={inHost} onChange={(e) => inChanged(setInHost)(e.target.value)} placeholder="imap.example.com" className={field} />
-            </label>
-            <label className={label}>
-              Port
-              <input value={inPort} inputMode="numeric" onChange={(e) => (inChanged(setInPort)(e.target.value), setInSecure(e.target.value !== "143"))} className={field} />
-            </label>
-          </div>
-        )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className={label}>
-            Email address
-            <input value={inUser} onChange={(e) => inChanged(setInUser)(e.target.value)} placeholder="recipes@gmail.com" autoComplete="off" className={field} />
-          </label>
-          <label className={label}>
-            App password
-            <input type="password" value={inPass} onChange={(e) => inChanged(setInPass)(e.target.value)} autoComplete="new-password" className={field} />
-          </label>
-        </div>
-        <div>
-          <label className={label}>
-            Only from
-            <input value={allowed} onChange={(e) => inChanged(setAllowed)(e.target.value)} aria-describedby="only-from-hint" placeholder="you@example.com, @yourfamily.com" className={field} />
-          </label>
-          <span id="only-from-hint" className="mt-1 block text-xs text-muted">
-            Addresses (or @a-whole-domain) whose emails come in. Leave it empty to take email from anyone.
-          </span>
-        </div>
-        <button type="button" disabled={!!busy || !capture.host || !capture.username || !capture.password} onClick={() => void test("in")} className={`${secondary} self-start`}>
-          {busy === "in" ? "Connecting…" : "Test the mailbox"}
-        </button>
-        <Status r={inTested} />
-      </Section>
-
-      <Section title="Let Culury send email" intro="For password resets, shared recipes, grocery lists and meal plan reminders. A test email has to arrive before it's saved." open={outOpen} setOpen={setOutOpen}>
-        <label className={label}>
-          Provider
-          <select value={outPreset} onChange={(e) => outChanged(setOutPreset)(e.target.value)} className={field}>
-            {PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-            <option value="custom">Another server</option>
-          </select>
-        </label>
-        {outP && <p className="-mt-2 text-sm text-subtle">{outP.hint}</p>}
-        {!outP && (
-          <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <label className={label}>
-              Server
-              <input value={host} onChange={(e) => outChanged(setHost)(e.target.value)} placeholder="smtp.example.com" className={field} />
-            </label>
-            <label className={label}>
-              Port
-              <input value={port} inputMode="numeric" onChange={(e) => outChanged(setPort)(e.target.value)} className={field} />
-            </label>
-          </div>
-        )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className={label}>
-            Username
-            <input value={username} onChange={(e) => outChanged(setUsername)(e.target.value)} autoComplete="off" className={field} />
-          </label>
-          <label className={label}>
-            Password
-            <input type="password" value={password} onChange={(e) => outChanged(setPassword)(e.target.value)} autoComplete="new-password" className={field} />
-          </label>
-        </div>
-        <label className={label}>
-          From address
-          <input type="email" value={from} onChange={(e) => outChanged(setFrom)(e.target.value)} placeholder="recipes@example.com" className={field} />
-        </label>
-        <div>
-          <label className={label}>
-            Culury's address
-            <input value={appUrl} onChange={(e) => outChanged(setAppUrl)(e.target.value)} aria-describedby="app-url-hint" className={field} />
-          </label>
-          <span id="app-url-hint" className="mt-1 block text-xs text-muted">
-            Used for links in emails, like Open the recipe. Use the address people reach Culury on.
-          </span>
-        </div>
-        <button type="button" disabled={!!busy || !sending.host || !sending.fromAddress} onClick={() => void test("out")} className={`${secondary} self-start`}>
-          {busy === "out" ? "Sending…" : "Send a test email"}
-        </button>
-        <Status r={outTested} />
-      </Section>
-
+      <p className="text-subtle">
+        One email account does two jobs: <strong>sending</strong> (password resets, shared recipes, grocery lists and meal plan reminders) and <strong>receiving</strong> (forward a recipe email or a link to it, and it lands in your Inbox). Use it for one or both. A new address just for recipes works well. Optional: you can set it up later in Settings › Email.
+      </p>
+      {a.fields}
       <div className="rounded-xl bg-page">
         <button type="button" aria-expanded={manual} onClick={() => setManual(!manual)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
           Manual setup details
@@ -672,7 +507,7 @@ function Email({ user, step }: StepProps & { user: User }) {
         {manual && (
           <div className="space-y-2 px-3 pb-3 text-sm text-subtle">
             <p>
-              <strong>Receiving (IMAP):</strong> port 993 with SSL/TLS (most providers), or 143 with STARTTLS. Culury reads unread emails in the Inbox folder and marks each one read.
+              <strong>Receiving (IMAP):</strong> port 993 with SSL/TLS (most providers), or 143 with STARTTLS. Culury reads unread emails in the Inbox folder every few minutes and marks each one read.
             </p>
             <p>
               <strong>Sending (SMTP):</strong> port 587 with STARTTLS, or 465 with SSL/TLS.

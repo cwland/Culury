@@ -5,7 +5,7 @@ import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
 import { SavedCopiesSwitch } from "./SavedCopiesSwitch";
 import { DiscoveryRefreshSwitch } from "./DiscoveryRefreshSwitch";
 import CookingPrefs from "./CookingPrefs";
-import MailCaptureSettings from "./MailCaptureSettings";
+import EmailAccountSettings from "./EmailAccount";
 import { SendToCulury } from "./SendToCulury";
 import { PublicLinksSwitch } from "./PublicLinksSwitch";
 import { UpdatesSettings } from "./UpdateBar";
@@ -88,7 +88,22 @@ export default function SettingsPage() {
   );
 }
 
+// The detailed sending settings (the server's .env, security, sender name, a test to any address),
+// folded away under the one Email account card
+function MoreSendingOptions() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="flex flex-col gap-4">
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="self-start text-sm font-semibold text-link hover:underline">
+        {open ? "Hide more sending options" : "More sending options (server, security, sender name)"}
+      </button>
+      {open && <EmailSettings />}
+    </section>
+  );
+}
+
 function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
+  const { user } = useSession();
   switch (tab) {
     case "profile":
       return (
@@ -142,8 +157,8 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
     case "email":
       return (
         <>
-          <MailCaptureSettings />
-          <EmailSettings />
+          <EmailAccountSettings user={user} />
+          <MoreSendingOptions />
         </>
       );
     case "ai":
