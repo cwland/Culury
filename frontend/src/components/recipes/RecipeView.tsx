@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useContext, useEffect, useRef, useState, type FormEvent } from "react";
+import { SessionContext } from "../../session";
 import { api, uploadPhoto } from "../../api";
-import { formatMinutes, ingredientsText, listAddress, parseMinutes, parseServings, siteName, stepsText, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
+import { formatMinutes, ingredientOrder, ingredientsText, listAddress, parseMinutes, parseServings, siteName, stepsText, type Ingredient, type Mine, type Recipe, type Substitution } from "../../recipes";
 import { BackIcon, Check, ChefIcon, GroceryIcon, ShareIcon, ClockIcon, EditIcon, LinkOutIcon, PinIcon, ServingsIcon, StarIcon, TagIcon, Trash, WandIcon } from "../Icons";
 import { useAiStatus } from "../../ai";
 import EnhanceWizard from "./EnhanceWizard";
@@ -64,6 +65,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
   const [shopping, setShopping] = useState(false);
   const [sharing, setSharing] = useState(false);
   const prefs = useCookPrefs(id);
+  const order = useContext(SessionContext)?.user.ingredientOrder ?? "entered";
   const ai = useAiStatus();
   // Just added (typed in or imported): offer an AI check once
   // Typed in: offer the AI check once. Imported: go straight into the review (when AI Enhance is on).
@@ -414,13 +416,13 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
                 )}
                 {r.ingredients.length ? (
                   <ul className="mt-3">
-                    {r.ingredients.map((i, n) =>
+                    {ingredientOrder(r.ingredients, order).map((n) => r.ingredients[n]).map((i, k) =>
                       i.section ? (
-                        <li key={n} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
+                        <li key={k} className="mt-4 pb-1 text-sm font-semibold uppercase tracking-wide text-muted first:mt-0">
                           {i.section}
                         </li>
                       ) : (
-                        <li key={n} className="border-b border-line py-2 last:border-0">
+                        <li key={k} className="border-b border-line py-2 last:border-0">
                           <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
                         </li>
                       )
@@ -468,7 +470,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
                 <p className="mt-2 text-subtle">No steps yet.</p>
               )}
             </section>
-            <Substitutions recipeId={r.id} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} className="order-5 lg:order-none" />
+            <Substitutions recipeId={r.id} ingredients={r.ingredients} list={r.substitutions} onChange={(substitutions) => setR({ ...r, substitutions })} onApplied={setR} className="order-5 lg:order-none" />
             </div>
           </div>
 
@@ -689,20 +691,40 @@ function MyNotes({ value, onSave, className = "" }: { value: string | null; onSa
   );
 }
 
-function Substitutions({ recipeId, list, onChange, className = "" }: { recipeId: number; list: Substitution[]; onChange: (l: Substitution[]) => void; className?: string }) {
+// What you can use instead: an amount and a unit (both optional) and the item
+const AMOUNTS = [["1/8", "⅛"], ["1/4", "¼"], ["1/3", "⅓"], ["1/2", "½"], ["2/3", "⅔"], ["3/4", "¾"], ["1", "1"], ["1 1/4", "1¼"], ["1 1/3", "1⅓"], ["1 1/2", "1½"], ["1 3/4", "1¾"], ["2", "2"], ["2 1/2", "2½"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"], ["8", "8"], ["10", "10"], ["12", "12"], ["16", "16"]];
+const UNITS = ["tsp", "tbsp", "cup", "fl oz", "ml", "l", "g", "kg", "oz", "lb", "pinch", "dash", "clove", "can", "piece", "slice", "stick", "bunch", "handful"];
+const pretty = (s: string) => AMOUNTS.reduce((t, [v, f]) => (v.includes("/") ? t.replace(new RegExp(`(^|\\s)${v.replace(/ /g, " ")}(?=\\s|$)`), `$1${f}`) : t), s);
+
+// Substitutions: a swap (instead of an ingredient picked from this recipe, or of anything typed)
+// or an item added, then Make a new version puts the ticked ones into the recipe's ingredients
+function Substitutions({ recipeId, ingredients, list, onChange, onApplied, className = "" }: { recipeId: number; ingredients: Ingredient[]; list: Substitution[]; onChange: (l: Substitution[]) => void; onApplied: (r: Recipe) => void; className?: string }) {
+  const [kind, setKind] = useState<"swap" | "add">("swap");
   const [original, setOriginal] = useState("");
-  const [replacement, setReplacement] = useState("");
+  const [line, setLine] = useState<string | null>(null);
+  const [focus, setFocus] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState("");
+  const [item, setItem] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const can = (s: Substitution) => s.appliedVersion === null && (s.kind === "add" || !!s.line);
+  const [off, setOff] = useState<Set<number>>(new Set()); // unticked
+  const q = original.trim().toLowerCase();
+  const lines = ingredients.filter((i) => !i.section).map((i) => i.raw);
+  const matches = q && !line ? [...new Set(lines.filter((l) => l.toLowerCase().includes(q)))].slice(0, 8) : [];
+  const clear = () => (setOriginal(""), setLine(null), setAmount(""), setUnit(""), setItem(""), setNote(""));
   const add = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    setMsg("");
     try {
-      const s = await api<Substitution>("POST", `/api/recipes/${recipeId}/substitutions`, { original, replacement, note });
+      const body = kind === "swap" ? { kind, line, original: line ? null : original.trim(), amount: amount || null, unit: unit || null, item: item.trim(), note: note.trim() || null } : { kind, amount: amount || null, unit: unit || null, item: item.trim(), note: note.trim() || null };
+      const s = await api<Substitution>("POST", `/api/recipes/${recipeId}/substitutions`, body);
       onChange([s, ...list]);
-      setOriginal("");
-      setReplacement("");
-      setNote("");
+      clear();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -711,36 +733,137 @@ function Substitutions({ recipeId, list, onChange, className = "" }: { recipeId:
     await api("DELETE", `/api/substitutions/${id}`);
     onChange(list.filter((s) => s.id !== id));
   };
+  const ticked = list.filter((s) => can(s) && !off.has(s.id));
+  const apply = async () => {
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const r = await api<{ version: number | null; applied: number; missing: string[]; recipe: Recipe }>("POST", `/api/recipes/${recipeId}/substitutions/apply`, { ids: ticked.map((s) => s.id) });
+      onApplied(r.recipe);
+      setOff(new Set());
+      setMsg(
+        `${r.version ? `Saved as version ${r.version}` : "Saved"}: ${r.applied === 1 ? "1 change" : `${r.applied} changes`} to the ingredients.${r.missing.length ? ` Skipped (no longer in the recipe): ${r.missing.join(", ")}.` : ""} The earlier version is in Version history.`,
+      );
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setBusy(false);
+  };
   const input = "min-w-0 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action";
+  const describe = (s: Substitution) => (s.kind === "add" ? `Added ${pretty(s.replacement)}` : `${s.original ?? ""} → ${pretty(s.replacement)}`);
+  const kindChoice = (k: "swap" | "add", label: string) => (
+    <label className={`cursor-pointer rounded-md px-3 py-1.5 ${kind === k ? "bg-container shadow-sm" : "text-subtle"}`}>
+      <input type="radio" name={`sub-kind-${recipeId}`} aria-label={label} checked={kind === k} onChange={() => (setKind(k), setError(""))} className="sr-only" />
+      {label}
+    </label>
+  );
   return (
     <section aria-label="Substitutions" className={`${card} ${className}`}>
       <h2 className="text-xl font-bold">Substitutions</h2>
-      <p className="mt-1 text-sm text-subtle">What you swapped when you made it, so you remember next time.</p>
-      <form onSubmit={add} className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
-        <input aria-label="Instead of" placeholder="Instead of (sour cream)" value={original} onChange={(e) => setOriginal(e.target.value)} className={input} />
-        <span className="hidden self-center text-muted sm:block">→</span>
-        <input aria-label="I used" placeholder="I used (Greek yogurt)" value={replacement} onChange={(e) => setReplacement(e.target.value)} className={input} />
-        <input aria-label="How it went" placeholder="How it went (optional)" value={note} onChange={(e) => setNote(e.target.value)} className={`${input} sm:col-span-2`} />
-        <button type="submit" disabled={!original.trim() || !replacement.trim()} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
-          Add
-        </button>
+      <p className="mt-1 text-sm text-subtle">What you swapped or added when you made it. Make a new version puts them into the recipe.</p>
+      <div role="radiogroup" aria-label="Kind" className="mt-3 inline-flex rounded-lg bg-page p-1 text-sm font-semibold">
+        {kindChoice("swap", "Swap an ingredient")}
+        {kindChoice("add", "Add an item")}
+      </div>
+      <form onSubmit={(e) => void add(e)} className="mt-3 flex flex-col gap-2">
+        {kind === "swap" && (
+          <div className="relative">
+            <input
+              role="combobox"
+              aria-label="Instead of"
+              aria-expanded={matches.length > 0 && focus}
+              aria-autocomplete="list"
+              placeholder="Instead of (type to find one in the recipe)"
+              value={original}
+              onFocus={() => setFocus(true)}
+              onBlur={() => setTimeout(() => setFocus(false), 150)}
+              onChange={(e) => (setOriginal(e.target.value), setLine(null))}
+              className={`${input} w-full`}
+            />
+            {line && <span className="mt-1 inline-block rounded-full bg-brand-subtle px-2 py-0.5 text-xs font-semibold text-action">From the recipe</span>}
+            {matches.length > 0 && focus && (
+              <ul role="listbox" aria-label="Ingredients in this recipe" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-container py-1 shadow-lg">
+                {matches.map((m) => (
+                  <li key={m} role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={() => (setOriginal(m), setLine(m), setFocus(false))} className="cursor-pointer px-3 py-2 text-sm hover:bg-pressed">
+                    {m}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[7.5rem_7.5rem_1fr]">
+          <select aria-label="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className={input}>
+            <option value="">Amount</option>
+            {AMOUNTS.map(([v, f]) => (
+              <option key={v} value={v}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Unit" value={unit} onChange={(e) => setUnit(e.target.value)} className={input}>
+            <option value="">Unit</option>
+            {UNITS.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+          <input aria-label="Item" placeholder={kind === "swap" ? "I used (Greek yogurt)" : "What you added (smoked paprika)"} value={item} onChange={(e) => setItem(e.target.value)} className={`${input} col-span-2 sm:col-span-1`} />
+        </div>
+        <div className="flex gap-2">
+          <input aria-label="How it went" placeholder="How it went (optional)" value={note} onChange={(e) => setNote(e.target.value)} className={`${input} flex-1`} />
+          <button type="submit" disabled={!item.trim() || (kind === "swap" && !original.trim())} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+            Add
+          </button>
+        </div>
       </form>
       {error && <p role="alert" className="mt-2 text-sm text-error">{error}</p>}
       {list.length > 0 && (
-        <ul className="mt-3 divide-y divide-line">
-          {list.map((s) => (
-            <li key={s.id} className="flex items-start gap-3 py-2.5">
-              <span className="min-w-0 flex-1">
-                <span className="text-subtle line-through decoration-muted/60">{s.original}</span> → <strong>{s.replacement}</strong>
-                {s.note && <span className="block text-sm text-subtle">{s.note}</span>}
-                <span className="block text-xs text-muted">{new Date(s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
-              </span>
-              <button type="button" aria-label={`Remove ${s.original} → ${s.replacement}`} title={`Remove ${s.original} → ${s.replacement}`} onClick={() => void remove(s.id)} className="rounded p-1.5 text-muted hover:bg-error-subtle hover:text-error">
-                <Trash />
+        <>
+          <h3 className="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Your substitutions</h3>
+          <ul aria-label="Your substitutions" className="mt-1 divide-y divide-line">
+            {list.map((s) => (
+              <li key={s.id} className="flex items-start gap-3 py-2.5">
+                {can(s) ? (
+                  <input type="checkbox" aria-label={`Include ${describe(s)}`} checked={!off.has(s.id)} onChange={(e) => setOff((o) => { const n = new Set(o); if (e.target.checked) n.delete(s.id); else n.add(s.id); return n; })} className="mt-1 size-4 shrink-0 accent-[var(--color-action)]" />
+                ) : (
+                  <span className="mt-1 size-4 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1">
+                  {s.kind === "add" ? (
+                    <strong className="font-semibold">{`Added ${pretty(s.replacement)}`}</strong>
+                  ) : (
+                    <span>
+                      <span className="text-subtle line-through decoration-muted/60">{s.original}</span> → <strong>{pretty(s.replacement)}</strong>
+                    </span>
+                  )}
+                  {s.appliedVersion !== null && <span className="ml-2 rounded-full bg-success-subtle px-2 py-0.5 text-xs font-semibold text-success">{s.appliedVersion ? `in v${s.appliedVersion}` : "applied"}</span>}
+                  {s.kind === "swap" && !s.line && s.appliedVersion === null && <span className="block text-xs text-muted">A note: not tied to an ingredient in the recipe, so it isn't applied.</span>}
+                  {s.note && <span className="block text-sm text-subtle">{s.note}</span>}
+                  <span className="block text-xs text-muted">{new Date(s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+                </span>
+                <button type="button" aria-label={`Remove ${describe(s)}`} title={`Remove ${describe(s)}`} onClick={() => void remove(s.id)} className="rounded p-1.5 text-muted hover:bg-error-subtle hover:text-error">
+                  <Trash />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {list.some(can) && (
+            <div className="mt-3 border-t border-line pt-3">
+              <button type="button" disabled={busy || !ticked.length} onClick={() => void apply()} className="rounded-lg bg-action px-4 py-2.5 font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                {busy ? "Saving…" : "Make a new version with these changes"}
               </button>
-            </li>
-          ))}
-        </ul>
+              <p className="mt-1 text-xs text-muted">Swaps replace their ingredient lines and added items go at the end. The recipe as it is now stays in Version history.</p>
+            </div>
+          )}
+        </>
+      )}
+      {msg && (
+        <p role="status" className="mt-3 rounded-lg bg-success-subtle px-3 py-2 text-sm text-success">
+          {msg}
+        </p>
       )}
     </section>
   );

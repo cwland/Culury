@@ -50,6 +50,7 @@ export const publicUser = (u: typeof users.$inferSelect) => ({
   remindAt: u.remindAt,
   units: u.units,
   keepAwake: u.keepAwake,
+  ingredientOrder: u.ingredientOrder,
   setupDone: !!u.setupDoneAt,
 });
 

@@ -8,7 +8,7 @@ import { Card, Notice, Toggle } from "./settingsUi";
 export default function CookingPrefs() {
   const { user, setUser } = useSession();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const save = async (change: Partial<Pick<User, "units" | "keepAwake">>) => {
+  const save = async (change: Partial<Pick<User, "units" | "keepAwake" | "ingredientOrder">>) => {
     setMsg(null);
     try {
       setUser(await api<User>("PATCH", "/api/profile", change));
@@ -38,6 +38,13 @@ export default function CookingPrefs() {
           <span className="block text-subtle">Your phone or tablet won't go to sleep while you cook step by step (on https:// addresses).</span>
         </p>
         <Toggle label="Keep the screen awake in Cook mode" checked={user.keepAwake ?? true} onChange={(v) => void save({ keepAwake: v })} />
+      </div>
+      <div className="mt-4 flex items-start justify-between gap-6">
+        <p className="text-sm">
+          <span className="font-semibold">Sort ingredients A to Z</span>
+          <span className="block text-subtle">Off: ingredients show in the order they were entered. Sections stay where they are.</span>
+        </p>
+        <Toggle label="Sort ingredients A to Z" checked={user.ingredientOrder === "alpha"} onChange={(v) => void save({ ingredientOrder: v ? "alpha" : "entered" })} />
       </div>
       <p className="mt-2">
         <Notice msg={msg} />

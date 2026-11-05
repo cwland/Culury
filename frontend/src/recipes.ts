@@ -22,10 +22,35 @@ export interface Named {
 
 export interface Substitution {
   id: number;
-  original: string;
-  replacement: string;
+  kind: "swap" | "add"; // a swap, or an item added
+  original: string | null; // a swap: what it's instead of
+  line: string | null; // the ingredient line it swaps, when one was picked
+  amount: string | null;
+  unit: string | null;
+  item: string | null;
+  replacement: string; // all of it: "3/4 cup Greek yogurt"
   note: string | null;
+  appliedVersion: number | null; // Make a new version: the version it went into
   createdAt: string;
+}
+
+// Ingredients in the order to show them (the positions in the list): as entered, or A to Z by the
+// ingredient itself (not its amount) within each section, headings staying where they are
+const nameOf = (i: Ingredient) => (i.name || i.raw.replace(/^[\d\s.,/¼½¾⅓⅔⅛-]+(?:(?:cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|grams?|kg|ml|l|litres?|liters?|cloves?|cans?|pinch(?:es)?)\.?\s+)?/i, "")).toLowerCase();
+export function ingredientOrder(list: Ingredient[], order: "entered" | "alpha" = "entered"): number[] {
+  const at = list.map((_, n) => n);
+  if (order !== "alpha") return at;
+  const out: number[] = [];
+  let run: number[] = [];
+  const flush = () => (out.push(...run.sort((a, b) => nameOf(list[a]).localeCompare(nameOf(list[b])) || a - b)), (run = []));
+  for (const n of at) {
+    if (list[n].section) {
+      flush();
+      out.push(n);
+    } else run.push(n);
+  }
+  flush();
+  return out;
 }
 
 export interface Mine {

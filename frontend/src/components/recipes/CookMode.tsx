@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "r
 import { SessionContext } from "../../session";
 import { api } from "../../api";
 import { ingredientLine, recipeUnits, stepUses } from "../../cooking";
-import type { Recipe } from "../../recipes";
+import { ingredientOrder, type Recipe } from "../../recipes";
 import { useLockBodyScroll } from "../../scrollLock";
 import { ChevronLeft, ChevronRight, CloseIcon, RecipesIcon } from "../Icons";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
@@ -82,7 +82,9 @@ export default function CookMode({ id }: { id: number }) {
   const [checked, setChecked] = useState<Set<number>>(new Set(saved?.checked ?? []));
   const [drawer, setDrawer] = useState(false);
   const prefs = useCookPrefs(id);
-  const wake = useWakeLock(useContext(SessionContext)?.user.keepAwake ?? true);
+  const session = useContext(SessionContext);
+  const wake = useWakeLock(session?.user.keepAwake ?? true);
+  const order = session?.user.ingredientOrder ?? "entered";
   useLockBodyScroll();
 
   useEffect(() => {
@@ -165,7 +167,8 @@ export default function CookMode({ id }: { id: number }) {
         <ScaleControls servings={r.servings} factor={prefs.factor} setFactor={prefs.setFactor} units={prefs.units} setUnits={prefs.setUnits} leans={recipeUnits(r.ingredients)} />
       </div>
       <ul aria-label="Ingredients checklist" className="flex flex-col gap-1">
-        {r.ingredients.map((ing, i) => {
+        {ingredientOrder(r.ingredients, order).map((i) => {
+          const ing = r.ingredients[i];
           const line = ingredientLine(ing, prefs.factor, prefs.units);
           if (ing.section)
             return (

@@ -40,6 +40,7 @@ export default async function profileRoutes(app: FastifyInstance) {
         colorMode: z.enum(["light", "dark", "system"]).optional(),
         units: z.enum(["original", "metric", "us"], { error: "Choose As is, Metric or US" }).optional(),
         keepAwake: z.boolean().optional(),
+        ingredientOrder: z.enum(["entered", "alpha"], { error: "Choose As entered or A to Z" }).optional(),
       })
       .parse(req.body);
 
@@ -57,6 +58,7 @@ export default async function profileRoutes(app: FastifyInstance) {
         colorMode: body.colorMode,
         units: body.units,
         keepAwake: body.keepAwake,
+        ingredientOrder: body.ingredientOrder,
       })
       .where(eq(users.id, userId))
       .returning();

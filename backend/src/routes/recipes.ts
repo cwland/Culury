@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { recipeUser, recipes, substitutions } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
@@ -147,24 +147,72 @@ export default async function recipeRoutes(app: FastifyInstance) {
     return { favorite: me.favorite, pinned: me.pinned, rating: me.rating, notes: me.notes };
   });
 
-  // ---------- substitution history ----------
+  // ---------- substitutions ----------
+  // A swap (instead of an ingredient line picked from the recipe, or of something typed) or an
+  // item added, with what was used: an amount and a unit (both optional) and the item. The older
+  // { original, replacement } still works.
+  const subView = { id: substitutions.id, kind: substitutions.kind, original: substitutions.original, line: substitutions.line, amount: substitutions.amount, unit: substitutions.unit, item: substitutions.item, replacement: substitutions.replacement, note: substitutions.note, appliedVersion: substitutions.appliedVersion, createdAt: substitutions.createdAt };
+  const text = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => v || null);
   app.post("/api/recipes/:id/substitutions", async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const body = z
-      .object({
-        original: z.string().trim().min(1, "What did you replace?").max(200),
-        replacement: z.string().trim().min(1, "What did you use instead?").max(200),
-        note: z.string().trim().max(1000).nullable().optional().transform((v) => v || null),
-      })
+      .object({ kind: z.enum(["swap", "add"]).default("swap"), original: text(200), line: text(1000), amount: text(20), unit: text(30), item: text(200), replacement: text(300), note: text(1000) })
       .strict()
       .parse(req.body);
-    const [exists] = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, id));
-    if (!exists) throw notFound("Recipe");
+    const [r] = await db.select({ id: recipes.id, ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+    if (!r) throw notFound("Recipe");
+    const item = body.item ?? body.replacement;
+    if (!item) throw new HttpError(400, body.kind === "add" ? "What did you add?" : "What did you use instead?");
+    const replacement = body.item ? [body.amount, body.unit, body.item].filter(Boolean).join(" ") : item;
+    if (body.kind === "swap" && !body.line && !body.original) throw new HttpError(400, "What did you replace?");
+    if (body.line && !r.ingredients.some((i) => !i.section && i.raw === body.line)) throw new HttpError(400, "That ingredient isn't in this recipe");
     const [row] = await db
       .insert(substitutions)
-      .values({ recipeId: id, userId: userOf(req), ...body })
-      .returning({ id: substitutions.id, original: substitutions.original, replacement: substitutions.replacement, note: substitutions.note, createdAt: substitutions.createdAt });
+      .values({ recipeId: id, userId: userOf(req), kind: body.kind, original: body.kind === "add" ? null : (body.line ?? body.original), line: body.kind === "add" ? null : body.line, amount: body.amount, unit: body.unit, item, replacement: replacement.slice(0, 300), note: body.note })
+      .returning(subView);
     return reply.status(201).send(row);
+  });
+
+  // Make a new version with these changes: the ticked swaps replace their lines, the added items
+  // go at the end, and the recipe saves as a new version saying what changed. Free-text swaps (no
+  // line) and ones already applied are left out; a line no longer in the recipe is skipped.
+  app.post("/api/recipes/:id/substitutions/apply", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const { ids } = z.object({ ids: z.array(z.number().int().positive()).max(200) }).parse(req.body);
+    const [before] = await db.select().from(recipes).where(eq(recipes.id, id));
+    if (!before) throw notFound("Recipe");
+    const picked = ids.length ? (await db.select().from(substitutions).where(and(eq(substitutions.recipeId, id), inArray(substitutions.id, ids)))).filter((x) => x.appliedVersion === null && (x.kind === "add" || x.line)) : [];
+    if (!picked.length) throw new HttpError(400, "Nothing to apply: pick swaps of an ingredient in this recipe, or added items, that aren't in it yet");
+    const list = before.ingredients.map((i) => (i.section ? { section: i.section } : { raw: i.raw }));
+    const done: typeof picked = [];
+    const missing: string[] = [];
+    const used = new Set<number>();
+    const ordered = [...picked].sort((a, b) => a.id - b.id); // in the order they were made
+    for (const x of ordered.filter((x) => x.kind === "swap")) {
+      const at = list.findIndex((i, n) => !used.has(n) && "raw" in i && i.raw === x.line);
+      if (at < 0) {
+        missing.push(x.line!);
+        continue;
+      }
+      list[at] = { raw: x.replacement };
+      used.add(at);
+      done.push(x);
+    }
+    for (const x of ordered.filter((x) => x.kind === "add")) {
+      list.push({ raw: x.replacement });
+      done.push(x);
+    }
+    if (!done.length) throw new HttpError(400, `Those ingredients aren't in the recipe any more (${missing.join(", ")}), so nothing changed`);
+    const summary = `Substitutions: ${done.map((x) => (x.kind === "add" ? `added ${x.replacement}` : `${x.line} → ${x.replacement}`)).join("; ")}`.slice(0, 500);
+    await ensureVersions(db, id);
+    await saveRecipe(db, id, updateRecipe.parse({ ingredients: list }), userOf(req));
+    await newVersion(db, id, "edit", summary, userOf(req));
+    const version = (await listVersions(db, id)).find((v) => v.active)?.number ?? null;
+    await db.update(substitutions).set({ appliedVersion: version ?? 0, appliedAt: new Date() }).where(inArray(substitutions.id, done.map((x) => x.id)));
+    const [after] = await db.select({ ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.id, id));
+    if (after && ingredientsChanged(before.ingredients, after.ingredients)) await ingredientsUpdated(app, id);
+    app.events.emit({ topic: "recipes", id, by: userOf(req) });
+    return { version, applied: done.length, missing, recipe: await loadRecipe(db, id, userOf(req)) };
   });
 
   app.delete("/api/substitutions/:id", async (req, reply) => {

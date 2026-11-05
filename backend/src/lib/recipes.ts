@@ -267,7 +267,7 @@ export async function loadRecipe(db: Db, id: number, userId: number | null) {
     .from(jobs)
     .where(and(eq(jobs.kind, "nutrition"), inArray(jobs.status, ["queued", "running"]), sql`${jobs.payload}->>'recipeId' = ${String(id)}`))
     .limit(1);
-  const subs = await db.select({ id: substitutions.id, original: substitutions.original, replacement: substitutions.replacement, note: substitutions.note, createdAt: substitutions.createdAt }).from(substitutions).where(eq(substitutions.recipeId, id)).orderBy(desc(substitutions.createdAt), desc(substitutions.id));
+  const subs = await db.select({ id: substitutions.id, kind: substitutions.kind, original: substitutions.original, line: substitutions.line, amount: substitutions.amount, unit: substitutions.unit, item: substitutions.item, replacement: substitutions.replacement, note: substitutions.note, appliedVersion: substitutions.appliedVersion, createdAt: substitutions.createdAt }).from(substitutions).where(eq(substitutions.recipeId, id)).orderBy(desc(substitutions.createdAt), desc(substitutions.id));
   return {
     ...recipe,
     tags: tagRows.map((t) => t.name),

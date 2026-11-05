@@ -24,4 +24,18 @@ describe("cooking preferences", () => {
     await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ keepAwake: false }));
     expect(setUser).toHaveBeenLastCalledWith(expect.objectContaining({ keepAwake: false }));
   });
+
+  it("Sort ingredients A to Z: off by default, saves straight away", async () => {
+    const s = fakeServer({ "PATCH /api/profile": (b: any) => ({ ...user, ...b }) });
+    const u = userEvent.setup();
+    render(
+      <SessionContext.Provider value={{ user, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <CookingPrefs />
+      </SessionContext.Provider>,
+    );
+    const sw = screen.getByRole("switch", { name: /Sort ingredients A to Z/ });
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    await u.click(sw);
+    await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ ingredientOrder: "alpha" }));
+  });
 });

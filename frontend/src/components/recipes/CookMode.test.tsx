@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CookMode from "./CookMode";
 import { SessionContext, type User } from "../../session";
@@ -115,3 +115,25 @@ describe("keeping the screen awake", () => {
     expect(request).not.toHaveBeenCalled();
   });
 });
+
+describe("Cook Mode ingredient order", () => {
+  it("A to Z in your preferences: the checklist is sorted, and ticking still ticks the right one", async () => {
+    const r = recipeJson({ ingredients: [{ raw: "1 lb ground beef" }, { raw: "2 tbsp chili powder" }, { raw: "1 cup beans" }] as any, steps: [{ text: "Cook." }] });
+    fakeServer({ "GET /api/recipes/7": () => r, "GET /api/recipes/7/me": () => ({}) });
+    const user = { id: 1, username: "cory", displayName: "Cory", email: null, role: "owner", ingredientOrder: "alpha" } as User;
+    const u = userEvent.setup();
+    render(
+      <SessionContext.Provider value={{ user, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <CookMode id={7} />
+      </SessionContext.Provider>,
+    );
+    const list = await screen.findByRole("list", { name: "Ingredients checklist" });
+    const items = within(list).getAllByRole("listitem").map((li) => li.textContent);
+    expect(items[0]).toMatch(/beans/);
+    expect(items[2]).toMatch(/ground beef/);
+    await u.click(within(list).getAllByRole("checkbox")[0]);
+    expect(within(list).getAllByRole("checkbox")[0]).toBeChecked();
+    expect(within(list).getAllByRole("checkbox")[2]).not.toBeChecked();
+  });
+});
+

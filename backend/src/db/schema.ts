@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   colorMode: text("color_mode"), // light, dark or system (null: system)
   units: text("units").$type<"original" | "metric" | "us">().notNull().default("original"), // how amounts show to start with (As is, Metric, US)
   keepAwake: boolean("keep_awake").notNull().default(true), // Cook mode keeps the screen on
+  ingredientOrder: text("ingredient_order").$type<"entered" | "alpha">().notNull().default("entered"), // recipes show ingredients as entered, or A to Z
   setupDoneAt: timestamp("setup_done_at", { withTimezone: true }), // through the setup wizard (null: not yet)
   dismissedUpdate: text("dismissed_update"), // the newer version whose top bar was dismissed
   // Daily meal plan email at this time ("17:30", server time; null: off), and the last day it went
@@ -358,9 +359,16 @@ export const substitutions = pgTable(
       .notNull()
       .references(() => recipes.id, { onDelete: "cascade" }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-    original: text("original").notNull(), // "sour cream"
-    replacement: text("replacement").notNull(), // "Greek yogurt"
+    kind: text("kind").$type<"swap" | "add">().notNull().default("swap"), // a swap, or an item added
+    original: text("original"), // "sour cream" (a swap: what it's instead of; an added item: none)
+    line: text("line"), // the ingredient line it swaps, when one was picked ("1 cup sour cream")
+    amount: text("amount"), // what was used: "3/4"
+    unit: text("unit"), // "cup"
+    item: text("item"), // "Greek yogurt"
+    replacement: text("replacement").notNull(), // all of it: "3/4 cup Greek yogurt"
     note: text("note"), // "a bit tangier, worked fine"
+    appliedVersion: integer("applied_version"), // Make a new version: the version it went into
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("substitutions_recipe_idx").on(t.recipeId)]

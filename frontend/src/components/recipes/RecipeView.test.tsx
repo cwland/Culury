@@ -5,6 +5,7 @@ import RecipeView from "./RecipeView";
 import { fakeServer, recipeJson } from "../../test/fakeServer";
 import { forgetAiStatus } from "../../ai";
 import { setToken } from "../../api";
+import { SessionContext, type User } from "../../session";
 
 const OFFER = "Check this recipe with AI? It can fill gaps in the steps, catch ingredient mistakes, estimate nutrition and suggest categories and tags.";
 const enhancement = {
@@ -615,3 +616,94 @@ describe("editing in place", () => {
   });
 });
 
+describe("substitutions", () => {
+  const withSubs = (subs: object[] = []) =>
+    recipeJson({
+      ingredients: [
+        { raw: "1 lb ground beef", quantity: 1, unit: "lb", name: "ground beef" },
+        { raw: "1 cup sour cream", quantity: 1, unit: "cup", name: "sour cream" },
+        { raw: "1 cup shredded cheddar", quantity: 1, unit: "cup", name: "shredded cheddar" },
+      ],
+      substitutions: subs,
+    });
+  const sub = (over: object) => ({ id: 1, kind: "swap", original: "1 cup sour cream", line: "1 cup sour cream", amount: "3/4", unit: "cup", item: "Greek yogurt", replacement: "3/4 cup Greek yogurt", note: null, appliedVersion: null, createdAt: "2026-11-05T12:00:00.000Z", ...over });
+  const card = () => screen.findByRole("region", { name: "Substitutions" });
+
+  it("Instead of: typing shows the recipe's matching ingredients below the box; picking one ties the swap to it", async () => {
+    const s = server({ ready: false, photos: false, enhance: false }, withSubs(), { "POST /api/recipes/7/substitutions": (b: any) => ({ status: 201, json: sub({ ...b, replacement: "3/4 cup Greek yogurt" }) }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const c = await card();
+    await u.type(within(c).getByRole("combobox", { name: "Instead of" }), "cream");
+    const matches = within(c).getByRole("listbox", { name: "Ingredients in this recipe" });
+    expect(within(matches).getAllByRole("option").map((o) => o.textContent)).toEqual(["1 cup sour cream"]);
+    await u.click(within(matches).getByRole("option", { name: "1 cup sour cream" }));
+    expect(within(c).getByRole("combobox", { name: "Instead of" })).toHaveValue("1 cup sour cream");
+    expect(within(c).getByText("From the recipe")).toBeInTheDocument();
+    await u.selectOptions(within(c).getByRole("combobox", { name: "Amount" }), "3/4");
+    await u.selectOptions(within(c).getByRole("combobox", { name: "Unit" }), "cup");
+    await u.type(within(c).getByRole("textbox", { name: "Item" }), "Greek yogurt");
+    await u.click(within(c).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ kind: "swap", line: "1 cup sour cream", original: null, amount: "3/4", unit: "cup", item: "Greek yogurt", note: null }));
+  });
+
+  it("free text instead of a pick is kept as typed; amount and unit are optional", async () => {
+    const s = server({ ready: false, photos: false, enhance: false }, withSubs(), { "POST /api/recipes/7/substitutions": (b: any) => ({ status: 201, json: sub({ ...b, line: null, replacement: b.item }) }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const c = await card();
+    await u.type(within(c).getByRole("combobox", { name: "Instead of" }), "the beans");
+    await u.type(within(c).getByRole("textbox", { name: "Item" }), "lentils");
+    await u.click(within(c).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ kind: "swap", line: null, original: "the beans", amount: null, unit: null, item: "lentils", note: null }));
+  });
+
+  it("Add an item: amount, unit and the item", async () => {
+    const s = server({ ready: false, photos: false, enhance: false }, withSubs(), { "POST /api/recipes/7/substitutions": (b: any) => ({ status: 201, json: sub({ ...b, id: 2, original: null, line: null, replacement: "1 tsp smoked paprika" }) }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const c = await card();
+    await u.click(within(c).getByRole("radio", { name: "Add an item" }));
+    expect(within(c).queryByRole("combobox", { name: "Instead of" })).toBeNull();
+    await u.selectOptions(within(c).getByRole("combobox", { name: "Amount" }), "1");
+    await u.selectOptions(within(c).getByRole("combobox", { name: "Unit" }), "tsp");
+    await u.type(within(c).getByRole("textbox", { name: "Item" }), "smoked paprika");
+    await u.click(within(c).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ kind: "add", amount: "1", unit: "tsp", item: "smoked paprika", note: null }));
+    expect(await within(c).findByText("Added 1 tsp smoked paprika")).toBeInTheDocument();
+  });
+
+  it("your substitutions: tick boxes (all ticked) for ones that can go in; Make a new version applies the ticked ones", async () => {
+    const applied = withSubs([sub({ id: 3, appliedVersion: 4 })]);
+    const s = server({ ready: false, photos: false, enhance: false }, withSubs([sub({ id: 1 }), sub({ id: 2, kind: "add", original: null, line: null, replacement: "1 tsp smoked paprika" }), sub({ id: 5, line: null, original: "the beans", replacement: "lentils" }), sub({ id: 3, appliedVersion: 4 })]), {
+      "POST /api/recipes/7/substitutions/apply": () => ({ version: 5, applied: 1, missing: [], recipe: { ...applied, ingredients: [{ raw: "1 lb ground beef" }, { raw: "3/4 cup Greek yogurt" }, { raw: "1 cup shredded cheddar" }] } }),
+    });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const list = await within(await card()).findByRole("list", { name: "Your substitutions" });
+    const boxes = within(list).getAllByRole("checkbox");
+    expect(boxes.map((b) => (b as HTMLInputElement).checked)).toEqual([true, true]); // the free-text one and the applied one have none
+    expect(within(list).getByText("in v4")).toBeInTheDocument();
+    expect(within(list).getByText(/a note: not tied to an ingredient/i)).toBeInTheDocument();
+    await u.click(within(list).getByRole("checkbox", { name: "Include Added 1 tsp smoked paprika" }));
+    await u.click(screen.getByRole("button", { name: "Make a new version with these changes" }));
+    await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ path: "/api/recipes/7/substitutions/apply", body: { ids: [1] } }));
+    expect(await screen.findByText(/Saved as version 5/)).toBeInTheDocument();
+    const ingredients = screen.getByRole("region", { name: "Ingredients" });
+    expect(within(ingredients).getByText(/Greek yogurt/)).toBeInTheDocument();
+  });
+});
+
+describe("ingredient order", () => {
+  it("A to Z when that's your choice (as entered otherwise)", async () => {
+    server({ ready: false, photos: false, enhance: false }, recipeJson({ ingredients: [{ raw: "2 tbsp chili powder", name: "chili powder" }, { raw: "1 lb ground beef", name: "ground beef" }, { raw: "1 cup beans", name: "beans" }] }));
+    const user = { id: 1, username: "cory", displayName: null, email: null, role: "owner", ingredientOrder: "alpha" } as User;
+    render(
+      <SessionContext.Provider value={{ user, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <RecipeView id={7} />
+      </SessionContext.Provider>,
+    );
+    const ingredients = await screen.findByRole("region", { name: "Ingredients" });
+    await waitFor(() => expect(within(ingredients).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").trim())).toEqual(["1 cup beans", "2 tbsp chili powder", "1 lb ground beef"]));
+  });
+});

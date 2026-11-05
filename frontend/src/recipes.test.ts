@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMinutes, parseServings, pointsEstimate, recipeRoute, type Nutrition } from "./recipes";
+import { parseMinutes, parseServings, pointsEstimate, recipeRoute, type Nutrition, ingredientOrder } from "./recipes";
 
 describe("editor numbers", () => {
   it("servings", () => {
@@ -53,3 +53,20 @@ describe("recipe addresses", () => {
   });
 });
 
+
+describe("ingredient order", () => {
+  const list = [
+    { raw: "2 tbsp chili powder", name: "chili powder" },
+    { raw: "1 lb ground beef", name: "ground beef" },
+    { raw: "For the topping", section: "For the topping" },
+    { raw: "1 cup sour cream", name: "sour cream" },
+    { raw: "1 cup shredded cheddar", name: "shredded cheddar" },
+  ];
+  it("as entered: the same order", () => {
+    expect(ingredientOrder(list, "entered")).toEqual([0, 1, 2, 3, 4]);
+  });
+  it("A to Z: by the ingredient (not its amount), within each section; headings stay put", () => {
+    expect(ingredientOrder(list, "alpha")).toEqual([0, 1, 2, 4, 3]);
+    expect(ingredientOrder([{ raw: "3 eggs" }, { raw: "1 apple" }], "alpha")).toEqual([1, 0]);
+  });
+});
