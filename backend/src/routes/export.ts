@@ -7,7 +7,8 @@ import { BACKUP_NAME, listBackups, pruneBackups, readArchive, restorePhotos, wri
 import { buildExport, importData, importSchema } from "../lib/dataExport.js";
 import { checkBackupKey, type SettingsSection } from "../lib/settingsBackup.js";
 import { HttpError, notFound } from "../lib/errors.js";
-import { wipeRecipes } from "../lib/wipe.js";
+import { resetApp, wipeRecipes } from "../lib/wipe.js";
+import { resetSessionTouches } from "../lib/sessions.js";
 import { logEvent } from "../lib/appLog.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -78,6 +79,19 @@ export default async function exportRoutes(app: FastifyInstance) {
     await logEvent(db, { category: "import", level: "warning", source: "Settings", event: `All recipes wiped (${recipes} recipe${recipes === 1 ? "" : "s"})`, detail: `Backup made first: ${backup.name}` });
     app.events.emit({ topic: "recipes", by: null });
     return { recipes, backup: backup.name };
+  });
+
+  // Back to a fresh install: everything goes (a backup is made first; the backups stay)
+  app.post("/api/wipe/all", async (req) => {
+    requireLogin(req);
+    const { confirm } = z.object({ confirm: z.string().optional() }).parse(req.body ?? {});
+    if (confirm !== "RESET") throw new HttpError(400, "Type RESET to reset the entire app");
+    const backup = await writeBackup(db, app.backupDir, app.backupSecrets(), app.photos.dir, "before-reset");
+    await resetApp(db, app.photos);
+    resetSessionTouches();
+    await logEvent(db, { category: "import", level: "warning", source: "Settings", event: "The app was reset to a fresh install", detail: `Backup made first: ${backup.name}` });
+    app.events.emit({ topic: "recipes", by: null });
+    return { ok: true, backup: backup.name };
   });
 
   app.post("/api/import", { bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req) => {
