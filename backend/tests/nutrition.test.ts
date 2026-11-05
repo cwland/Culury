@@ -221,6 +221,15 @@ describe("estimating nutrition per ingredient", () => {
     expect(t.ai.calls.at(-1)!.body.messages.at(-1).content).toContain("- 4 1/4 cup white sugar");
   });
 
+  it("leaves the AI enough room for every ingredient's numbers (a long list doesn't get cut off)", async () => {
+    const lines = Array.from({ length: 12 }, (_, i) => `${i + 1} cups ingredient ${i}`).join("\n");
+    const id = await recipe(4, lines);
+    t.ai.respond = () => reply({ ingredients: [pork] });
+    await t.api("POST", `/api/recipes/${id}/nutrition`);
+    // a dozen fields per line, often laid out over several lines: about 300 tokens each
+    expect(t.ai.calls.at(-1)!.body.max_tokens).toBeGreaterThanOrEqual(800 + 300 * 12);
+  });
+
   it("adding a lot of sugar raises the calories", async () => {
     const id = await recipe(10, "1 (5-pound) boneless pork butt roast");
     t.ai.respond = () => reply({ ingredients: [pork] });

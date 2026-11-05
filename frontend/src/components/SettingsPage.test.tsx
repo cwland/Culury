@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import SettingsPage from "./SettingsPage";
 import { SessionContext, type Session } from "../session";
 import { fakeServer } from "../test/fakeServer";
@@ -55,5 +55,22 @@ describe("Settings tabs", () => {
       </SessionContext.Provider>
     );
     expect(screen.getAllByRole("tabpanel", { hidden: true }).map((p) => p.getAttribute("aria-label"))).toEqual(["Profile", "Recipes", "Household", "Security"]);
+  });
+});
+
+describe("where things are", () => {
+  it("Cooking and Meal plan email are on the Recipes tab, not Profile", () => {
+    fakeServer({});
+    window.location.hash = "#/settings/recipes";
+    render(
+      <SessionContext.Provider value={session("owner")}>
+        <SettingsPage />
+      </SessionContext.Provider>
+    );
+    const panel = (name: string) => screen.getAllByRole("tabpanel", { hidden: true }).find((p) => p.getAttribute("aria-label") === name)!;
+    expect(within(panel("Recipes")).getByRole("region", { name: "Cooking", hidden: true })).toBeInTheDocument();
+    expect(within(panel("Recipes")).getByRole("region", { name: "Meal plan email", hidden: true })).toBeInTheDocument();
+    expect(within(panel("Profile")).queryByRole("region", { name: "Cooking", hidden: true })).toBeNull();
+    expect(within(panel("Profile")).queryByRole("region", { name: "Meal plan email", hidden: true })).toBeNull();
   });
 });

@@ -507,14 +507,19 @@ export class AiService {
     const active = found && opts.skip?.length ? { ...found, services: found.services.filter((sv) => !opts.skip!.includes(sv.id)) } : found;
     if (found && active && !active.services.length) throw new AiError("There's no other AI service to ask. Try again without skipping, or add another service in Settings › AI.");
     if (!active) throw new AiError(opts.off ?? (task === "photo" ? "Reading photos needs an AI service that can see pictures. Turn on AI in Settings › AI, and tick “Can read photos” on a service." : "This needs AI. Turn it on in Settings › AI."));
-    const { text, stop, service } = await this.chatWithFailover(active.services, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000 * this.timeScale, opts.images, opts.onProgress, { stream: opts.stream, signal: opts.signal });
-    const json = parseJsonReply(text);
-    if (json === null || typeof json !== "object") {
+    // An answer that can't be read (cut off because it ran out of room, or not JSON) is like a
+    // service that's down: the next one is asked
+    let left = active.services;
+    for (;;) {
+      const { text, stop, service } = await this.chatWithFailover(left, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000 * this.timeScale, opts.images, opts.onProgress, { stream: opts.stream, signal: opts.signal });
+      const json = parseJsonReply(text);
+      if (json !== null && typeof json === "object") return { json: json as Record<string, unknown>, service };
       // Keep what it said, so Settings › Logs shows why
       await logEvent(this.db, { category: "ai", level: "warning", source: service.name, event: `${service.name}'s answer couldn't be read`, detail: `Stopped: ${stop ?? "unknown"}. It said: ${typeof text === "string" ? text.slice(0, 600) : JSON.stringify(text).slice(0, 600)}` });
-      throw new AiError(`${service.name}'s answer couldn't be read. Try again, or try another AI service.`);
+      left = left.slice(left.findIndex((sv) => sv.id === service.id) + 1);
+      if (!left.length || opts.signal?.aborted) throw new AiError(`${service.name}'s answer couldn't be read${stop && /length|max_tokens/i.test(stop) ? " (it ran out of room)" : ""}. Try again, or try another AI service.`);
+      opts.onProgress?.({ kind: "failover", from: service.name, to: left[0].name, reason: "its answer couldn't be read" });
     }
-    return { json: json as Record<string, unknown>, service };
   }
 
   // For the app: is AI there, and can it read photos? (no settings or keys)

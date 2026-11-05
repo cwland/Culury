@@ -37,7 +37,7 @@ const writeProgress = (id: number, p: Omit<Progress, "at">) => {
 };
 
 // Keep the screen on while cooking (browsers allow it on https:// and localhost), unless you've
-// switched that off (Settings › Profile, or the setup wizard)
+// switched that off (Settings › Recipes, or the setup wizard)
 function useWakeLock(wanted: boolean) {
   const [state, setState] = useState<"on" | "off" | "unsupported" | "declined">("off");
   useEffect(() => {
@@ -208,7 +208,7 @@ export default function CookMode({ id }: { id: number }) {
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{r.title}</h1>
         <span
           className={`hidden rounded-full px-3 py-1 text-xs font-semibold sm:inline ${wake === "on" ? "bg-success-subtle text-success" : "bg-page text-muted"}`}
-          title={wake === "unsupported" ? "Browsers only keep the screen on for https:// addresses (and localhost)" : wake === "declined" ? "Switched off in Settings › Profile" : undefined}
+          title={wake === "unsupported" ? "Browsers only keep the screen on for https:// addresses (and localhost)" : wake === "declined" ? "Switched off in Settings › Recipes" : undefined}
         >
           {wake === "on" ? "Screen stays on" : wake === "unsupported" ? "Screen may sleep (needs https)" : wake === "declined" ? "Screen may sleep (your choice)" : "Screen may sleep"}
         </span>

@@ -6,7 +6,7 @@ import { logEvent } from "./appLog.js";
 
 // The daily meal plan email: today's and tomorrow's meals, and anything in tomorrow's recipes that
 // has to start ahead (soak the beans, thaw the chicken, marinate overnight). Each person turns it on
-// and picks the time in Settings › Profile.
+// and picks the time in Settings › Recipes.
 
 const AHEAD = /\b(overnight|the night before|a day ahead|day before|marinat\w*|thaw\w*|defrost\w*|soak\w*|brine|brining|let (?:it )?rise|proof\w*|refrigerate (?:for )?(?:at least )?\d+\s*(?:hours?|hrs?)|chill (?:for )?(?:at least )?\d+\s*(?:hours?|hrs?)|(?:at least|up to) \d+\s*(?:hours?|hrs?))\b/i;
 
@@ -51,7 +51,7 @@ export async function planEmail(db: Db, today: string, appUrl: string | null) {
 ${section("Today", today)}
 ${section("Tomorrow", tomorrow)}
 ${ahead.length ? `<h2 style="font-size:18px;margin:18px 0 6px">Start ahead for tomorrow</h2>${ahead.map((a) => `<p style="margin:0 0 8px;padding:10px 12px;background:#fff7e6;border-radius:8px"><strong>${esc(a.dish)}:</strong> ${esc(a.step)}</p>`).join("")}` : ""}
-</div><p style="font-size:12px;color:#888;margin:14px 0 0">From Culury. Turn this email off in Settings › Profile.</p></div></body></html>`;
+</div><p style="font-size:12px;color:#888;margin:14px 0 0">From Culury. Turn this email off in Settings › Recipes.</p></div></body></html>`;
   const lines = (d: string) => day(d).map((r) => `- ${slotNames.get(r.slot)?.name ?? r.slot}: ${name(r)}${r.note ? ` (${r.note})` : ""}`).join("\n") || "- Nothing planned.";
   const text = `Today, ${longDay(today)}\n${lines(today)}\n\nTomorrow, ${longDay(tomorrow)}\n${lines(tomorrow)}\n${ahead.length ? `\nStart ahead for tomorrow\n${ahead.map((a) => `- ${a.dish}: ${a.step}`).join("\n")}\n` : ""}`;
   const first = day(today)[0] ?? day(tomorrow)[0];

@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useSession, type User } from "../session";
 import { Card, Notice, Toggle } from "./settingsUi";
 
-// Settings › Profile › Cooking: how amounts show to start with, and whether Cook mode keeps the
+// Settings › Recipes › Cooking: how amounts show to start with, and whether Cook mode keeps the
 // screen awake. Each person's own; saved as you change them.
 export default function CookingPrefs() {
   const { user, setUser } = useSession();

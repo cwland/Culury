@@ -32,7 +32,7 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   if (!lines.length) throw new AiError("Add the ingredients first: nutrition is worked out from them.");
   const servings = r.servings ?? null;
   const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
-  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: 400 + 120 * lines.length, ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
+  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, 800 + 300 * lines.length), ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
   const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
   const common = {
     source: "ai" as const,

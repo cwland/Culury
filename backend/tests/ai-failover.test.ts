@@ -114,3 +114,24 @@ describe("backup AI services", () => {
     expect(s).toMatchObject({ timeoutSec: 15, askNextOnNoMatch: false });
   });
 });
+
+describe("an answer that can't be read", () => {
+  it("cut off (it ran out of room) or not JSON: the next service is asked, and the first one is logged", async () => {
+    await t.api("PUT", "/api/settings/ai", settings());
+    t.ai.respond = ((url: string) =>
+      serverOf(url) === "home"
+        ? { status: 200, json: { choices: [{ finish_reason: "length", message: { content: '```json\n{"ingredients": [{"line": "6 pork chops", "grams": 1190, "carbs":' } }] } }
+        : { status: 200, json: { choices: [{ finish_reason: "stop", message: { content: '{"ok": true}' } }] } }) as any;
+    const r = await t.app.ai.ask("quick", "system", "hello");
+    expect(r).toMatchObject({ json: { ok: true }, service: { name: "Cloud backup" } });
+    const [log] = (await t.app.db.execute(sql`select event, detail from app_log where category = 'ai' order by id`)).rows as { event: string; detail: string }[];
+    expect(log.event).toBe("Home AI's answer couldn't be read");
+    expect(log.detail).toMatch(/Stopped: length/);
+  });
+
+  it("every service's answer unreadable: says so", async () => {
+    await t.api("PUT", "/api/settings/ai", settings());
+    t.ai.respond = (() => ({ status: 200, json: { choices: [{ finish_reason: "length", message: { content: '{"ingredients": [' } }] } })) as any;
+    await expect(t.app.ai.ask("quick", "system", "hello")).rejects.toThrow(/Cloud backup's answer couldn't be read/);
+  });
+});

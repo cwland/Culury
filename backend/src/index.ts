@@ -47,7 +47,7 @@ if (process.env.BACKUP_ENABLED !== "false") {
     error: (err) => app.log.error(err),
   }, app.backupSecrets(), app.photos.dir);
 }
-// Daily meal plan emails (each person picks a time in Settings › Profile)
+// Daily meal plan emails (each person picks a time in Settings › Recipes)
 startReminderSchedule(db, app.mail, app.now, (err) => app.log.error(err));
 
 // Discovery: check every feed every few hours (DISCOVERY_HOURS, default 3; 0 turns it off)

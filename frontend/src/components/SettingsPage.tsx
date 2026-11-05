@@ -93,14 +93,14 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
       return (
         <>
           <ProfileSettings />
-          <CookingPrefs />
-          <ReminderSettings />
           <ThemePicker />
         </>
       );
     case "recipes":
       return (
         <>
+          <CookingPrefs />
+          <ReminderSettings />
           {owner && <RecipeVersionSwitch />}
           {owner && <SavedCopiesSwitch />}
           {owner && <PublicLinksSwitch />}
