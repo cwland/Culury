@@ -5,8 +5,9 @@ import RecipeList, { hintAddRecipe } from "./RecipeList";
 import { fakeServer } from "../../test/fakeServer";
 
 const summary = (id: number, title: string) => ({ id, title, imageUrl: null, totalMinutes: null, rating: null, favorite: false, pinned: false, tags: [], categories: [] });
-const setup = () => {
+const setup = (more: Record<string, any> = {}) => {
   const server = fakeServer({
+    "POST /api/collections": (b: any) => ({ status: 201, json: { id: 12, name: b.name, description: null, count: 0, images: [] } }),
     "GET /api/tags": () => [
       { id: 1, name: "beef", count: 3 },
       { id: 2, name: "spicy", count: 2 },
@@ -19,6 +20,7 @@ const setup = () => {
       if (qs.get("category") === "none" && qs.get("limit") === "1") return { total: 4, recipes: [summary(9, "Toast")] };
       return { total: 1, recipes: [summary(1, "Chili")] };
     },
+    ...more,
   });
   // what the list asked for last (ignoring the sidebar's count requests)
   const lastList = () => {
@@ -26,7 +28,7 @@ const setup = () => {
     return new URLSearchParams(list[list.length - 1].path.split("?")[1]);
   };
   render(<RecipeList params={new URLSearchParams()} />);
-  return { lastList };
+  return { lastList, server };
 };
 const sidebar = () => within(screen.getByRole("complementary", { name: "Browse recipes" }));
 
@@ -104,5 +106,29 @@ describe("after the setup wizard", () => {
     setup();
     expect(await screen.findByRole("button", { name: "Add recipe" })).not.toHaveAttribute("data-hint");
     expect(screen.queryByRole("status", { name: "Tip" })).toBeNull();
+  });
+});
+
+describe("a new collection from the sidebar", () => {
+  it("+ New collection asks for a name right there; Enter adds it and opens it", async () => {
+    const u = userEvent.setup();
+    const { lastList, server } = setup();
+    await u.click(await sidebar().findByRole("button", { name: "+ New collection" }));
+    await u.type(sidebar().getByRole("textbox", { name: "New collection name" }), "Weeknight wins{Enter}");
+    await waitFor(() => expect(server.writes().at(-1)).toMatchObject({ method: "POST", path: "/api/collections", body: { name: "Weeknight wins" } }));
+    expect(await sidebar().findByRole("button", { name: /Weeknight wins/ })).toBeInTheDocument();
+    await waitFor(() => expect(lastList().get("collection")).toBe("12"));
+    expect(sidebar().queryByRole("textbox", { name: "New collection name" })).toBeNull();
+  });
+
+  it("a name that's taken says so; Escape cancels", async () => {
+    const u = userEvent.setup();
+    setup({ "POST /api/collections": () => ({ status: 409, json: { error: "There's already a collection called Soups" } }) });
+    await u.click(await sidebar().findByRole("button", { name: "+ New collection" }));
+    await u.type(sidebar().getByRole("textbox", { name: "New collection name" }), "Soups{Enter}");
+    expect(await sidebar().findByRole("alert")).toHaveTextContent("already a collection called Soups");
+    await u.keyboard("{Escape}");
+    expect(sidebar().queryByRole("textbox", { name: "New collection name" })).toBeNull();
+    expect(sidebar().getByRole("button", { name: "+ New collection" })).toBeInTheDocument();
   });
 });

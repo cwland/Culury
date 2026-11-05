@@ -144,6 +144,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       tags={tags}
       categories={categories}
       collections={collections}
+      onNewCollection={(c) => (setCollections((l) => [...l, c]), browse({ collection: String(c.id) }))}
     />
   );
 
@@ -231,16 +232,18 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
   );
 }
 
-function BrowseList({ f, browse, toggleTag, noCategory, tags, categories, collections }: { f: Filters; browse: (c: Partial<Filters>) => void; toggleTag: (t: string) => void; noCategory: number; tags: TagInfo[]; categories: TagInfo[]; collections: CollectionInfo[] }) {
+// (defined out here: one made inside BrowseList would be new on every render, resetting what's in it)
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <section className="mt-5">
+    <h2 className="px-3 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
+    <div className="mt-1 flex flex-col">{children}</div>
+  </section>
+);
+
+function BrowseList({ f, browse, toggleTag, noCategory, tags, categories, collections, onNewCollection }: { f: Filters; browse: (c: Partial<Filters>) => void; toggleTag: (t: string) => void; noCategory: number; tags: TagInfo[]; categories: TagInfo[]; collections: CollectionInfo[]; onNewCollection: (c: CollectionInfo) => void }) {
   const item = (active: boolean) => `flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left ${active ? "bg-pressed font-semibold text-action" : "hover:bg-container"}`;
   const none = !f.tag.length && !f.category && !f.collection && !f.favorite;
   const topTags = [...tags].filter((t) => t.count).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 20);
-  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <section className="mt-5">
-      <h2 className="px-3 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      <div className="mt-1 flex flex-col">{children}</div>
-    </section>
-  );
   return (
     <nav className="text-[15px]">
       <button type="button" className={item(none)} onClick={() => browse({})}>
@@ -258,9 +261,12 @@ function BrowseList({ f, browse, toggleTag, noCategory, tags, categories, collec
             <span className="text-xs text-muted">{c.count}</span>
           </button>
         ))}
-        <a href="#/settings/recipes" className="px-3 py-1.5 text-sm font-semibold text-link hover:underline">
-          {collections.length ? "Manage…" : "+ New collection"}
-        </a>
+        <NewCollection onCreated={onNewCollection} />
+        {collections.length > 0 && (
+          <a href="#/settings/recipes" className="px-3 py-1 text-sm text-subtle hover:text-link hover:underline">
+            Manage collections…
+          </a>
+        )}
       </Section>
       <Section title="Categories">
         {categories.map((c) => (
@@ -294,6 +300,64 @@ function BrowseList({ f, browse, toggleTag, noCategory, tags, categories, collec
         </Section>
       )}
     </nav>
+  );
+}
+
+// + New collection: a name box right in the sidebar (Enter adds it and opens it, Escape cancels)
+function NewCollection({ onCreated }: { onCreated: (c: CollectionInfo) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const close = () => (setOpen(false), setName(""), setError(""));
+  const add = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const c = await api<CollectionInfo>("POST", "/api/collections", { name: name.trim() });
+      close();
+      onCreated(c);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  };
+  if (!open)
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="px-3 py-1.5 text-left text-sm font-semibold text-link hover:underline">
+        + New collection
+      </button>
+    );
+  return (
+    <form
+      onSubmit={(e) => (e.preventDefault(), void add())}
+      onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), close())}
+      className="flex flex-col gap-1.5 px-2 py-1.5"
+    >
+      <input
+        autoFocus
+        aria-label="New collection name"
+        placeholder="Collection name"
+        value={name}
+        maxLength={100}
+        onChange={(e) => (setName(e.target.value), setError(""))}
+        className="w-full rounded-lg border border-line bg-container px-2.5 py-1.5 text-sm outline-none focus:border-action focus:ring-2 focus:ring-action/15"
+      />
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={!name.trim() || busy} className="rounded-lg bg-primary px-3 py-1 text-sm font-semibold text-white hover:bg-primary-pressed disabled:opacity-50">
+          {busy ? "Adding…" : "Add"}
+        </button>
+        <button type="button" onClick={close} className="text-sm font-semibold text-subtle hover:underline">
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-error">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
