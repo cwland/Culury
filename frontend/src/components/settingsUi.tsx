@@ -65,3 +65,20 @@ export function SettingCard({ title, text, toggle, children, titleExtra }: { tit
     </section>
   );
 }
+
+// As is / Metric / US as one pill switch (the same look as on a recipe), with what the choice means below
+const UNIT_HINT = { original: "Amounts as the recipe was written.", metric: "Grams, millilitres and °C.", us: "Cups, ounces and °F." } as const;
+export function UnitsPills({ value, onChange }: { value: "original" | "metric" | "us"; onChange: (v: "original" | "metric" | "us") => void }) {
+  return (
+    <div>
+      <div role="radiogroup" aria-label="Measurements" className="inline-flex rounded-lg bg-page p-1">
+        {(["original", "metric", "us"] as const).map((u) => (
+          <button key={u} type="button" role="radio" aria-checked={value === u} onClick={() => onChange(u)} className={`whitespace-nowrap rounded-md px-4 py-1.5 text-sm font-semibold transition ${value === u ? "bg-container text-ink shadow-sm" : "text-subtle hover:text-ink"}`}>
+            {u === "original" ? "As is" : u === "metric" ? "Metric" : "US"}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-sm text-subtle">{UNIT_HINT[value]}</p>
+    </div>
+  );
+}

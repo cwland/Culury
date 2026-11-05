@@ -37,13 +37,32 @@ export default async function aiRoutes(app: FastifyInstance) {
     return r;
   };
   // Estimate with AI (replaces what's there)
-  app.post("/api/recipes/:id/nutrition", async (req) => {
+  // With "Accept: application/x-ndjson" it sends progress lines as it goes, like AI Enhance:
+  // {"type":"step","text":"Asking …"} … then {"type":"result","nutrition":{…}} or {"type":"error",…}
+  app.post("/api/recipes/:id/nutrition", async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const r = await recipeOf(id);
-    const nutrition = await asHttp(() => estimateNutrition(ai, r));
-    await db.update(recipes).set({ nutrition }).where(eq(recipes.id, id));
-    await syncActive(db, id); // nutrition goes into the active version
-    return nutrition;
+    const work = async (onStep?: (text: string) => void, signal?: AbortSignal) => {
+      const nutrition = await asHttp(() => estimateNutrition(ai, r, { ...(onStep && { onStep }), ...(signal && { signal }) }));
+      await db.update(recipes).set({ nutrition }).where(eq(recipes.id, id));
+      await syncActive(db, id); // nutrition goes into the active version
+      return nutrition;
+    };
+    if (!String(req.headers.accept ?? "").includes("application/x-ndjson")) return work();
+    reply.hijack();
+    const out = reply.raw;
+    const stop = new AbortController();
+    out.on("close", () => !out.writableFinished && stop.abort());
+    out.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-cache", "x-accel-buffering": "no" });
+    const send = (o: object) => !out.destroyed && out.write(JSON.stringify(o) + "\n");
+    try {
+      send({ type: "result", nutrition: await work((text) => send({ type: "step", text }), stop.signal) });
+    } catch (e) {
+      const status = (e as { statusCode?: number }).statusCode ?? 500;
+      if (status >= 500 && !(e instanceof HttpError)) req.log.error(e);
+      send({ type: "error", status, error: status === 500 && !(e instanceof HttpError) ? "Something went wrong. Try again." : (e as Error).message });
+    }
+    out.end();
   });
   // Type it in (from the package or another app), or clear it with null
   app.put("/api/recipes/:id/nutrition", async (req) => {

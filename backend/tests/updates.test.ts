@@ -26,17 +26,39 @@ describe("release watcher", () => {
     expect(logs.map((l: any) => l.event)).toEqual(["Latest release: version 0.3.0"]);
   });
 
-  it("asks GitHub at most every 10 minutes from sign-ins; Check now always asks", async () => {
+  it("asks GitHub at most once a day to start with; Check now always asks", async () => {
     t.github.respond = release("v0.3.0");
-    await get();
+    expect((await get()).every).toBe("day");
     await get();
     expect(t.github.calls).toHaveLength(1);
     expect((await get("")).latest.version).toBe("0.3.0"); // no check at all
-    t.clock.date = new Date(Date.now() + 11 * 60 * 1000);
+    t.clock.date = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    await get();
+    expect(t.github.calls).toHaveLength(1); // 6 hours: not yet
+    t.clock.date = new Date(Date.now() + 25 * 60 * 60 * 1000);
     t.github.respond = release("v0.4.0");
     expect((await get()).latest.version).toBe("0.4.0");
     expect((await t.api("POST", "/api/updates/check")).body.latest.version).toBe("0.4.0");
     expect(t.github.calls).toHaveLength(3);
+  });
+
+  it("how often is your choice: every hour, 6 hours, day, week, month, or never", async () => {
+    t.github.respond = release("v0.3.0");
+    expect((await t.api("PUT", "/api/updates/settings", { every: "hour" })).body).toMatchObject({ enabled: true, every: "hour" });
+    const calls = t.github.calls.length;
+    t.clock.date = new Date(Date.now() + 61 * 60 * 1000);
+    await get();
+    expect(t.github.calls.length).toBe(calls + 1);
+    await t.api("PUT", "/api/updates/settings", { every: "week" });
+    t.clock.date = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    await get();
+    expect(t.github.calls.length).toBe(calls + 2); // the change itself checked; 3 days later: not yet
+    const never = (await t.api("PUT", "/api/updates/settings", { every: "never" })).body;
+    expect(never).toMatchObject({ enabled: false, every: "never" });
+    t.clock.date = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+    await get();
+    expect(t.github.calls.length).toBe(calls + 2);
+    expect((await t.api("PUT", "/api/updates/settings", { every: "sometimes" })).status).toBe(400);
   });
 
   it("dismissing hides that version only", async () => {

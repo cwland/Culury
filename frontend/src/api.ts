@@ -67,6 +67,41 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   return data as T;
 }
 
+// POST and follow along: the server sends one JSON object per line as it works
+// ({"type":"step","text":…} …, then {"type":"result", [key]: …} or {"type":"error",…}). A plain JSON reply works too.
+export async function postWithProgress<T>(path: string, key: string, onStep: (text: string) => void, signal?: AbortSignal): Promise<T> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(path, { method: "POST", signal, headers: { accept: "application/x-ndjson, application/json", "x-device-id": deviceId(), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+  } catch {
+    throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
+  }
+  if (!(res.headers.get("content-type") ?? "").includes("ndjson")) return (await res.json()) as T;
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      const o = JSON.parse(line);
+      if (o.type === "step") onStep(o.text);
+      else if (o.type === "result") return o[key] as T;
+      else if (o.type === "error") throw new ApiError(o.status ?? 500, o.error ?? "Something went wrong. Try again.");
+    }
+    if (done) throw new ApiError(0, "The connection closed before it finished. Try again.");
+  }
+}
+
 // ---------- shapes returned by the API ----------
 
 // A file from the API, with the login header: its name, type and contents

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useSession } from "../session";
+import { EmailNeeded, useEmailReady } from "../email";
 import {
   Notice,
   SettingCard,
@@ -16,6 +17,8 @@ export default function ReminderSettings() {
   const [time, setTime] = useState(user.remindAt ?? "17:00");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const on = !!user.remindAt;
+  const emailReady = useEmailReady();
+  const blocked = emailReady === false;
   const save = async (remindAt: string | null) => {
     setMsg(null);
     try {
@@ -45,10 +48,12 @@ export default function ReminderSettings() {
         <Toggle
           label="Meal plan email"
           checked={on}
+          disabled={blocked && !on}
           onChange={(v) => void save(v ? time : null)}
         />
       }
     >
+      {blocked && <EmailNeeded what={on ? "the meal plan email can't be sent. You can still turn it off" : "the meal plan email can't be turned on"} />}
       {(on || msg) && (
         <>
           {on && (

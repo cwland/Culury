@@ -96,3 +96,29 @@ describe("a shared recipe", () => {
     expect(screen.getByText(/link may have been replaced or turned off/)).toBeInTheDocument();
   });
 });
+
+describe("opened from the email's Download links (?download=pdf)", () => {
+  it("opens a download window with that format picked", async () => {
+    fakeServer({ [`GET /api/public/share/${TOKEN}`]: () => shared });
+    window.history.replaceState(null, "", `/share/${TOKEN}?download=paprika`);
+    const u = userEvent.setup();
+    render(<PublicRecipePage token={TOKEN} />);
+    const dlg = await screen.findByRole("dialog", { name: "Download Texas Chili" });
+    expect(within(dlg).getByRole("radio", { name: /Paprika/ })).toBeChecked();
+    expect(within(dlg).getByRole("link", { name: "Download Paprika" })).toHaveAttribute("href", `/api/public/share/${TOKEN}/export?format=paprika`);
+    await u.click(within(dlg).getByRole("radio", { name: /PDF/ }));
+    expect(within(dlg).getByRole("link", { name: "Download PDF" })).toHaveAttribute("href", `/api/public/share/${TOKEN}/export?format=pdf`);
+    await u.click(within(dlg).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("no ?download, or one that isn't a format: no window", async () => {
+    fakeServer({ [`GET /api/public/share/${TOKEN}`]: () => shared });
+    window.history.replaceState(null, "", `/share/${TOKEN}?download=exe`);
+    render(<PublicRecipePage token={TOKEN} />);
+    await screen.findByRole("heading", { name: "Texas Chili" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    window.history.replaceState(null, "", "/");
+  });
+});

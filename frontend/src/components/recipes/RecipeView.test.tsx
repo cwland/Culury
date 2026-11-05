@@ -707,3 +707,19 @@ describe("ingredient order", () => {
     await waitFor(() => expect(within(ingredients).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").trim())).toEqual(["1 cup beans", "2 tbsp chili powder", "1 lb ground beef"]));
   });
 });
+
+describe("metric: grams for dry ingredients", () => {
+  it("the weights table, or the AI's weight from nutrition, with the measure it was", async () => {
+    localStorage.clear();
+    const nutrition = { calories: 300, fat: 1, saturatedFat: 1, carbs: 1, fiber: 1, sugar: 1, addedSugar: null, protein: 1, sodium: 1, source: "ai", servings: 4, servingSize: null, note: null, perIngredient: [{ line: "2 tbsp chili powder", grams: 16, calories: 40 }] };
+    server({ ready: false, photos: false, enhance: false }, recipeJson({ nutrition, ingredients: [{ raw: "2 cups all-purpose flour", quantity: 2, quantityMax: null, unit: "cup", name: "all-purpose flour", note: null }, { raw: "2 tbsp chili powder", quantity: 2, quantityMax: null, unit: "tbsp", name: "chili powder", note: null }] }));
+    const user = { id: 1, username: "cory", displayName: null, email: null, role: "owner", units: "metric" } as User;
+    render(
+      <SessionContext.Provider value={{ user, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <RecipeView id={7} />
+      </SessionContext.Provider>,
+    );
+    const ingredients = await screen.findByRole("region", { name: "Ingredients" });
+    await waitFor(() => expect(within(ingredients).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").trim())).toEqual(["≈240 g all-purpose flour (2 cups)", "≈16 g chili powder (2 tbsp)"]));
+  });
+});

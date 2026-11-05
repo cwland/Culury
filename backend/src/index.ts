@@ -64,13 +64,12 @@ if (process.env.EMERGENCY_DISABLE_OAUTH === "true") {
 if (app.backupKey.key) app.log.info("BACKUP_KEY is set: saved keys and passwords go into backups, encrypted. Save a copy of BACKUP_KEY somewhere safe, away from this server; restoring them needs it.");
 else if (app.backupKey.problem) app.log.warn(app.backupKey.problem);
 
-// Release watcher: look for a newer release on GitHub every few hours (UPDATE_CHECK_HOURS=0 turns
-// the schedule off; Settings > Data > Updates turns checking off altogether)
-const updateHours = Number(process.env.UPDATE_CHECK_HOURS ?? 3);
-if (updateHours > 0) {
-  const checkUpdates = () => app.updates.check().catch((err) => app.log.error(err));
+// Release watcher: each hour, look for a newer release on GitHub if it's due (how often is chosen in
+// Settings › Data › Updates; UPDATE_CHECK_HOURS=0 turns the server's own checks off)
+if (Number(process.env.UPDATE_CHECK_HOURS ?? 1) > 0) {
+  const checkUpdates = () => app.updates.checkIfDue().catch((err) => app.log.error(err));
   setTimeout(checkUpdates, 30 * 1000);
-  setInterval(checkUpdates, updateHours * 60 * 60 * 1000);
+  setInterval(checkUpdates, 60 * 60 * 1000);
 }
 
 const port = Number(process.env.PORT ?? 4000);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useContext } from "react";
 import { SessionContext } from "../../session";
 import { api } from "../../api";
-import { ingredientLine, recipeUnits, stepUses } from "../../cooking";
+import { aiWeights, ingredientLine, recipeUnits, stepUses } from "../../cooking";
 import { ingredientOrder, type Recipe } from "../../recipes";
 import { useLockBodyScroll } from "../../scrollLock";
 import { ChevronLeft, ChevronRight, CloseIcon, RecipesIcon } from "../Icons";
@@ -160,6 +160,7 @@ export default function CookMode({ id }: { id: number }) {
       </div>
     );
 
+  const weights = aiWeights(r.nutrition);
   const usedNow = new Set(done || !current ? [] : r.ingredients.map((ing, i) => (stepUses(current.text, ing) ? i : -1)).filter((i) => i >= 0));
   const checklist = (
     <div className="flex flex-col">
@@ -169,7 +170,7 @@ export default function CookMode({ id }: { id: number }) {
       <ul aria-label="Ingredients checklist" className="flex flex-col gap-1">
         {ingredientOrder(r.ingredients, order).map((i) => {
           const ing = r.ingredients[i];
-          const line = ingredientLine(ing, prefs.factor, prefs.units);
+          const line = ingredientLine(ing, prefs.factor, prefs.units, weights.get(ing.raw.trim().toLowerCase()));
           if (ing.section)
             return (
               <li key={i} className="mt-3 px-2 text-xs font-semibold uppercase tracking-wide text-muted first:mt-0">
@@ -190,6 +191,7 @@ export default function CookMode({ id }: { id: number }) {
                       <strong className="font-semibold">{line.amount}</strong> {line.name}
                       {line.note && <span className="text-subtle">, {line.note}</span>}
                       {line.dried && <span className="text-subtle"> ({line.dried})</span>}
+                      {line.was && <span className="text-subtle" title={line.estimate === "ai" ? "Weight estimated by AI (with the nutrition)" : "Approximate weight"}> ({line.was})</span>}
                     </>
                   )}
                 </span>
@@ -267,7 +269,7 @@ export default function CookMode({ id }: { id: number }) {
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted">In this step</p>
                     <ul className="mt-2 flex flex-wrap gap-2">
                       {[...usedNow].map((i) => {
-                        const line = ingredientLine(r.ingredients[i], prefs.factor, prefs.units);
+                        const line = ingredientLine(r.ingredients[i], prefs.factor, prefs.units, weights.get(r.ingredients[i].raw.trim().toLowerCase()));
                         return (
                           <li key={i}>
                             <button type="button" onClick={() => toggle(i)} aria-pressed={checked.has(i)} className={`rounded-full border px-3 py-1.5 text-left ${checked.has(i) ? "border-line text-muted line-through" : "border-action/40 bg-container"}`}>

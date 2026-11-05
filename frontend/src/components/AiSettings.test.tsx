@@ -20,39 +20,12 @@ describe("AI services help", () => {
   });
 });
 
-describe("AI Enhance switch", () => {
-  it("AI Enhance switch saves right away", async () => {
-    const server = fakeServer({
-      "GET /api/settings/ai": () => ({ settings: null }),
-      "GET /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true }),
-      "PUT /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: false }),
-    });
-    const u = userEvent.setup();
+describe("AI Enhance and Auto nutrition moved", () => {
+  it("aren't on the AI tab any more (they're in Settings › Recipes)", async () => {
+    fakeServer({ "GET /api/settings/ai": () => ({ settings: null }), "GET /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true, autoNutrition: true }) });
     render(<AiSettings />);
-    const card = await screen.findByRole("region", { name: "AI Enhance" });
-    const sw = within(card).getByRole("switch", { name: "AI Enhance" });
-    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "true"));
-    await u.click(sw);
-    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "false"));
-    expect(server.writes().find((w) => w.path === "/api/settings/features")?.body).toEqual({ aiEnhance: false });
+    await screen.findByRole("region", { name: "AI services" });
+    expect(screen.queryByRole("region", { name: "AI Enhance" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Auto nutrition" })).toBeNull();
   });
 });
-
-describe("Auto nutrition switch", () => {
-  it("saves right away", async () => {
-    const server = fakeServer({
-      "GET /api/settings/ai": () => ({ settings: null }),
-      "GET /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true, autoNutrition: true }),
-      "PUT /api/settings/features": () => ({ ai: true, apiKeys: false, aiEnhance: true, autoNutrition: false }),
-    });
-    const u = userEvent.setup();
-    render(<AiSettings />);
-    const card = await screen.findByRole("region", { name: "Auto nutrition" });
-    const sw = within(card).getByRole("switch", { name: "Auto nutrition" });
-    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "true"));
-    await u.click(sw);
-    await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "false"));
-    expect(server.writes().find((w) => w.path === "/api/settings/features")?.body).toEqual({ autoNutrition: false });
-  });
-});
-

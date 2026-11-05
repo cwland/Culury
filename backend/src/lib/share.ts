@@ -1,3 +1,4 @@
+import { FORMATS } from "./exports.js";
 import type { Nutrition } from "../db/schema.js";
 import { AISLES } from "./grocery.js";
 
@@ -128,6 +129,14 @@ export function recipeEmail(r: ShareRecipe, opts: { appUrl: string | null; from:
   const button = opts.shareUrl
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 6px"><tr><td style="border-radius:10px;background:#1a7f4b"><a href="${esc(opts.shareUrl)}" style="display:inline-block;padding:14px 26px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px">Open the recipe</a></td></tr></table>`
     : "";
+  // At the bottom: the public page, and each format (the page opens with that one ready to download)
+  const formats = Object.entries(FORMATS) as [string, { name: string }][];
+  const downloads = opts.shareUrl
+    ? `<div style="margin:16px 0 0;padding:16px 22px;background:#fff;border-radius:16px;font-size:14px">
+<p style="margin:0 0 6px"><a href="${esc(opts.shareUrl)}" style="color:#1a7f4b;font-weight:700">View the recipe</a></p>
+<p style="margin:0;color:#555">Download it as: ${formats.map(([id, f]) => `<a href="${esc(opts.shareUrl!)}?download=${id}" style="color:#1a7f4b;font-weight:600">${f.name}</a>`).join(" · ")}</p>
+</div>`
+    : "";
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"></head>
 <body style="margin:0;background:#f4f6f5;${font};color:#1d2b24">
 <div style="max-width:640px;margin:0 auto;padding:24px 12px">
@@ -144,10 +153,12 @@ ${opts.attached ? `<p style="margin:10px 0 0;font-size:13px;color:#666">The reci
 </div>
 <div style="padding:18px 22px 24px;border-top:1px solid #eef1ef">${recipeMain(r)}</div>
 </div>
+${downloads}
 <p style="margin:16px 4px 0;font-size:12px;color:#888">Sent from Culury${opts.appUrl ? ` · <a href="${esc(opts.appUrl.replace(/\/+$/, ""))}/#/recipes/${r.id}" style="color:#888">open it in Culury</a>` : ""}</p>
 </div></body></html>`;
   const intro = `${opts.note ? `${opts.from}: ${opts.note}` : `${opts.from} shared a recipe with you.`}\n${opts.shareUrl ? `\nOpen the recipe: ${opts.shareUrl}\n` : ""}${opts.attached ? `\nThe recipe is attached as ${opts.attached}.\n` : ""}\n`;
-  return { subject: r.title, html, text: recipeText(r, intro) };
+  const textDownloads = opts.shareUrl ? `\n\nView the recipe: ${opts.shareUrl}\nDownload it as:\n${formats.map(([id, f]) => `${f.name}: ${opts.shareUrl}?download=${id}`).join("\n")}\n` : "";
+  return { subject: r.title, html, text: recipeText(r, intro) + textDownloads };
 }
 
 export function recipeText(r: ShareRecipe, intro = "") {

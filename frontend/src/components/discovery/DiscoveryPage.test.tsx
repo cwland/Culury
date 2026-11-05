@@ -346,7 +346,7 @@ describe("one post", () => {
       expect(within(n).getByText(/per serving, 8 servings/)).toBeInTheDocument();
       const by = within(n).getByRole("list", { name: "Calories by ingredient" });
       expect(within(by).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["1 (5-pound) pork butt5,600 kcal", "3 tbsp brown sugar140 kcal"]);
-      expect(within(r).getByRole("button", { name: "Recalculate" })).toBeInTheDocument();
+      expect(within(r).getByRole("button", { name: "Re-calculate nutrition" })).toBeInTheDocument();
       expect(s.writes().map((w) => w.path)).toEqual(["/api/discovery/items/5/recipe/nutrition"]);
     });
 

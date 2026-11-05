@@ -3,8 +3,8 @@ import type { Db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
 import { logEvent } from "./appLog.js";
 
-// Release watcher: looks for a newer published release on GitHub (on sign-in, at most every few
-// minutes, and every UPDATE_CHECK_HOURS on the server). The bar at the top of the app compares it
+// Release watcher: looks for a newer published release on GitHub (as often as chosen in
+// Settings: every hour, 6 hours, day, week or month; the server looks each hour whether it's due). The bar at the top of the app compares it
 // with the version that's running. A private repo needs GITHUB_TOKEN (read-only) in .env.
 // Settings live in app_settings under "updates".
 
@@ -16,8 +16,15 @@ export interface Release {
   publishedAt: string | null;
 }
 
+// How often to ask GitHub ("never" is the same as checking turned off)
+export const EVERY = ["hour", "6h", "day", "week", "month", "never"] as const;
+export type Every = (typeof EVERY)[number];
+const HOUR = 60 * 60 * 1000;
+export const EVERY_MS: Record<Exclude<Every, "never">, number> = { hour: HOUR, "6h": 6 * HOUR, day: 24 * HOUR, week: 7 * 24 * HOUR, month: 30 * 24 * HOUR };
+
 export interface UpdateState {
   enabled: boolean;
+  every: Every;
   latest: Release | null;
   checkedAt: string | null;
   error: string | null;
@@ -25,7 +32,7 @@ export interface UpdateState {
 
 export type UpdateFetch = (url: string, init: { headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
-const DEFAULTS: UpdateState = { enabled: true, latest: null, checkedAt: null, error: null };
+const DEFAULTS: UpdateState = { enabled: true, every: "day", latest: null, checkedAt: null, error: null };
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)$/;
 
 export class UpdateService {
@@ -39,7 +46,9 @@ export class UpdateService {
 
   async state(): Promise<UpdateState> {
     const [row] = await this.db.select().from(appSettings).where(eq(appSettings.key, "updates"));
-    return { ...DEFAULTS, ...((row?.value ?? {}) as Partial<UpdateState>) };
+    const s = { ...DEFAULTS, ...((row?.value ?? {}) as Partial<UpdateState>) };
+    // turned off before there was a choice of how often
+    return s.enabled ? (s.every === "never" ? { ...s, every: "day" } : s) : { ...s, every: "never" };
   }
 
   private async save(value: UpdateState) {
@@ -52,6 +61,19 @@ export class UpdateService {
 
   async setEnabled(enabled: boolean) {
     return this.save({ ...(await this.state()), enabled, ...(enabled ? {} : { error: null }) });
+  }
+
+  async setEvery(every: Every) {
+    const s = await this.state();
+    const enabled = every !== "never";
+    return this.save({ ...s, every: enabled ? every : "never", enabled, ...(enabled ? {} : { error: null }) });
+  }
+
+  /** Ask GitHub if the last check is older than the chosen interval (the server's hourly tick, sign-ins) */
+  async checkIfDue() {
+    const s = await this.state();
+    if (!s.enabled || s.every === "never") return s;
+    return this.check({ maxAgeMs: EVERY_MS[s.every] });
   }
 
   /** Ask GitHub for the latest release. With maxAgeMs: skip it when the last check is newer than that. */
@@ -88,6 +110,6 @@ export class UpdateService {
     // Settings > Logs: a new problem (not the same one every few hours), and each new version found
     if (error && error !== s.error) await logEvent(this.db, { category: "schedule", level: "warning", source: "Update check", event: "Couldn't check for a new version", detail: error });
     if (latest && latest.version !== s.latest?.version) await logEvent(this.db, { category: "schedule", level: "info", source: "Update check", event: `Latest release: version ${latest.version}`, detail: latest.url });
-    return this.save({ enabled: true, latest, checkedAt: this.now().toISOString(), error });
+    return this.save({ ...s, enabled: true, latest, checkedAt: this.now().toISOString(), error });
   }
 }

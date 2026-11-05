@@ -95,12 +95,103 @@ export function formatAmount(a: Amount): string {
   return [q, unitLabel(a.unit, a.quantityMax ?? a.quantity)].filter(Boolean).join(" ");
 }
 
+// ---------- cups and spoons <-> grams ----------
+
+// Grams in a US cup of each (first match wins, so the specific names come first). "liquid": measured
+// by volume in metric too (millilitres), never weighed. Anything not here isn't guessed.
+const WEIGHTS: [RegExp, number | "liquid"][] = [
+  [/chocolate chips|chocolate chunks/, 170],
+  [/buttermilk/, "liquid"],
+  [/peanut butter|almond butter/, 258],
+  [/\bbutter\b/, 227],
+  [/cream cheese/, 227],
+  [/sour cream/, 230],
+  [/yogh?urt/, 245],
+  [/\b(milk|cream|half-and-half|half and half|water|broth|stock|juice|wine|vinegar|oil|soy sauce|beer|coffee|liqueur|rum|vodka|bourbon|whiskey)\b/, "liquid"],
+  [/brown sugar/, 213],
+  [/powdered sugar|confectioners'? sugar|icing sugar/, 120],
+  [/\bsugar\b/, 200],
+  [/almond flour|almond meal/, 96],
+  [/coconut flour/, 112],
+  [/bread flour/, 127],
+  [/cake flour/, 114],
+  [/\bflour\b/, 120],
+  [/corn ?starch/, 128],
+  [/cornmeal|polenta/, 138],
+  [/cocoa/, 85],
+  [/\boats\b/, 90],
+  [/quinoa/, 170],
+  [/lentils/, 192],
+  [/\brice\b/, 185],
+  [/honey/, 340],
+  [/maple syrup/, 322],
+  [/molasses/, 337],
+  [/parmesan|pecorino/, 100],
+  [/cheddar|mozzarella|monterey jack|pepper jack|gruyere|swiss cheese|shredded cheese/, 113],
+  [/mayonnaise|\bmayo\b/, 220],
+  [/raisins/, 150],
+  [/walnuts/, 120],
+  [/pecans/, 110],
+  [/almonds/, 143],
+  [/coconut/, 85],
+  [/panko/, 50],
+  [/bread ?crumbs/, 108],
+  [/baking soda/, 230],
+  [/baking powder/, 192],
+  [/kosher salt/, 0], // brands differ by half: not guessed
+  [/\bsalt\b/, 288],
+];
+function cupWeight(i: Ingredient): number | "liquid" | null {
+  const text = `${i.name ?? ""} ${i.raw}`.toLowerCase();
+  for (const [re, g] of WEIGHTS) if (re.test(text)) return g || null;
+  return null;
+}
+const SPOON_OR_CUP = new Set(["tsp", "tbsp", "cup", "fl oz", "pt", "qt"]);
+const roundG = (g: number) => (g >= 1000 ? `≈${Math.round(g / 100) / 10} kg` : `≈${roundMetric(g, 5)} g`);
+
+// Metric: a dry ingredient measured in cups or spoons, as about how many grams. From the weights
+// table, or else the AI's weight for this line (worked out with nutrition). Under 5 g stays in spoons.
+function inGrams(i: Ingredient, factor: number, aiGrams: number | null | undefined) {
+  if (!i.unit || !SPOON_OR_CUP.has(i.unit) || i.quantity == null) return null;
+  const w = cupWeight(i);
+  if (w === "liquid") return null;
+  const cups = (scale(i, factor).quantity! * VOLUME[i.unit]) / VOLUME.cup;
+  const g = w ? cups * w : aiGrams ? aiGrams * factor : null;
+  if (!g || g < 5) return null;
+  return { amount: roundG(g), estimate: (w ? "table" : "ai") as "table" | "ai" };
+}
+
+// US: grams of a dry ingredient the table knows, as cups or spoons
+function inCups(i: Ingredient, factor: number) {
+  if (!i.unit || !METRIC_WEIGHT.has(i.unit) || i.quantity == null) return null;
+  const w = cupWeight(i);
+  if (!w || w === "liquid") return null;
+  const cups = (scale(i, factor).quantity! * WEIGHT[i.unit]) / w;
+  const a: Amount = cups >= 0.25 ? { quantity: roundUs(cups), quantityMax: null, unit: "cup" } : cups * 16 >= 1 ? { quantity: roundUs(cups * 16), quantityMax: null, unit: "tbsp" } : { quantity: roundUs(cups * 48), quantityMax: null, unit: "tsp" };
+  return { amount: `≈${formatAmount(a)}`, estimate: "table" as const };
+}
+
 // The line as it should read at this scale and in these units ("" amount: show the line as written).
-// dried: for fresh herbs, the dried amount to use instead ("1 tsp dried").
-export function ingredientLine(i: Ingredient, factor: number, units: Units) {
-  if (i.section) return { amount: "", name: i.section, note: null, plain: true, dried: null };
-  if (i.quantity == null && !i.unit) return { amount: "", name: i.raw, note: null, plain: true, dried: null };
-  return { amount: formatAmount(convert(scale(i, factor), units)), name: i.name ?? i.raw, note: i.note ?? null, plain: false, dried: driedEquivalent(i, factor, units) };
+// dried: for fresh herbs, the dried amount to use instead ("1 tsp dried"). was: the measure it was,
+// when it's shown as an estimate in grams or cups ("≈240 g" was "2 cups"). aiGrams: the AI's weight
+// for the whole line (nutrition's per-ingredient numbers), used when the weights table doesn't know it.
+export function ingredientLine(i: Ingredient, factor: number, units: Units, aiGrams?: number | null) {
+  const none = { was: null, estimate: null };
+  if (i.section) return { amount: "", name: i.section, note: null, plain: true, dried: null, ...none };
+  if (i.quantity == null && !i.unit) return { amount: "", name: i.raw, note: null, plain: true, dried: null, ...none };
+  const base = { name: i.name ?? i.raw, note: i.note ?? null, plain: false, dried: driedEquivalent(i, factor, units) };
+  const est = units === "metric" ? inGrams(i, factor, aiGrams) : units === "us" ? inCups(i, factor) : null;
+  if (est) return { ...base, amount: est.amount, was: formatAmount(scale(i, factor)), estimate: est.estimate };
+  return { ...base, amount: formatAmount(convert(scale(i, factor), units)), ...none };
+}
+
+// The AI's weight for each ingredient line (from nutrition worked out one ingredient at a time),
+// by the line as written; nothing when the ingredients changed since
+export function aiWeights(n: { perIngredient?: { line: string; grams: number | null }[] | null; outdated?: boolean } | null | undefined): Map<string, number> {
+  const m = new Map<string, number>();
+  if (!n || n.outdated) return m;
+  for (const x of n.perIngredient ?? []) if (x.grams) m.set(x.line.trim().toLowerCase(), x.grams);
+  return m;
 }
 
 // ---------- fresh herbs -> dried ----------

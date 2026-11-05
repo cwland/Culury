@@ -1,7 +1,11 @@
 import { and, eq, gte, inArray, lte, desc, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { aisleChoices, groceryItems, mealPlan, pantryItems, recipes, type Ingredient, type Nutrition } from "../db/schema.js";
-import { AiError, type AiService } from "./ai.js";
+import { AiError, type AiProgress, type AiService } from "./ai.js";
+
+// One line for a progress popup, from what the AI service is doing
+export const progressLine = (p: AiProgress) =>
+  p.kind === "asking" ? `Asking ${p.service} (${p.model})…` : p.kind === "thinking" ? `${p.service} is thinking…` : p.kind === "writing" ? `${p.service} is writing… ${p.words} words` : `${p.from} didn't answer. Asking ${p.to}…`;
 import { AISLE_IDS, itemKey } from "./grocery.js";
 import type { JobQueue } from "./jobs.js";
 import type { EventBus } from "./events.js";
@@ -27,12 +31,15 @@ const NUMBERS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // skip: AI services to leave out (ones skipped as too slow during the AI check)
-export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }, opts: { skip?: string[]; signal?: AbortSignal } = {}): Promise<Nutrition> {
+export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }, opts: { skip?: string[]; signal?: AbortSignal; onStep?: (text: string) => void } = {}): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
   if (!lines.length) throw new AiError("Add the ingredients first: nutrition is worked out from them.");
+  const step = opts.onStep ?? (() => {});
+  step(`Reading ${lines.length === 1 ? "1 ingredient" : `${lines.length} ingredients`}`);
   const servings = r.servings ?? null;
   const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
-  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, 800 + 300 * lines.length), ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
+  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, 800 + 300 * lines.length), ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.onStep ? { onProgress: (p: AiProgress) => step(progressLine(p)) } : {}) });
+  step("Adding up each ingredient");
   const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
   const common = {
     source: "ai" as const,

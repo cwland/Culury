@@ -633,7 +633,7 @@ function Preview({ id, postTitle, preview: pv, error, onChange }: { id: number; 
           <div className="mt-5 border-t border-line pt-4">
             {pv.canAi && (
               <button type="button" onClick={() => void run("nutrition")} disabled={!!busy} className={button}>
-                {busy === "nutrition" ? "Calculating…" : n ? "Recalculate" : "Calculate nutrition"}
+                {busy === "nutrition" ? "Calculating…" : n ? "Re-calculate nutrition" : "Calculate nutrition"}
               </button>
             )}
             {n && (

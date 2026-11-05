@@ -95,6 +95,12 @@ export function registerNutritionJob(queue: JobQueue, d: { db: Db; ai: AiService
       await syncActive(d.db, recipeId); // into the version it was worked out for (the active one)
     } catch (e) {
       await logEvent(d.db, { category: "ai", level: "error", source: "Auto nutrition", event: `Nutrition couldn't be worked out for ${r.title}`, detail: (e as Error).message });
+      // the numbers there are for the old ingredients: say so on the recipe
+      if (r.nutrition && !r.nutrition.outdated) {
+        await d.db.update(recipes).set({ nutrition: { ...r.nutrition, outdated: true } }).where(eq(recipes.id, recipeId));
+        await syncActive(d.db, recipeId);
+        d.events.emit({ topic: "recipes", id: recipeId, by: null });
+      }
       throw e;
     }
     d.events.emit({ topic: "recipes", id: recipeId, by: null });

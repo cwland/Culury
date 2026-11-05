@@ -16,7 +16,7 @@ import { VersionHistory } from "./VersionHistory";
 import ShareDialog from "./ShareDialog";
 import { ScaleControls, useCookPrefs } from "./ScaleControls";
 import { StepText } from "./StepText";
-import { ingredientLine, recipeUnits, type Units } from "../../cooking";
+import { aiWeights, ingredientLine, recipeUnits, type Units } from "../../cooking";
 
 const card = "rounded-2xl bg-container p-5 sm:p-6";
 const inputClass = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 font-normal text-ink outline-none focus:border-action focus:ring-2 focus:ring-action/15";
@@ -125,6 +125,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
 
   if (error) return <Shell><p role="alert" className="rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p></Shell>;
   if (!r) return <Shell />;
+  const weights = aiWeights(r.nutrition);
 
   const setMine = async (change: Partial<Mine>) => {
     setR((x) => (x ? { ...x, me: { ...x.me, ...change } } : x)); // right away; the server confirms
@@ -423,7 +424,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
                         </li>
                       ) : (
                         <li key={k} className="border-b border-line py-2 last:border-0">
-                          <IngredientLine i={i} factor={prefs.factor} units={prefs.units} />
+                          <IngredientLine i={i} factor={prefs.factor} units={prefs.units} aiGrams={weights.get(i.raw.trim().toLowerCase())} />
                         </li>
                       )
                     )}
@@ -599,14 +600,15 @@ function Shell({ children }: { children?: React.ReactNode }) {
 }
 
 // "1½ cups flour, sifted": the amount in bold, at this scale and in these units
-export function IngredientLine({ i, factor = 1, units = "original" }: { i: Ingredient; factor?: number; units?: Units }) {
-  const line = ingredientLine(i, factor, units);
+export function IngredientLine({ i, factor = 1, units = "original", aiGrams }: { i: Ingredient; factor?: number; units?: Units; aiGrams?: number }) {
+  const line = ingredientLine(i, factor, units, aiGrams);
   if (line.plain) return <span>{line.name}</span>;
   return (
     <span>
       <strong className="font-semibold">{line.amount}</strong> {line.name}
       {line.note && <span className="text-subtle">, {line.note}</span>}
       {line.dried && <span className="text-subtle"> ({line.dried})</span>}
+      {line.was && <span className="text-subtle" title={line.estimate === "ai" ? "Weight estimated by AI (with the nutrition)" : "Approximate weight"}> ({line.was})</span>}
     </span>
   );
 }

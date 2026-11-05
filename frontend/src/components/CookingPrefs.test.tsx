@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CookingPrefs from "./CookingPrefs";
 import { SessionContext, type User } from "../session";
@@ -37,5 +37,18 @@ describe("cooking preferences", () => {
     expect(sw).toHaveAttribute("aria-checked", "false");
     await u.click(sw);
     await waitFor(() => expect(s.writes().at(-1)?.body).toEqual({ ingredientOrder: "alpha" }));
+  });
+
+  it("Measurements is its own section: As is / Metric / US pills, As is to start with", () => {
+    fakeServer({});
+    render(
+      <SessionContext.Provider value={{ user: { ...user, units: undefined }, setUser: () => {}, replaceToken: () => {}, signOut: () => {}, signOutEverywhere: async () => {} }}>
+        <CookingPrefs />
+      </SessionContext.Provider>,
+    );
+    const m = screen.getByRole("region", { name: "Measurements" });
+    expect(within(m).getAllByRole("radio").map((r) => r.textContent)).toEqual(["As is", "Metric", "US"]);
+    expect(within(m).getByRole("radio", { name: "As is" })).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("region", { name: "Cooking" })).queryByRole("radio")).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { convertTemperatures, ingredientLine, recipeUnits, type Units } from "../../cooking";
+import { aiWeights, convertTemperatures, ingredientLine, recipeUnits, type Units } from "../../cooking";
 import { formatMinutes, siteName, type Ingredient, type Nutrition, type Step } from "../../recipes";
 import { NutritionFacts } from "../recipes/NutritionCard";
 import { ScaleControls } from "../recipes/ScaleControls";
 import { ClockIcon, LinkOutIcon, Logo } from "../Icons";
-import { EXPORT_FORMATS } from "../../exportFormats";
+import { EXPORT_FORMATS, type ExportFormat } from "../../exportFormats";
+import { Popup } from "../Popup";
 
 // /share/rcp_…: a recipe someone shared, for anyone with the link. No sign-in, nothing to change;
 // it scales and switches units like the recipe page (just for whoever is looking).
@@ -34,6 +35,11 @@ export default function PublicRecipePage({ token }: { token: string }) {
   const [missing, setMissing] = useState(false);
   const [factor, setFactor] = useState(1);
   const [units, setUnits] = useState<Units>("original");
+  // ?download=pdf (the email's Download links): a window with that format picked
+  const [download, setDownload] = useState<ExportFormat | null>(() => {
+    const f = new URLSearchParams(window.location.search).get("download");
+    return EXPORT_FORMATS.some((x) => x.id === f) ? (f as ExportFormat) : null;
+  });
 
   useEffect(() => {
     // Plain fetch: this page never sends a sign-in
@@ -62,6 +68,7 @@ export default function PublicRecipePage({ token }: { token: string }) {
       </div>
     );
   if (!r) return <div className="mx-auto max-w-[960px] px-4">{brand}</div>;
+  const weights = aiWeights(r.nutrition);
 
   const times = ([["Prep", r.prepMinutes], ["Cook", r.cookMinutes], ["Total", r.totalMinutes]] as const).filter(([, m]) => m);
   const source = r.sourceName || siteName(r.sourceUrl);
@@ -124,7 +131,7 @@ export default function PublicRecipePage({ token }: { token: string }) {
             </div>
             <ul className="mt-3 divide-y divide-line">
               {r.ingredients.map((i, k) => {
-                const line = ingredientLine(i, factor, units);
+                const line = ingredientLine(i, factor, units, weights.get(i.raw.trim().toLowerCase()));
                 return (
                   <li key={k} className={`py-2.5 ${i.section ? "pt-4 text-sm font-semibold uppercase tracking-wide text-muted" : ""}`}>
                     {line.plain ? (
@@ -134,6 +141,7 @@ export default function PublicRecipePage({ token }: { token: string }) {
                         <strong className="font-semibold">{line.amount}</strong> {line.name}
                         {line.note && <span className="text-subtle">, {line.note}</span>}
                         {line.dried && <span className="text-subtle"> ({line.dried})</span>}
+                        {line.was && <span className="text-subtle" title={line.estimate === "ai" ? "Weight estimated by AI (with the nutrition)" : "Approximate weight"}> ({line.was})</span>}
                       </>
                     )}
                   </li>
@@ -181,6 +189,26 @@ export default function PublicRecipePage({ token }: { token: string }) {
         </ul>
       </section>
       <p className="mt-6 text-center text-sm text-muted">Shared from Culury, a self-hosted recipe manager.</p>
+      {download && (
+        <Popup title={`Download ${r.title}`} onClose={() => setDownload(null)}>
+          <div className="flex flex-col gap-3 p-5">
+            <div role="radiogroup" aria-label="Format" className="flex flex-col gap-2">
+              {EXPORT_FORMATS.map((f) => (
+                <label key={f.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 px-3 py-2.5 ${download === f.id ? "border-action bg-brand-subtle" : "border-line hover:border-strong"}`}>
+                  <input type="radio" name="download-format" checked={download === f.id} onChange={() => setDownload(f.id)} className="mt-1 accent-[var(--color-action)]" />
+                  <span>
+                    <span className="font-semibold">{f.name}</span>
+                    <span className="block text-xs text-subtle">{f.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <a href={`/api/public/share/${token}/export?format=${download}`} download className="self-start rounded-lg bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed">
+              Download {EXPORT_FORMATS.find((f) => f.id === download)!.name}
+            </a>
+          </div>
+        </Popup>
+      )}
     </div>
   );
 }

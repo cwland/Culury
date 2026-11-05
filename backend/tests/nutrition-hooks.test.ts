@@ -46,6 +46,16 @@ describe("editing a recipe by hand", () => {
     expect(nutritionAsks()).toHaveLength(0);
   });
 
+  it("worked out again but the AI couldn't: the old numbers are marked out of date", async () => {
+    await aiOn();
+    const id = await addQuietly();
+    t.ai.respond = () => reply(estimate);
+    await t.api("POST", `/api/recipes/${id}/nutrition`);
+    t.ai.respond = () => ({ status: 500, json: { error: "down" } });
+    await t.api("PATCH", `/api/recipes/${id}`, { ingredients: "3 lb ground beef\n1 can beans" });
+    expect(await nutritionOf(id)).toMatchObject({ calories: 410, outdated: true });
+  });
+
   it("numbers you typed in are kept and marked out of date", async () => {
     await aiOn();
     const id = await addQuietly();

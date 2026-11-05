@@ -1,3 +1,4 @@
+import { UnitsPills } from "./settingsUi";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { forgetAiStatus } from "../ai";
@@ -612,22 +613,13 @@ function Prefs({ user, owner, step }: StepProps & { user: User; owner: boolean }
       if (owner) await api("PUT", "/api/settings/features", { discoveryRefresh: feeds });
     })
   );
-  const choice = (value: string, title: string, hint: string) => (
-    <label className={`flex cursor-pointer flex-col rounded-xl border-2 px-3 py-2.5 ${units === value ? "border-action bg-brand-subtle" : "border-line hover:border-strong"}`}>
-      <input type="radio" name="units" aria-label={`${title}: ${hint}`} checked={units === value} onChange={() => setUnits(value)} className="sr-only" />
-      <span className="font-semibold">{title}</span>
-      <span className="text-xs text-subtle">{hint}</span>
-    </label>
-  );
   return (
     <>
       <div>
         <p className="font-semibold">📏 Measurements</p>
         <p className="text-sm text-subtle">How amounts show when you open a recipe. Every recipe also has a switch, and serving sizes scale the amounts on any recipe.</p>
-        <div role="radiogroup" aria-label="Measurements" className="mt-2 grid grid-cols-3 gap-2">
-          {choice("original", "As is", "The way it was written")}
-          {choice("metric", "Metric", "Grams, millilitres, °C")}
-          {choice("us", "US", "Cups, ounces, °F")}
+        <div className="mt-2">
+          <UnitsPills value={units as "original" | "metric" | "us"} onChange={setUnits} />
         </div>
       </div>
       <Switch on={awake} set={setAwake} title="Keep the screen awake in Cook mode" hint="While you cook from a recipe step by step, ticking off ingredients and steps, your phone or tablet won't go to sleep." />

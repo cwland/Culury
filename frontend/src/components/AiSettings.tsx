@@ -1,5 +1,4 @@
 import { forgetAiStatus } from "../ai";
-import { FeatureSwitch } from "./FeatureSwitch";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   DndContext,
@@ -928,22 +927,6 @@ export default function AiSettings() {
           )}
         </form>
       </Card>
-      <FeatureSwitch
-        feature="aiEnhance"
-        title="AI Enhance"
-        text="After a recipe is added, offer to check it with AI: fill gaps in the steps, catch ingredient mistakes, estimate nutrition and suggest categories and tags. You see the changes side by side and choose what to keep."
-        offText="Off: recipes aren't offered an AI check, and the AI check button is hidden."
-      >
-        {null}
-      </FeatureSwitch>
-      <FeatureSwitch
-        feature="autoNutrition"
-        title="Auto nutrition"
-        text="Work out nutrition by itself: for a new recipe once its AI check is done or skipped, and again whenever its ingredients change. Numbers you typed in are never replaced; the recipe says when they're out of date."
-        offText="Off: nutrition is only worked out when you press Estimate with AI. Out-of-date numbers are still pointed out."
-      >
-        {null}
-      </FeatureSwitch>
     </>
   );
 }

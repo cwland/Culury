@@ -2,6 +2,7 @@ import { FeatureSwitch } from "./FeatureSwitch";
 import ThemePicker from "./ThemePicker";
 import OrganizeSettings from "./OrganizeSettings";
 import { RecipeVersionSwitch } from "./RecipeVersionSwitch";
+import { AiEnhanceSwitch, AutoNutritionSwitch } from "./AiRecipeSwitches";
 import { SavedCopiesSwitch } from "./SavedCopiesSwitch";
 import { DiscoveryRefreshSwitch } from "./DiscoveryRefreshSwitch";
 import CookingPrefs from "./CookingPrefs";
@@ -101,6 +102,8 @@ function TabContent({ tab, owner }: { tab: Tab; owner: boolean }) {
         <>
           <CookingPrefs />
           <ReminderSettings />
+          {owner && <AiEnhanceSwitch />}
+          {owner && <AutoNutritionSwitch />}
           {owner && <RecipeVersionSwitch />}
           {owner && <SavedCopiesSwitch />}
           {owner && <PublicLinksSwitch />}

@@ -189,7 +189,9 @@ describe("the setup wizard", () => {
     const s = routes();
     const u = userEvent.setup();
     render(<SetupWizard user={owner} onDone={() => {}} start={4} />);
-    await u.click(within(step()).getByRole("radio", { name: /Metric/ }));
+    expect(within(step()).getAllByRole("radio").map((r) => r.textContent)).toEqual(["As is", "Metric", "US"]);
+    expect(within(step()).getByRole("radio", { name: "As is" })).toHaveAttribute("aria-checked", "true");
+    await u.click(within(step()).getByRole("radio", { name: "Metric" }));
     await u.click(within(step()).getByRole("switch", { name: /Keep the screen awake/ }));
     await u.click(within(step()).getByRole("switch", { name: /Check feeds by themselves/ }));
     await next(u);

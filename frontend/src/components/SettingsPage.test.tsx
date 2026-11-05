@@ -73,4 +73,17 @@ describe("where things are", () => {
     expect(within(panel("Profile")).queryByRole("region", { name: "Cooking", hidden: true })).toBeNull();
     expect(within(panel("Profile")).queryByRole("region", { name: "Meal plan email", hidden: true })).toBeNull();
   });
+
+  it("AI Enhance and Auto nutrition are on the Recipes tab", () => {
+    fakeServer({});
+    window.location.hash = "#/settings/recipes";
+    render(
+      <SessionContext.Provider value={session("owner")}>
+        <SettingsPage />
+      </SessionContext.Provider>
+    );
+    const panel = screen.getAllByRole("tabpanel", { hidden: true }).find((p) => p.getAttribute("aria-label") === "Recipes")!;
+    expect(within(panel).getByRole("region", { name: "AI Enhance", hidden: true })).toBeInTheDocument();
+    expect(within(panel).getByRole("region", { name: "Auto nutrition", hidden: true })).toBeInTheDocument();
+  });
 });

@@ -131,3 +131,60 @@ describe("fresh herbs: the dried amount, worked out at this size and in these un
     expect(ingredientLine(ing("2 tbsp butter", 2, "tbsp", "butter"), 1, "original").dried).toBeNull();
   });
 });
+
+describe("metric: cups and spoons to grams (weights table first, then the AI's)", () => {
+  const line = (q: number, unit: string, name: string, factor = 1, grams?: number | null) => ingredientLine(ing(q, unit, name), factor, "metric", grams);
+  it("a dry ingredient the table knows: about how many grams, with the measure it was", () => {
+    expect(line(2, "cup", "all-purpose flour")).toMatchObject({ amount: "≈240 g", was: "2 cups", estimate: "table" });
+    expect(line(2, "tbsp", "brown sugar")).toMatchObject({ amount: "≈25 g", was: "2 tbsp" });
+    expect(line(1, "cup", "butter, softened")).toMatchObject({ amount: "≈225 g", was: "1 cup" });
+    expect(line(1, "cup", "granulated sugar", 2)).toMatchObject({ amount: "≈400 g", was: "2 cups" });
+  });
+
+  it("the right one when names overlap", () => {
+    expect(line(1, "cup", "peanut butter").amount).toBe("≈260 g");
+    expect(line(1, "cup", "powdered sugar").amount).toBe("≈120 g");
+    expect(line(1, "cup", "almond flour").amount).toBe("≈95 g");
+    expect(line(1, "cup", "sour cream").amount).toBe("≈230 g");
+    expect(line(1, "cup", "milk chocolate chips").amount).toBe("≈170 g");
+  });
+
+  it("liquids stay in millilitres (and spoons of them stay spoons)", () => {
+    expect(line(1, "cup", "whole milk")).toMatchObject({ amount: "240 ml", was: null });
+    expect(line(2, "tbsp", "olive oil")).toMatchObject({ amount: "2 tbsp", was: null });
+    expect(line(1, "cup", "buttermilk").amount).toBe("240 ml");
+  });
+
+  it("small amounts (under 5 g) stay in spoons: a scale can't read them", () => {
+    expect(line(1, "tsp", "baking soda")).toMatchObject({ amount: "1 tsp", was: null });
+    expect(line(0.5, "tsp", "salt")).toMatchObject({ amount: "½ tsp", was: null });
+  });
+
+  it("not in the table: the AI's weight for that line (from nutrition), scaled", () => {
+    expect(line(2, "tbsp", "chili powder", 1, 16)).toMatchObject({ amount: "≈16 g", was: "2 tbsp", estimate: "ai" });
+    expect(line(2, "tbsp", "chili powder", 2, 16)).toMatchObject({ amount: "≈30 g", was: "4 tbsp" });
+    // nothing known: as before
+    expect(line(2, "tbsp", "chili powder")).toMatchObject({ amount: "2 tbsp", was: null, estimate: null });
+    expect(line(1, "cup", "mystery mix").amount).toBe("240 ml");
+  });
+
+  it("counted things never turn into grams", () => {
+    expect(ingredientLine(ing(2, null, "eggs"), 1, "metric", 100)).toMatchObject({ amount: "2", was: null });
+    expect(ingredientLine(ing(3, "clove", "garlic"), 1, "metric", 15)).toMatchObject({ was: null });
+  });
+
+  it("as is and US: unchanged", () => {
+    expect(ingredientLine(ing(2, "cup", "all-purpose flour"), 1, "original")).toMatchObject({ amount: "2 cups", was: null });
+    expect(ingredientLine(ing(2, "cup", "all-purpose flour"), 1, "us")).toMatchObject({ amount: "2 cups", was: null });
+  });
+});
+
+describe("US: grams of a dry ingredient to cups and spoons", () => {
+  it("the table knows it: about how many cups, with the weight it was", () => {
+    expect(ingredientLine(ing(250, "g", "all-purpose flour"), 1, "us")).toMatchObject({ amount: "≈2 cups", was: "250 g", estimate: "table" });
+    expect(ingredientLine(ing(25, "g", "sugar"), 1, "us")).toMatchObject({ amount: "≈2 tbsp", was: "25 g" });
+  });
+  it("not in the table: ounces, as before", () => {
+    expect(ingredientLine(ing(250, "g", "ground beef"), 1, "us")).toMatchObject({ amount: "9 oz", was: null });
+  });
+});

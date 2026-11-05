@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, downloadFile, fetchFile, getToken } from "../../api";
 import { Popup } from "../Popup";
 import { EXPORT_FORMATS, type ExportFormat } from "../../exportFormats";
+import { EmailNeeded, useEmailReady } from "../../email";
 
 // Open a server page (with the sign-in) in a new tab and print it: the print dialog's
 // "Save as PDF" makes the PDF. The tab is opened first, so the click isn't treated as a pop-up.
@@ -26,12 +27,13 @@ interface Link {
 }
 type Attach = "none" | ExportFormat;
 
-// Share a recipe: its public link (copy it, the share sheet, your mail app), an email sent from
-// Culury, a file of it to download, or print it. "Attach a file" goes with Share…, Mail app and
-// Send from Culury.
+// Share a recipe, in two tabs. Link & downloads: its public link (copy it, the share sheet, your mail
+// app, with a file if you like), a file of it to download, or print it. Email: sent from Culury
+// (to, note, then the file to attach), with a warning when email isn't set up.
 export default function ShareDialog({ recipe, onClose }: { recipe: { id: number; title: string }; onClose: () => void }) {
   const [link, setLink] = useState<Link | null>(null);
   const [attach, setAttach] = useState<Attach>("none");
+  const [tab, setTab] = useState<"link" | "email">("link");
   const [note, setNoteMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const exportPath = (f: ExportFormat) => `/api/recipes/${recipe.id}/export?format=${f}`;
   const failed = (e: unknown) => setNoteMsg({ ok: false, text: (e as Error).message });
@@ -83,68 +85,70 @@ export default function ShareDialog({ recipe, onClose }: { recipe: { id: number;
   const button = "rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-pressed";
   return (
     <Popup title={`Share ${recipe.title}`} onClose={onClose}>
-      <div className="flex flex-col gap-5 p-5">
-        <PublicLink recipeId={recipe.id} link={link} setLink={setLink} onError={failed}>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void copy()} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
-              Copy link
-            </button>
-            {canShare && (
-              <button type="button" onClick={() => void share()} className={button}>
-                Share…
-              </button>
-            )}
-            <button type="button" onClick={() => void mailApp()} className={button}>
-              Mail app
-            </button>
-          </div>
-        </PublicLink>
-
-        <div className="flex flex-col gap-1 text-sm">
-          <label htmlFor="share-attach" className="font-semibold text-subtle">
-            Attach a file
-          </label>
-          <select id="share-attach" aria-describedby="share-attach-hint" value={attach} onChange={(e) => setAttach(e.target.value as Attach)} className="rounded-lg border border-line bg-page px-3 py-2.5 font-normal text-ink">
-            <option value="none">None, just the link</option>
-            {EXPORT_FORMATS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <span id="share-attach-hint" className="text-subtle">
-            Goes with {canShare ? "Share…, " : ""}Mail app and Send from Culury. The recipe's notes stay out.
-          </span>
-        </div>
-        {note && (
-          <p role={note.ok ? "status" : "alert"} className={`-mt-2 text-sm font-semibold ${note.ok ? "text-success" : "text-error"}`}>
-            {note.text}
-          </p>
-        )}
-
-        <SendEmail recipeId={recipe.id} attach={attach} />
-
-        <section aria-label="Download" className="flex flex-col gap-2 border-t border-line pt-4">
-          <h3 className="font-bold">Download</h3>
-          <div className="flex flex-wrap gap-2">
-            {EXPORT_FORMATS.map((f) => (
-              <button key={f.id} type="button" title={f.hint} onClick={() => void downloadFile(exportPath(f.id)).catch(failed)} className={button}>
-                {f.name}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-subtle">Downloads from here include the recipe's notes; the public link's leave them out.</p>
-        </section>
-        <button type="button" className="-mt-2 self-start text-sm font-semibold text-subtle hover:underline" onClick={() => void printPage(`/api/recipes/${recipe.id}/print`).catch(failed)}>
-          Print it
-        </button>
+      <div role="tablist" aria-label="Share" className="flex gap-1 border-b border-line px-5 pt-3">
+        {(
+          [
+            ["link", "Link & downloads"],
+            ["email", "Email"],
+          ] as const
+        ).map(([id, label]) => (
+          <button key={id} type="button" role="tab" id={`share-tab-${id}`} aria-selected={tab === id} aria-controls={`share-panel-${id}`} onClick={() => setTab(id)} className={`-mb-px rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold ${tab === id ? "border-action text-action" : "border-transparent text-subtle hover:text-ink"}`}>
+            {label}
+          </button>
+        ))}
       </div>
+      {tab === "link" ? (
+        <div role="tabpanel" id="share-panel-link" aria-labelledby="share-tab-link" className="flex flex-col gap-5 p-5">
+          <PublicLink recipeId={recipe.id} link={link} setLink={setLink} onError={failed}>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void copy()} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-pressed">
+                Copy link
+              </button>
+              {canShare && (
+                <button type="button" onClick={() => void share()} className={button}>
+                  Share…
+                </button>
+              )}
+              <button type="button" onClick={() => void mailApp()} className={button}>
+                Mail app
+              </button>
+            </div>
+            <AttachPick id="share-attach" value={attach} onChange={setAttach} hint={`Goes with ${canShare ? "Share… and " : ""}Mail app. The recipe's notes stay out.`} />
+          </PublicLink>
+          {note && (
+            <p role={note.ok ? "status" : "alert"} className={`-mt-2 text-sm font-semibold ${note.ok ? "text-success" : "text-error"}`}>
+              {note.text}
+            </p>
+          )}
+
+          <section aria-label="Download" className="flex flex-col gap-2 border-t border-line pt-4">
+            <h3 className="font-bold">Download</h3>
+            <div className="flex flex-wrap gap-2">
+              {EXPORT_FORMATS.map((f) => (
+                <button key={f.id} type="button" title={f.hint} onClick={() => void downloadFile(exportPath(f.id)).catch(failed)} className={button}>
+                  {f.name}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-subtle">Downloads from here include the recipe's notes; the public link's leave them out.</p>
+          </section>
+          <button type="button" className="-mt-2 self-start text-sm font-semibold text-subtle hover:underline" onClick={() => void printPage(`/api/recipes/${recipe.id}/print`).catch(failed)}>
+            Print it
+          </button>
+        </div>
+      ) : (
+        <div role="tabpanel" id="share-panel-email" aria-labelledby="share-tab-email" className="p-5">
+          <SendEmail recipeId={recipe.id} />
+        </div>
+      )}
     </Popup>
   );
 }
 
 // Send from Culury: the email (photo, Open the recipe button, the recipe), with the chosen file
-function SendEmail({ recipeId, attach }: { recipeId: number; attach: Attach }) {
+function SendEmail({ recipeId }: { recipeId: number }) {
+  const ready = useEmailReady();
+  const [attach, setAttach] = useState<Attach>("none");
   const [to, setTo] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -165,17 +169,19 @@ function SendEmail({ recipeId, attach }: { recipeId: number; attach: Attach }) {
   };
   const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2.5 font-normal text-ink outline-none focus:border-action focus:ring-2 focus:ring-action/15";
   return (
-    <form aria-label="Send from Culury" onSubmit={send} className="flex flex-col gap-3 border-t border-line pt-4">
+    <form aria-label="Send from Culury" onSubmit={send} className="flex flex-col gap-3">
       <h3 className="font-bold">Send from Culury</h3>
+      {ready === false && <EmailNeeded what="Culury can't send this yet" />}
       <label className="text-sm font-semibold text-subtle">
         To
-        <input type="text" inputMode="email" autoComplete="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="mom@example.com (commas for more)" className={field} />
+        <input id="share-to" type="text" inputMode="email" autoComplete="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="mom@example.com (commas for more)" className={field} />
       </label>
       <label className="text-sm font-semibold text-subtle">
         Note <span className="font-normal">(optional)</span>
-        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="We loved this one!" className={field} />
+        <textarea id="share-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="We loved this one!" className={field} />
       </label>
-      <button type="submit" disabled={busy || !to.trim()} className="self-start rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-60">
+      <AttachPick id="share-email-attach" value={attach} onChange={setAttach} hint="Sent with the email. The recipe's notes stay out." />
+      <button type="submit" disabled={busy || ready === false || !to.trim()} className="self-start rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-60">
         {busy ? "Sending…" : "Send"}
       </button>
       {msg && (
@@ -184,6 +190,28 @@ function SendEmail({ recipeId, attach }: { recipeId: number; attach: Attach }) {
         </p>
       )}
     </form>
+  );
+}
+
+// "Attach a file": none, or one of the export formats
+function AttachPick({ id, value, onChange, hint }: { id: string; value: Attach; onChange: (a: Attach) => void; hint: string }) {
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <label htmlFor={id} className="font-semibold text-subtle">
+        Attach a file
+      </label>
+      <select id={id} aria-describedby={`${id}-hint`} value={value} onChange={(e) => onChange(e.target.value as Attach)} className="rounded-lg border border-line bg-page px-3 py-2.5 font-normal text-ink">
+        <option value="none">None, just the link</option>
+        {EXPORT_FORMATS.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.name}
+          </option>
+        ))}
+      </select>
+      <span id={`${id}-hint`} className="text-subtle">
+        {hint}
+      </span>
+    </div>
   );
 }
 

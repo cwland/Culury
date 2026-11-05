@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NutritionCard } from "./NutritionCard";
-import { fakeServer } from "../../test/fakeServer";
+import { fakeServer, ndjsonStream } from "../../test/fakeServer";
 import { forgetAiStatus } from "../../ai";
 import type { Nutrition } from "../../recipes";
 
@@ -58,21 +58,21 @@ describe("nutrition facts", () => {
     expect(screen.queryByText("No nutrition facts yet.")).toBeNull();
   });
 
-  it("numbers you typed in that are out of date: says so, and offers to estimate them", async () => {
+  it("out of date (the recipe changed since): says so, and Re-calculate nutrition updates it", async () => {
     const server = fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }), "POST /api/recipes/7/nutrition": () => facts() });
     const onChange = vi.fn();
     const u = userEvent.setup();
     card(facts({ source: "you", outdated: true }), { onChange });
-    expect(screen.getByText(/The ingredients changed since these numbers were entered/)).toBeInTheDocument();
-    await u.click(await screen.findByRole("button", { name: "Re-analyze with AI" }));
+    expect(screen.getByRole("note")).toHaveTextContent("This recipe has been updated since nutrition was entered, so it may be out of date.");
+    await u.click(await screen.findByRole("button", { name: "Re-calculate nutrition" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(facts()));
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/nutrition"]);
-    expect(onChange).toHaveBeenCalledWith(facts());
   });
 
-  it("estimated numbers that are out of date say so too", () => {
-    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+  it("out of date without AI: says so, and points to editing it", async () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: false, photos: false, enhance: false }) });
     card(facts({ outdated: true }));
-    expect(screen.getByText(/The ingredients changed since these numbers were worked out/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(/updated since nutrition was calculated, so it may be out of date\. Edit the numbers/);
   });
 
   it("typing them in includes added sugars and the serving size", async () => {
@@ -89,26 +89,62 @@ describe("nutrition facts", () => {
 });
 
 describe("nutrition panel buttons", () => {
-  it("edit and re-analyze are icons at the top, with hover text; nothing at the bottom", async () => {
+  it("Re-calculate nutrition is a button at the top (it's been worked out before); Edit is the pencil", async () => {
     fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
     card(facts());
     const top = screen.getByRole("toolbar", { name: "Nutrition actions" });
-    const again = await within(top).findByRole("button", { name: "Re-analyze with AI" });
-    const edit = within(top).getByRole("button", { name: "Edit nutrition" });
-    expect(again).toHaveAttribute("title", "Re-analyze with AI");
-    expect(edit).toHaveAttribute("title", "Edit nutrition");
-    expect(again.textContent?.trim()).toBe("");
-    expect(edit.textContent?.trim()).toBe("");
-    expect(screen.queryByRole("button", { name: "Estimate again" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect((await within(top).findByRole("button", { name: "Re-calculate nutrition" })).textContent).toMatch(/Re-calculate nutrition/);
+    expect(within(top).getByRole("button", { name: "Edit nutrition" })).toHaveAttribute("title", "Edit nutrition");
   });
 
-  it("re-analyze only shows when AI is set up; edit always does", async () => {
+  it("none yet: Calculate nutrition", async () => {
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }) });
+    card(null);
+    expect(await screen.findByRole("button", { name: "Calculate nutrition" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Re-calculate nutrition" })).toBeNull();
+  });
+
+  it("AI off or not set up: no AI buttons; edit and Type it in still are", async () => {
     fakeServer({ "GET /api/ai/status": () => ({ ready: false, photos: false, enhance: false }) });
-    card(facts());
+    const { unmount } = card(facts());
     const top = screen.getByRole("toolbar", { name: "Nutrition actions" });
     await waitFor(() => expect(within(top).getByRole("button", { name: "Edit nutrition" })).toBeInTheDocument());
-    expect(within(top).queryByRole("button", { name: "Re-analyze with AI" })).toBeNull();
+    expect(within(top).queryByRole("button", { name: /calculate nutrition/i })).toBeNull();
+    unmount();
+    card(null);
+    expect(screen.getByRole("button", { name: "Type it in" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /calculate nutrition/i })).toBeNull();
+  });
+
+  it("calculating: a popup with a spinner and one line of what it's doing; it closes and updates when done", async () => {
+    const s = ndjsonStream();
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }), "POST /api/recipes/7/nutrition": () => s.response });
+    const onChange = vi.fn();
+    const u = userEvent.setup();
+    card(facts(), { onChange });
+    await u.click(await screen.findByRole("button", { name: "Re-calculate nutrition" }));
+    const dlg = await screen.findByRole("dialog", { name: "Calculating nutrition" });
+    expect(within(dlg).getByRole("progressbar")).toBeInTheDocument();
+    s.push({ type: "step", text: "Reading 2 ingredients" });
+    expect(await within(dlg).findByRole("status")).toHaveTextContent("Reading 2 ingredients");
+    s.push({ type: "step", text: "Asking OpenAI (tiny)…" });
+    await waitFor(() => expect(within(dlg).getByRole("status")).toHaveTextContent("Asking OpenAI (tiny)…"));
+    s.push({ type: "result", nutrition: facts({ calories: 500 }) });
+    s.end();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Calculating nutrition" })).toBeNull());
+    expect(onChange).toHaveBeenCalledWith(facts({ calories: 500 }));
+  });
+
+  it("it didn't work: the popup closes and says why", async () => {
+    const s = ndjsonStream();
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }), "POST /api/recipes/7/nutrition": () => s.response });
+    const u = userEvent.setup();
+    card(facts());
+    await u.click(await screen.findByRole("button", { name: "Re-calculate nutrition" }));
+    s.push({ type: "error", status: 502, error: "The AI service didn't answer." });
+    s.end();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The AI service didn't answer.");
+    expect(screen.queryByRole("dialog", { name: "Calculating nutrition" })).toBeNull();
   });
 
   it("Edit nutrition opens the form", async () => {
@@ -119,4 +155,3 @@ describe("nutrition panel buttons", () => {
     expect(await screen.findByRole("dialog", { name: "Nutrition per serving" })).toBeInTheDocument();
   });
 });
-

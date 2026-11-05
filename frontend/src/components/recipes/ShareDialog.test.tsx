@@ -58,7 +58,7 @@ describe("downloads (Share)", () => {
 });
 
 describe("ways to send it (Share)", () => {
-  const routes = (link = A) => ({ "GET /api/recipes/7/share-link": () => link, "POST /api/recipes/7/email": () => ({ sent: 1 }), "GET /api/recipes/7/export": () => new Response("%PDF-1.7 file", { headers: { "content-type": "application/pdf", "content-disposition": 'attachment; filename="chili.pdf"' } }) });
+  const routes = (link = A, emailOn = true) => ({ "GET /api/settings/email": () => ({ active: emailOn }), "GET /api/recipes/7/share-link": () => link, "POST /api/recipes/7/email": () => ({ sent: 1 }), "GET /api/recipes/7/export": () => new Response("%PDF-1.7 file", { headers: { "content-type": "application/pdf", "content-disposition": 'attachment; filename="chili.pdf"' } }) });
   const open = async () => {
     const u = userEvent.setup();
     render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
@@ -125,24 +125,53 @@ describe("ways to send it (Share)", () => {
     go.mockRestore();
   });
 
-  it("Send from Culury: to, note and the file you chose", async () => {
+  it("two tabs: Link & downloads (to start with) and Email", async () => {
+    fakeServer(routes());
+    const u = await open();
+    const tabs = screen.getByRole("tablist", { name: "Share" });
+    expect(within(tabs).getAllByRole("tab").map((x) => x.textContent)).toEqual(["Link & downloads", "Email"]);
+    expect(within(tabs).getByRole("tab", { name: "Link & downloads" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Download" })).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Send from Culury" })).toBeNull();
+    await u.click(within(tabs).getByRole("tab", { name: "Email" }));
+    expect(screen.getByRole("form", { name: "Send from Culury" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Download" })).toBeNull();
+  });
+
+  it("Send from Culury: to and note, then the file to attach, then Send", async () => {
     const server = fakeServer(routes());
     const u = await open();
-    await u.selectOptions(screen.getByRole("combobox", { name: "Attach a file" }), "paprika");
+    await u.click(screen.getByRole("tab", { name: "Email" }));
     const form = screen.getByRole("form", { name: "Send from Culury" });
+    const order = [...form.querySelectorAll("input, textarea, select, button")].map((el) => el.getAttribute("aria-label") || el.id || el.textContent);
+    expect(order).toEqual(["share-to", "share-note", "share-email-attach", "Send"]);
     await u.type(within(form).getByLabelText("To"), "mom@example.com");
     await u.type(within(form).getByLabelText(/Note/), "Try it!");
+    await u.selectOptions(within(form).getByRole("combobox", { name: "Attach a file" }), "paprika");
     await u.click(within(form).getByRole("button", { name: "Send" }));
     await waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/email")?.body).toEqual({ to: "mom@example.com", note: "Try it!", attach: "paprika" }));
     expect(await within(form).findByText("Sent to mom@example.com.")).toBeInTheDocument();
   });
 
-  it("with public links off: Copy, Share… and Mail app need the link, so only Send from Culury is offered", async () => {
+  it("email not set up: the Email tab still opens, warns, links to the setting, and won't send", async () => {
+    fakeServer(routes(A, false));
+    const u = await open();
+    await u.click(screen.getByRole("tab", { name: "Email" }));
+    expect(await screen.findByText(/Email isn't set up yet/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Settings › Email/ })).toHaveAttribute("href", "#/settings/email");
+    const form = screen.getByRole("form", { name: "Send from Culury" });
+    await u.type(within(form).getByLabelText("To"), "mom@example.com");
+    expect(within(form).getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("with public links off: Copy, Share… and Mail app need the link, so they aren't offered; email still is", async () => {
     setShare(vi.fn(async () => {}));
     fakeServer(routes({ ...A, on: false }));
+    const u = userEvent.setup();
     render(<ShareDialog recipe={{ id: 7, title: "Chili" }} onClose={() => {}} />);
     await screen.findByText(/Public share links are off/);
     for (const name of ["Copy link", "Share…", "Mail app"]) expect([name, screen.queryByRole("button", { name })]).toEqual([name, null]);
+    await u.click(screen.getByRole("tab", { name: "Email" }));
     expect(screen.getByRole("form", { name: "Send from Culury" })).toBeInTheDocument();
     setShare(undefined);
   });

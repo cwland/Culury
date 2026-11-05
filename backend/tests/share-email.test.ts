@@ -39,11 +39,23 @@ describe("the shared-recipe email", () => {
     expect(m.html + m.text).not.toContain("chocolate");
   });
 
+  it("at the bottom: View the recipe, and a link for each format (opens the public page ready to download it)", async () => {
+    const r = await add();
+    await send(r.id, {});
+    const m = t.sent[0];
+    const link = (await linkOf(r.id)).url;
+    expect(m.html).toMatch(new RegExp(`<a href="${link}"[^>]*>View the recipe</a>`));
+    for (const [id, name] of [["pdf", "PDF"], ["jsonld", "JSON-LD"], ["paprika", "Paprika"], ["mealmaster", "Meal-Master"], ["cookml", "CookML"]])
+      expect(m.html).toMatch(new RegExp(`<a href="${link}\\?download=${id}"[^>]*>${name}</a>`));
+    expect(m.text).toContain(`PDF: ${link}?download=pdf`);
+  });
+
   it("with public links off: no button (there's nothing to open), the recipe is all there", async () => {
     const r = await add();
     await t.api("PUT", "/api/settings/features", { publicLinks: false });
     await send(r.id, {});
     expect(t.sent[0].html).not.toContain("Open the recipe");
+    expect(t.sent[0].html).not.toContain("?download=");
     expect(t.sent[0].html).toContain("Brown the beef.");
   });
 

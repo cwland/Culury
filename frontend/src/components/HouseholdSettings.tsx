@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { EmailNeeded, useEmailReady } from "../email";
 import { ApiError, api } from "../api";
 import { initialsOf, useSession } from "../session";
 import { Card, field, primaryButton } from "./settingsUi";
@@ -155,6 +156,8 @@ function AddMember({ onAdded }: { onAdded: (m: Member, invited: boolean) => void
     }
   };
 
+  const emailReady = useEmailReady();
+  const noEmail = how === "invite" && emailReady === false;
   const tab = (on: boolean) => `rounded-md px-3 py-1.5 text-sm font-semibold ${on ? "bg-container shadow-sm" : "text-subtle"}`;
   return (
     <Card title="Add someone" description="Give them a password to sign in with (they can change it in Settings › Security), or email them an invite to choose their own.">
@@ -167,6 +170,7 @@ function AddMember({ onAdded }: { onAdded: (m: Member, invited: boolean) => void
             Email an invite
           </button>
         </div>
+        {noEmail && <EmailNeeded what="invites can't be sent (you can still set a password for them)" />}
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-medium text-subtle">
             Username (for signing in)
@@ -198,7 +202,7 @@ function AddMember({ onAdded }: { onAdded: (m: Member, invited: boolean) => void
           </span>
         </label>
         {(error || errors.form || errors[""]) && <p role="alert" className="text-error">{error || errors.form || errors[""]}</p>}
-        <button type="submit" disabled={busy || !form.username.trim()} className={`${primaryButton} self-start`}>
+        <button type="submit" disabled={busy || noEmail || !form.username.trim()} className={`${primaryButton} self-start`}>
           {busy ? "Adding…" : how === "invite" ? "Send invite" : "Add to household"}
         </button>
       </form>

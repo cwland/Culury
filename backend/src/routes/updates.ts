@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { users } from "../db/schema.js";
 import { HttpError } from "../lib/errors.js";
+import { EVERY } from "../lib/updates.js";
 
 // Release watcher (the bar at the top of the app, and Settings > Data > Updates). Signed in only.
 export default async function updateRoutes(app: FastifyInstance) {
@@ -16,12 +17,12 @@ export default async function updateRoutes(app: FastifyInstance) {
     return { ...s, repo: updates.repo, dismissed: u?.dismissed ?? null };
   };
 
-  // The latest release. check=1 (after signing in, and every 3 hours from the page): ask GitHub
-  // again unless someone did in the last 10 minutes.
+  // The latest release. check=1 (after signing in, and each hour from the page): ask GitHub
+  // again if it's due (Settings › Data › Updates: how often)
   app.get("/api/updates", async (req) => {
     const userId = requireLogin(req);
     const { check } = z.object({ check: z.enum(["0", "1"]).optional() }).parse(req.query);
-    return view(userId, check === "1" ? await updates.check({ maxAgeMs: 10 * 60 * 1000 }) : await updates.state());
+    return view(userId, check === "1" ? await updates.checkIfDue() : await updates.state());
   });
 
   // Settings > Data > Check now
@@ -32,9 +33,9 @@ export default async function updateRoutes(app: FastifyInstance) {
 
   app.put("/api/updates/settings", async (req) => {
     const userId = requireLogin(req);
-    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body);
-    const s = await updates.setEnabled(enabled);
-    return view(userId, enabled ? await updates.check() : s);
+    const body = z.object({ enabled: z.boolean(), every: z.enum(EVERY) }).partial().strict().parse(req.body);
+    const s = body.every ? await updates.setEvery(body.every) : await updates.setEnabled(body.enabled ?? true);
+    return view(userId, s.enabled ? await updates.check() : s);
   });
 
   // Dismiss the bar for this version (it comes back for the next one)

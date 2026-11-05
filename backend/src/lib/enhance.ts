@@ -31,7 +31,7 @@ export interface Enhancement {
 // Only when AI is ready and AI Enhance is on (Settings › AI)
 export async function requireEnhance(db: Db, ai: AiService) {
   if (!(await ai.active("recipe"))) throw new HttpError(409, "AI Enhance needs AI. Turn it on in Settings › AI.");
-  if (!(await isOn(db, "aiEnhance"))) throw new HttpError(409, "AI Enhance is turned off. Turn it on in Settings › AI.");
+  if (!(await isOn(db, "aiEnhance"))) throw new HttpError(409, "AI Enhance is turned off. Turn it on in Settings › Recipes.");
 }
 
 // Lines as the person sees them; a heading is "# Heading" (the editor and the save both read it back)

@@ -1,3 +1,4 @@
+import { setFeatures } from "../lib/features.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
@@ -144,6 +145,8 @@ export default async function settingsRoutes(app: FastifyInstance) {
   app.put("/api/settings/ai", async (req) => {
     requireLogin(req);
     const v = aiSettings.parse(req.body);
+    // The first time AI is set up, AI Enhance and Auto nutrition come on with it
+    const first = !(await app.ai.stored())?.services.length;
     const clean = (sv: z.infer<typeof service>) => ({ ...sv, baseUrl: sv.baseUrl ? sv.baseUrl.replace(/\/+$/, "") : null, apiKey: sv.apiKey === null ? "" : sv.apiKey });
     if ("services" in v) {
       await app.ai.save({ ...v, services: v.services.map(clean) });
@@ -154,6 +157,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
       const rest = (current?.services.slice(1) ?? []).map((sv) => ({ ...sv, apiKey: undefined }));
       await app.ai.save({ enabled, mode, maxPerRun, timeoutSec, askNextOnNoMatch, services: [{ ...clean({ ...first, enabled: true }), id: current?.services[0]?.id }, ...rest] });
     }
+    if (first && (await app.ai.stored())?.services.length) await setFeatures(app.db, { ai: true, aiEnhance: true, autoNutrition: true });
     return { settings: await app.ai.summary() };
   });
 

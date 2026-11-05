@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { api } from "../../api";
+import { api, postWithProgress } from "../../api";
+import { WorkingPopup } from "../WorkingPopup";
 import { useAiStatus } from "../../ai";
 import { pointsEstimate, type Nutrition } from "../../recipes";
 import { Popup } from "../Popup";
 import { EditIcon, WandIcon } from "../Icons";
+
+const aiButton = "inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60";
 
 const iconButton = "flex size-9 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink disabled:opacity-60";
 
@@ -24,13 +27,15 @@ const fmt = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
 export function NutritionCard({ recipeId, servings, value, updating, onChange }: { recipeId: number; servings: number | null; value: Nutrition | null; updating?: boolean; onChange: (n: Nutrition | null) => void }) {
   const ai = useAiStatus();
   const [busy, setBusy] = useState(false);
+  const [line, setLine] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const estimate = async () => {
     setBusy(true);
     setError("");
     try {
-      onChange(await api<Nutrition>("POST", `/api/recipes/${recipeId}/nutrition`));
+      setLine("Starting…");
+      onChange(await postWithProgress<Nutrition>(`/api/recipes/${recipeId}/nutrition`, "nutrition", setLine));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -47,8 +52,9 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
         {value && (
           <div role="toolbar" aria-label="Nutrition actions" className="ml-auto flex items-center gap-1">
             {ai.ready && (
-              <button type="button" aria-label="Re-analyze with AI" title="Re-analyze with AI" onClick={() => void estimate()} disabled={busy} className={iconButton}>
-                <WandIcon className={`size-4 ${busy ? "animate-pulse" : ""}`} />
+              <button type="button" onClick={() => void estimate()} disabled={busy} className={aiButton}>
+                <WandIcon className="size-4" />
+                Re-calculate nutrition
               </button>
             )}
             <button type="button" aria-label="Edit nutrition" title="Edit nutrition" onClick={() => setEditing(true)} className={iconButton}>
@@ -57,11 +63,7 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
           </div>
         )}
       </div>
-      {busy && value && (
-        <p role="status" className="mt-2 text-sm font-semibold text-action">
-          Working it out…
-        </p>
-      )}
+      {busy && <WorkingPopup title="Calculating nutrition" line={line} />}
       {updating && (
         <p role="status" className="mt-2 text-sm font-semibold text-action">
           Updating nutrition…
@@ -73,8 +75,9 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
           <p className="mt-2 text-subtle">No nutrition facts yet.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {ai.ready && (
-              <button type="button" onClick={() => void estimate()} disabled={busy} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-                {busy ? "Working it out…" : "Estimate with AI"}
+              <button type="button" onClick={() => void estimate()} disabled={busy} className={aiButton}>
+                <WandIcon className="size-4" />
+                Calculate nutrition
               </button>
             )}
             <button type="button" onClick={() => setEditing(true)} className="rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:bg-pressed">
@@ -86,8 +89,9 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
       ) : (
         <>
           {value.outdated && (
-            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-sm">
-              The ingredients changed since these numbers were {value.source === "you" ? "entered" : "worked out"}. {ai.ready ? "Re-analyze them with AI, or edit them (the buttons at the top)." : "Edit them to match (the pencil at the top)."}
+            <p role="note" className="mt-3 rounded-lg bg-warning/15 px-3 py-2 text-sm">
+              <strong className="font-semibold">This recipe has been updated since nutrition was {value.source === "you" ? "entered" : "calculated"}, so it may be out of date.</strong>{" "}
+              {ai.ready ? "Re-calculate nutrition to update it, or edit the numbers (the pencil)." : "Edit the numbers to match (the pencil), or turn on AI in Settings › AI to calculate them."}
             </p>
           )}
           {/* the label, with each ingredient's calories beside it when there's room (stacked on phones) */}

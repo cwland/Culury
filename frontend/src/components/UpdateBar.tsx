@@ -3,10 +3,14 @@ import { api } from "../api";
 import { isNewer } from "../changelog";
 import { APP_VERSION } from "../version";
 import { Popup } from "./Popup";
-import { SettingCard, Toggle } from "./settingsUi";
+import { SettingCard } from "./settingsUi";
+
+export type Every = "hour" | "6h" | "day" | "week" | "month" | "never";
+const EVERY: [Every, string][] = [["hour", "Every hour"], ["6h", "Every 6 hours"], ["day", "Every day"], ["week", "Every week"], ["month", "Every month"], ["never", "Never"]];
 
 export interface UpdateInfo {
   enabled: boolean;
+  every?: Every;
   latest: { version: string; name: string; notes: string; url: string; publishedAt: string | null } | null;
   checkedAt: string | null;
   error: string | null;
@@ -14,10 +18,10 @@ export interface UpdateInfo {
   repo: string;
 }
 
-const CHECK_EVERY_MS = 3 * 60 * 60 * 1000;
+const CHECK_EVERY_MS = 60 * 60 * 1000; // the server says whether a check is due (your choice of how often)
 
 // Release watcher: a slim bar fixed across the top of the app when a newer release is out.
-// Checks after signing in and every 3 hours; dismissed, it stays away until the next version.
+// Asks after signing in and each hour (checked as often as chosen in Settings); dismissed, it stays away until the next version.
 // While it shows, --top-bar holds its height so the side nav and sticky headers sit below it.
 export default function UpdateBar() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
@@ -152,7 +156,7 @@ function inline(s: string): ReactNode[] {
   return out;
 }
 
-// Settings › Data › Updates: the on/off switch, what was found, and Check now
+// Settings › Data › Updates: how often (or never), what was found, and Check now
 export function UpdatesSettings() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -186,8 +190,18 @@ export function UpdatesSettings() {
   return (
     <SettingCard
       title="Updates"
-      text={<>Look for a newer release of Culury on GitHub after you sign in and every 3 hours, and show a bar at the top of the app when one is out.</>}
-      toggle={info && <Toggle label="Check for updates" checked={info.enabled} disabled={busy} onChange={(enabled) => run(() => api("PUT", "/api/updates/settings", { enabled }))} />}
+      text={<>Look for a newer release of Culury on GitHub, and show a bar at the top of the app when one is out. Once a day is plenty: releases don't come out more often than that.</>}
+      toggle={
+        info && (
+          <select aria-label="Check for updates" value={info.enabled ? (info.every ?? "day") : "never"} disabled={busy} onChange={(e) => void run(() => api("PUT", "/api/updates/settings", { every: e.target.value }))} className="rounded-lg border border-line bg-page px-3 py-2 text-sm font-semibold outline-none focus:border-action">
+            {EVERY.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        )
+      }
     >
       {info?.enabled && (
         <div className="flex flex-col gap-3 text-sm">
