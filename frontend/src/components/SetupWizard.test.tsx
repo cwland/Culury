@@ -17,8 +17,6 @@ const routes = (more: Record<string, any> = {}) =>
     "GET /api/auth/passkeys": () => [],
     "POST /api/settings/email/test": () => ({ ok: true, message: "Sent a test email to cory@example.com." }),
     "PUT /api/settings/email": () => ({ ok: true }),
-    "POST /api/settings/mail-capture/test": () => ({ ok: true, message: "Connected to imap.gmail.com: 0 unread emails in INBOX." }),
-    "PUT /api/settings/mail-capture": () => ({ ok: true }),
     "POST /api/settings/ai/test": (b: any) => ({ ok: true, message: `${b.model} answered correctly.` }),
     "POST /api/settings/ai/models": () => ({ models: ["claude-haiku-5-5", "claude-sonnet-5-5"] }),
     "PUT /api/settings/ai": () => ({ settings: { services: [{ id: "s1" }] } }),
@@ -151,36 +149,22 @@ describe("the setup wizard", () => {
   });
 
   describe("Email", () => {
-    it("one email account for sending and receiving: address and app password once, one Test, Next saves both", async () => {
-      const s = routes({ "POST /api/settings/email/test": () => ({ ok: true, to: "cory@example.com" }) });
-      const u = userEvent.setup();
-      render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
-      expect(within(step()).getByRole("radio", { name: "Send and receive" })).toBeChecked();
-      await u.type(within(step()).getByLabelText("Email address"), "recipes@gmail.com");
-      await u.type(within(step()).getByLabelText("App password"), "abcd efgh");
-      expect(within(step()).getByLabelText("Only from")).toHaveValue("cory@example.com");
-      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
-      await u.click(within(step()).getByRole("button", { name: "Test sending and receiving" }));
-      expect(await within(step()).findByText(/Receiving: Connected to imap\.gmail\.com/)).toBeInTheDocument();
-      expect(within(step()).getByText("Sending: sent a test email to cory@example.com")).toBeInTheDocument();
-      await next(u);
-      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/mail-capture")?.body).toEqual({ enabled: true, host: "imap.gmail.com", port: 993, secure: true, username: "recipes@gmail.com", password: "abcd efgh", mailbox: "INBOX", allowedSenders: ["cory@example.com"] }));
-      expect(s.writes().find((w) => w.path === "/api/settings/email")?.body).toMatchObject({ host: "smtp.gmail.com", username: "recipes@gmail.com", fromAddress: "recipes@gmail.com" });
-      expect(await screen.findByRole("region", { name: "Step 5 of 6: Recipe & Meal Planning" })).toBeInTheDocument();
-    });
-
-    it("Receive only: only the mailbox is tested and saved", async () => {
+    it("sending only: a test email has to arrive before Next saves it", async () => {
       const s = routes();
       const u = userEvent.setup();
       render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
-      await u.click(within(step()).getByRole("radio", { name: "Receive only" }));
-      expect(within(step()).queryByLabelText("Culury's address")).toBeNull();
-      await u.type(within(step()).getByLabelText("Email address"), "recipes@gmail.com");
-      await u.type(within(step()).getByLabelText("App password"), "pw");
-      await u.click(within(step()).getByRole("button", { name: "Test the mailbox" }));
-      await within(step()).findByText(/^Receiving:/);
+      expect(within(step()).queryByText(/Receive/)).toBeNull();
+      await u.selectOptions(within(step()).getByLabelText("Provider"), "gmail");
+      await u.type(within(step()).getByLabelText("Username"), "cory@gmail.com");
+      await u.type(within(step()).getByLabelText("Password"), "app-password");
+      await u.type(within(step()).getByLabelText("From address"), "cory@gmail.com");
+      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
+      await u.click(within(step()).getByRole("button", { name: "Send a test email" }));
+      expect(await within(step()).findByText("Sent a test email to cory@example.com.")).toBeInTheDocument();
       await next(u);
-      await waitFor(() => expect(s.writes().filter((w) => w.method === "PUT").map((w) => w.path)).toEqual(["/api/settings/mail-capture"]));
+      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/email")?.body).toMatchObject({ enabled: true, host: "smtp.gmail.com", port: 587, username: "cory@gmail.com", password: "app-password", fromAddress: "cory@gmail.com" }));
+      expect(s.writes().some((w) => w.path.includes("mail-capture"))).toBe(false);
+      expect(await screen.findByRole("region", { name: "Step 5 of 6: Recipe & Meal Planning" })).toBeInTheDocument();
     });
 
     it("manual setup details: the ports", async () => {
@@ -188,7 +172,7 @@ describe("the setup wizard", () => {
       const u = userEvent.setup();
       render(<SetupWizard user={owner} onDone={() => {}} start={3} />);
       await u.click(within(step()).getByText("Manual setup details"));
-      expect(within(step()).getByText(/993/)).toBeVisible();
+      expect(within(step()).getByText(/587/)).toBeVisible();
     });
 
     it("Skip Email Setup", async () => {

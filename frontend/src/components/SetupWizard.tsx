@@ -4,7 +4,7 @@ import { forgetAiStatus } from "../ai";
 import { addPasskey, passkeyError, passkeysAvailable } from "../passkeys";
 import { initialsOf, type User } from "../session";
 import { PROVIDERS } from "./AiSettings";
-import { useEmailAccount } from "./EmailAccount";
+import { PRESETS } from "./EmailSettings";
 import { Logo } from "./Icons";
 
 // The first sign-in: a cheerful wizard over the app (the app shows, blurred, behind it).
@@ -488,17 +488,99 @@ function AiPrefs({ step, aiOn }: StepProps & { aiOn: boolean }) {
 }
 
 // ---------- 4. email ----------
-// One email account to send, receive, or both (the same form as Settings › Email)
+// Optional: Culury sends email (password resets, sharing, meal plan reminders). A test email has to
+// arrive before it's saved.
 function Email({ user, step }: StepProps & { user: User }) {
-  const a = useEmailAccount(user);
+  const [provider, setProvider] = useState("gmail");
+  const preset = PRESETS.find((p) => p.id === provider);
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("587");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [from, setFrom] = useState("");
+  const [appUrl, setAppUrl] = useState(window.location.origin);
+  const [tested, setTested] = useState<Result>(null);
+  const [testing, setTesting] = useState(false);
   const [manual, setManual] = useState(false);
-  useEffect(() => step(!a.filled || a.tested, async () => (a.filled ? a.save() : undefined)));
+  const settings = {
+    enabled: true,
+    host: preset?.host ?? host.trim(),
+    port: preset?.port ?? Number(port),
+    security: preset?.security ?? (Number(port) === 465 ? "ssl" : "starttls"),
+    username: username.trim(),
+    password,
+    fromName: "Culury",
+    fromAddress: from.trim(),
+    appUrl: appUrl.trim(),
+  };
+  const filled = !!(settings.username || password || settings.fromAddress || (!preset && settings.host));
+  // a change means testing again
+  const changed = <T,>(set: (v: T) => void) => (v: T) => (set(v), setTested(null));
+  useEffect(() => step(!filled || !!tested?.ok, async () => void (filled ? await api("PUT", "/api/settings/email", settings) : undefined)));
+  const test = async () => {
+    setTesting(true);
+    try {
+      const r = await api<{ message: string }>("POST", "/api/settings/email/test", { settings, ...(user.email ? { to: user.email } : {}) });
+      setTested({ ok: true, text: r.message });
+    } catch (e) {
+      setTested({ ok: false, text: (e as Error).message });
+    }
+    setTesting(false);
+  };
   return (
     <>
-      <p className="text-subtle">
-        One email account does two jobs: <strong>sending</strong> (password resets, shared recipes, grocery lists and meal plan reminders) and <strong>receiving</strong> (forward a recipe email or a link to it, and it lands in your Inbox). Use it for one or both. A new address just for recipes works well. Optional: you can set it up later in Settings › Email.
-      </p>
-      {a.fields}
+      <p className="text-subtle">Optional. Lets Culury send password resets, shared recipes, grocery lists and meal plan reminders. A test email has to arrive before it's saved, and you can set it up later in Settings › Email.</p>
+      <label className={label}>
+        Provider
+        <select value={provider} onChange={(e) => changed(setProvider)(e.target.value)} className={field}>
+          {PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+          <option value="custom">Another server</option>
+        </select>
+      </label>
+      {preset && <p className="-mt-2 text-sm text-subtle">{preset.hint}</p>}
+      {!preset && (
+        <div className="grid grid-cols-[1fr_7rem] gap-3">
+          <label className={label}>
+            Server
+            <input value={host} onChange={(e) => changed(setHost)(e.target.value)} placeholder="smtp.example.com" className={field} />
+          </label>
+          <label className={label}>
+            Port
+            <input value={port} inputMode="numeric" onChange={(e) => changed(setPort)(e.target.value)} className={field} />
+          </label>
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className={label}>
+          Username
+          <input value={username} onChange={(e) => changed(setUsername)(e.target.value)} autoComplete="off" className={field} />
+        </label>
+        <label className={label}>
+          Password
+          <input type="password" value={password} onChange={(e) => changed(setPassword)(e.target.value)} autoComplete="new-password" className={field} />
+        </label>
+      </div>
+      <label className={label}>
+        From address
+        <input type="email" value={from} onChange={(e) => changed(setFrom)(e.target.value)} placeholder="recipes@example.com" className={field} />
+      </label>
+      <div>
+        <label className={label}>
+          Culury's address
+          <input value={appUrl} onChange={(e) => changed(setAppUrl)(e.target.value)} aria-describedby="app-url-hint" className={field} />
+        </label>
+        <span id="app-url-hint" className="mt-1 block text-xs text-muted">
+          Used for links in emails, like Open the recipe. Use the address people reach Culury on.
+        </span>
+      </div>
+      <button type="button" disabled={testing || !settings.host || !settings.fromAddress} onClick={() => void test()} className={`${secondary} self-start`}>
+        {testing ? "Sending…" : "Send a test email"}
+      </button>
+      <Status r={tested} />
       <div className="rounded-xl bg-page">
         <button type="button" aria-expanded={manual} onClick={() => setManual(!manual)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
           Manual setup details
@@ -507,10 +589,7 @@ function Email({ user, step }: StepProps & { user: User }) {
         {manual && (
           <div className="space-y-2 px-3 pb-3 text-sm text-subtle">
             <p>
-              <strong>Receiving (IMAP):</strong> port 993 with SSL/TLS (most providers), or 143 with STARTTLS. Culury reads unread emails in the Inbox folder every few minutes and marks each one read.
-            </p>
-            <p>
-              <strong>Sending (SMTP):</strong> port 587 with STARTTLS, or 465 with SSL/TLS.
+              <strong>Ports:</strong> 587 with STARTTLS (most providers), or 465 with SSL/TLS.
             </p>
             <p>
               <strong>Passwords:</strong> Gmail, iCloud and Outlook with two-step sign-in need an app password, made in your account's security settings. Culury keeps it encrypted.

@@ -39,8 +39,6 @@ import aiRoutes from "./routes/ai.js";
 import shareRoutes from "./routes/share.js";
 import inboxRoutes from "./routes/inbox.js";
 import discoveryRoutes from "./routes/discovery.js";
-import mailCaptureRoutes from "./routes/mailCapture.js";
-import { MailCapture, type OpenMailbox } from "./lib/mailCapture.js";
 import type { FetchImpl, FetchOptions, Resolve } from "./lib/fetchPage.js";
 import organizeRoutes from "./routes/organize.js";
 import { MailService, type EmailConfig, type TransportFactory } from "./lib/mail.js";
@@ -68,7 +66,6 @@ declare module "fastify" {
     photos: Photos;
     events: EventBus;
     fetchOptions: FetchOptions; // how pages and feeds are fetched (tests swap in a pretend web)
-    mailCapture: MailCapture; // recipes sent to Culury by email (an IMAP mailbox)
   }
   interface FastifyRequest {
     auth?: { method: "token"; userId: number; sessionId: number; role: "owner" | "member" } | { method: "apiKey"; keyId: number };
@@ -95,7 +92,6 @@ export interface AppOptions {
   photoDir?: string; // where recipe photos are kept (<data>/photos)
   importFetch?: FetchImpl; // tests swap in fake web pages
   importResolve?: Resolve; // tests skip DNS
-  openMailbox?: OpenMailbox; // tests swap in a pretend IMAP mailbox
 }
 
 // Everything Culury keeps on disk lives under DATA_DIR (/app/data in Docker; <repo>/data otherwise)
@@ -128,7 +124,7 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/auth/oauth/finish",
 ]);
 
-export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, aiTimeScale = 1, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT, photoDir = path.join(process.env.DATA_DIR || defaultDataDir, "photos"), importFetch, importResolve, openMailbox }: AppOptions): FastifyInstance {
+export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBackupDir, backupKeep = 30, backupKey = process.env.BACKUP_KEY, oauthFetch, emailEnv = null, mailTransport, aiFetch, aiTimeScale = 1, updateFetch, updateRepo = process.env.UPDATE_REPO || "cwland/Culury", githubToken = process.env.GITHUB_TOKEN || null, now = () => new Date(), rateLimit = DEFAULT_RATE_LIMIT, photoDir = path.join(process.env.DATA_DIR || defaultDataDir, "photos"), importFetch, importResolve }: AppOptions): FastifyInstance {
   if (!jwtSecret || jwtSecret.length < 16) {
     throw new Error("JWT_SECRET must be set to at least 16 characters");
   }
@@ -153,7 +149,6 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.decorate("jobs", new JobQueue(db));
   const jobDeps = { db, ai: app.ai, photos: app.photos, jobs: app.jobs, events: app.events, fetchOptions: { fetchImpl: importFetch, resolve: importResolve } };
   app.decorate("fetchOptions", jobDeps.fetchOptions);
-  app.decorate("mailCapture", new MailCapture(db, jwtSecret, openMailbox, app.events));
   registerImportJobs(app.jobs, jobDeps);
   registerPhotoImport(app.jobs, jobDeps);
   registerFileImport(app.jobs, jobDeps);
@@ -274,7 +269,6 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   app.register(organizeRoutes);
   app.register(inboxRoutes);
   app.register(discoveryRoutes);
-  app.register(mailCaptureRoutes);
 
   return app;
 }
