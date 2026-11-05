@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api";
+import { recipesChanged } from "../../recipes";
 import { uploadFile, uploadFiles, useAiStatus } from "../../ai";
 import { Popup } from "../Popup";
 import { startedInBackground } from "../BackgroundPill";
@@ -155,6 +156,11 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     if (!job || job.status === "done" || job.status === "failed") return;
     const t = setTimeout(() => void api<ImportJob>("GET", `/api/imports/${job.id}`).then(setJob).catch((e) => setError((e as Error).message)), 900);
     return () => clearTimeout(t);
+  }, [job]);
+  // Recipes came in: the recipe list behind this window reloads
+  useEffect(() => {
+    const r = job?.result;
+    if (job?.status === "done" && r && (r.recipeId || r.recipeIds?.length || (r.imported ?? 0) > 0)) recipesChanged();
   }, [job]);
   useEffect(() => {
     // One recipe (a link, a photo, or a PDF with one recipe in it): open it

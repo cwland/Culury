@@ -179,6 +179,8 @@ export function recipeRoute(): RecipeRoute {
 // The list as you last left it (search, collection, tag...), for the recipe page's back link
 let lastList = "#/recipes";
 export const rememberList = (hash: string) => void (lastList = hash);
+// Recipes were added or changed somewhere else (an import finished): the recipe list reloads
+export const recipesChanged = () => window.dispatchEvent(new Event("culury:recipes-changed"));
 export const listAddress = () => lastList;
 
 // Word units read naturally: "3 cloves", "2 cans" (abbreviations like tbsp and g stay as they are)

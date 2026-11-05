@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
+import { recipesChanged } from "../../recipes";
 
 // #/recipes/improving/40: the AI improving every recipe an import brought in, in the background.
 // Checks in every couple of seconds; Stop finishes the recipe being worked on, then ends.
@@ -55,6 +56,7 @@ export default function BatchProgress({ job }: { job: number }) {
   const failed = r.failed ?? [];
   const working = batch && (batch.status === "queued" || batch.status === "running");
   const finished = batch?.status === "done";
+  useEffect(() => void (finished && recipesChanged()), [finished]); // the recipe list shows the improved ones
 
   return (
     <div className="mx-auto max-w-[760px] px-3 pb-16 pt-4 sm:px-6">

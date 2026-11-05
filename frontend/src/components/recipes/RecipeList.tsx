@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { formatMinutes, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
+import { formatMinutes, recipesChanged, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
 import { ChefIcon, ClockIcon, FilterIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
 import { Popup } from "../Popup";
 import ImportDialog from "./ImportDialog";
@@ -9,6 +9,7 @@ import ImportDialog from "./ImportDialog";
 type Filters = { q: string; tag: string[]; category: string; collection: string; favorite: string; sort: string };
 // Open the import dialog from anywhere (the empty state, the menu)
 export const openImport = () => window.dispatchEvent(new Event("culury:import"));
+export { recipesChanged };
 // After the setup wizard: Add recipe glows, with a tip, until it's clicked or the tip is closed
 let hintPending = false;
 export const hintAddRecipe = () => {
@@ -48,6 +49,13 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
     return () => window.removeEventListener("culury:import", open);
   }, []);
   const searchRef = useRef<HTMLInputElement>(null);
+  // an import added recipes: load the list (and the sidebar's counts) again
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const again = () => setReload((n) => n + 1);
+    window.addEventListener("culury:recipes-changed", again);
+    return () => window.removeEventListener("culury:recipes-changed", again);
+  }, []);
   const [hint, setHint] = useState(hintPending);
   useEffect(() => {
     const on = () => setHint(true);
@@ -66,7 +74,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       setCollections(col);
     }).catch(() => {}); // the filters are extras: the recipes still list without them
     void api<{ total: number }>("GET", "/api/recipes?category=none&limit=1").then((d) => setNoCategory(d.total)).catch(() => {});
-  }, []);
+  }, [reload]);
 
   // The filters live in the address (#/recipes?tag=grill), so Back returns to the same list
   useEffect(() => {
@@ -86,7 +94,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
     return () => {
       live = false;
     };
-  }, [f]);
+  }, [f, reload]);
 
   // Search as you type (a moment after you stop)
   useEffect(() => {
@@ -219,7 +227,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
             ))}
           </ul>
         )}
-        {data && data.recipes.length === 0 && <Empty searching={!!(f.q || f.tag || f.category || f.collection || f.favorite)} />}
+        {data && data.recipes.length === 0 && <Empty searching={!!(f.q || f.tag.length || f.category || f.collection || f.favorite)} />}
       </div>
 
       {importing && <ImportDialog initial={importing.initial} onClose={() => setImporting(null)} />}

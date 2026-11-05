@@ -32,6 +32,25 @@ describe("importing a file from another app", () => {
     expect((sent.body as FormData).get("file")).toBeInstanceOf(File);
     expect(onClose).not.toHaveBeenCalled(); // stays open to show the summary
   });
+
+  it("when recipes came in, the recipe list is told to reload (See your recipes then shows them)", async () => {
+    fakeServer({
+      "GET /api/ai/status": () => ({ ready: false, photos: false }),
+      "GET /api/imports": () => [],
+      "POST /api/recipes/import/file": () => ({ status: 202, json: job({}) }),
+      "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", imported: 1, skipped: 0, problems: [] } }),
+    });
+    const changed = vi.fn();
+    window.addEventListener("culury:recipes-changed", changed);
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "chili.paprikarecipe"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByRole("status", { name: "Import finished" }, { timeout: 4000 });
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    window.removeEventListener("culury:recipes-changed", changed);
+  });
 });
 
 describe("no recent imports list (they're in Settings › Logs)", () => {

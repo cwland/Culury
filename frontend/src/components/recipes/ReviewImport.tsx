@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
+import { recipesChanged } from "../../recipes";
 import { useAiStatus } from "../../ai";
 import type { Recipe } from "../../recipes";
 import EnhanceWizard from "./EnhanceWizard";
@@ -54,6 +55,7 @@ export default function ReviewImport({ job }: { job: number }) {
   }, [job]);
 
   const done = !!ids && (stopped || progress.at >= ids.length);
+  useEffect(() => void (done && recipesChanged()), [done]); // the recipe list shows the reviewed ones
 
   // The recipe at this place (one deleted since the import is passed over)
   useEffect(() => {

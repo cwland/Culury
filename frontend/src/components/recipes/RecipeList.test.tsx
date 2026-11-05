@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import RecipeList, { hintAddRecipe } from "./RecipeList";
+import RecipeList, { hintAddRecipe, recipesChanged } from "./RecipeList";
 import { fakeServer } from "../../test/fakeServer";
 
 const summary = (id: number, title: string) => ({ id, title, imageUrl: null, totalMinutes: null, rating: null, favorite: false, pinned: false, tags: [], categories: [] });
@@ -130,5 +130,22 @@ describe("a new collection from the sidebar", () => {
     await u.keyboard("{Escape}");
     expect(sidebar().queryByRole("textbox", { name: "New collection name" })).toBeNull();
     expect(sidebar().getByRole("button", { name: "+ New collection" })).toBeInTheDocument();
+  });
+});
+
+describe("after an import adds recipes", () => {
+  it("the list reloads by itself (it was showing none)", async () => {
+    let total = 0;
+    setup({ "GET /api/recipes": (_b: unknown, path: string) => (new URLSearchParams(path.split("?")[1]).get("limit") === "1" ? { total: 0, recipes: [] } : total ? { total: 1, recipes: [summary(5, "Weeknight Chili")] } : { total: 0, recipes: [] }) });
+    expect(await screen.findByText("Your recipe box is empty.")).toBeInTheDocument();
+    total = 1;
+    recipesChanged();
+    expect((await screen.findAllByText("Weeknight Chili")).length).toBeGreaterThan(0);
+  });
+
+  it("an empty recipe box says so (not 'No recipes match')", async () => {
+    setup({ "GET /api/recipes": () => ({ total: 0, recipes: [] }) });
+    expect(await screen.findByText("Your recipe box is empty.")).toBeInTheDocument();
+    expect(screen.queryByText(/No recipes match/)).toBeNull();
   });
 });
