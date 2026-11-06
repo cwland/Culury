@@ -21,7 +21,7 @@ The version is in `backend/package.json` and `frontend/package.json` (keep them 
 
 ## Run it on the homelab (Docker)
 
-Every push to `main` builds a `linux/amd64` image and publishes it as `ghcr.io/cwland/culury:latest`.
+Every push to `main` builds a `linux/amd64` image and publishes it as `ghcr.io/cwland/culury:latest`. It runs on any 64-bit Intel or AMD CPU with SSE4.2 (most from 2009 on, including Celeron and Pentium homelab boxes); it doesn't need AVX or AVX2. The image is Debian-based: the Alpine builds of the image and PDF libraries crashed with "illegal instruction" on CPUs without AVX2.
 
 ```
 mkdir culury && cd culury
