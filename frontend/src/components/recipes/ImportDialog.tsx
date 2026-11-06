@@ -124,11 +124,18 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
   const started = useRef(false);
   const importedRef = useRef(onImported);
   importedRef.current = onImported;
-  // After picking from a file: review them with AI, improve them all in the background, or just import
+  // After picking from a file: review them with AI (when the import is done), or just import them
   const [then, setThen] = useState<Then | null>(null);
   const pick = async (keep: number[], next: Then) => {
     setError("");
     try {
+      // Improve all automatically: it all happens in the background (the server starts the AI batch
+      // when the import is done), so the window closes and the pill at the top follows it
+      if (next === "auto") {
+        startedInBackground((await api<ImportJob>("POST", `/api/imports/${job!.id}/choose`, { keep, improve: true })) as never);
+        onClose();
+        return;
+      }
       setThen(next);
       setJob(await api<ImportJob>("POST", `/api/imports/${job!.id}/choose`, { keep }));
     } catch (e) {
@@ -140,14 +147,6 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     if (then === "review") {
       onClose();
       window.location.hash = `#/recipes/review/${job.id}`;
-    } else if (then === "auto") {
-      setThen(null);
-      void api<ImportJob>("POST", `/api/imports/${job.id}/improve`)
-        .then((batch) => {
-          startedInBackground(batch as never);
-          onClose();
-        })
-        .catch((e) => setError((e as Error).message));
     }
   }, [job, then, onClose]);
 

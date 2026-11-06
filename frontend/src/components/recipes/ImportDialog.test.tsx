@@ -289,13 +289,26 @@ describe("picking which recipes to import from a file", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/review/32"), { timeout: 4000 });
   });
 
-  it("Improve all automatically instead: starts it and opens the progress", async () => {
+  it("Improve all automatically instead: the window closes at once and the pill at the top follows the import, then the improvements", async () => {
     window.location.hash = "#/recipes";
     const server = setup();
-    const { u } = await run();
+    const onClose = vi.fn();
+    const seen: unknown[] = [];
+    const listen = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener("culury:background", listen);
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={onClose} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "My Recipes.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByRole("group", { name: "Recipes in the file" }, { timeout: 4000 });
     await u.click(screen.getByRole("radio", { name: /Improve all automatically/ }));
     await u.click(screen.getByRole("button", { name: "Accept" }));
-    await waitFor(() => expect(server.writes().some((w) => w.path === "/api/imports/32/improve")).toBe(true), { timeout: 4000 });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(server.writes().find((w) => w.path === "/api/imports/31/choose")?.body).toEqual({ keep: [0, 1, 3], improve: true });
+    expect(seen).toEqual([expect.objectContaining({ id: 32 })]); // the import, shown in the pill
+    expect(server.writes().some((w) => w.path.endsWith("/improve"))).toBe(false); // the server starts that itself
+    window.removeEventListener("culury:background", listen);
   });
 
   it("with Improve with AI off: Accept just imports them", async () => {

@@ -85,3 +85,31 @@ describe("choosing which recipes to import", () => {
     expect(await titles()).toEqual(["Pancakes"]);
   });
 });
+
+describe("choosing, then Improve all automatically", () => {
+  const aiOn = () => t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+
+  it("the import runs in the background and starts the AI improvements by itself when it's done", async () => {
+    await aiOn();
+    const preview = await upload("My Recipes.paprikarecipes", file());
+    const keep = preview.result.choices.filter((c: any) => c.title === "Bread" || c.title === "Chili").map((c: any) => c.n);
+    const res = await t.api("POST", `/api/imports/${preview.id}/choose`, { keep, improve: true });
+    expect(res.status).toBe(202);
+    // the pill can show the import straight away
+    expect((await t.api("GET", "/api/imports/active")).body.map((j: any) => j.id)).toContain(res.body.id);
+    await t.app.jobs.drain();
+    const job = (await t.api("GET", `/api/imports/${res.body.id}`)).body;
+    expect(job.result).toMatchObject({ imported: 2 });
+    expect(job.result.improving).toEqual(expect.any(Number));
+    const batch = (await t.api("GET", `/api/imports/${job.result.improving}`)).body;
+    expect(batch).toMatchObject({ kind: "import-improve", source: "My Recipes.paprikarecipes" });
+    expect(batch.result.total).toBe(2);
+  });
+
+  it("Improve with AI off: refused before anything is imported", async () => {
+    const preview = await upload("My Recipes.paprikarecipes", file());
+    const res = await t.api("POST", `/api/imports/${preview.id}/choose`, { keep: [0], improve: true });
+    expect(res.status).toBe(409);
+    expect(await titles()).toEqual([]);
+  });
+});

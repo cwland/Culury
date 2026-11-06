@@ -18,7 +18,7 @@ const routes = (more: Record<string, any> = {}) =>
     "POST /api/settings/email/test": () => ({ ok: true, message: "Sent a test email to cory@example.com." }),
     "PUT /api/settings/email": () => ({ ok: true }),
     "POST /api/settings/ai/test": (b: any) => ({ ok: true, message: `${b.model} answered correctly.` }),
-    "POST /api/settings/ai/models": () => ({ models: ["claude-haiku-5-5", "claude-sonnet-5-5"] }),
+    "POST /api/settings/ai/models": () => ({ models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] }),
     "PUT /api/settings/ai": () => ({ settings: { services: [{ id: "s1" }] } }),
     "PUT /api/settings/features": (b: any) => ({ ai: true, aiEnhance: true, autoNutrition: true, savedCopies: true, discoveryRefresh: true, ...b }),
     "POST /api/profile/setup-done": () => ({ user: { ...owner, setupDone: true } }),
@@ -96,7 +96,7 @@ describe("the setup wizard", () => {
       expect(within(step()).getAllByRole("radio")).toHaveLength(5);
     });
 
-    it("pick a provider, then Connect: the key, a recommended model, Test, and Next saves it", async () => {
+    it("Connect: Validate at the end of the key box fills the models, the best one is picked, and Next checks it and saves", async () => {
       const s = routes();
       const u = userEvent.setup();
       render(<SetupWizard user={owner} onDone={() => {}} start={S.ai} />);
@@ -108,14 +108,24 @@ describe("the setup wizard", () => {
       await u.click(within(step()).getByRole("button", { name: "How to get a key" }));
       const guide = within(step()).getByRole("list", { name: "How to get a key" });
       expect(within(guide).getByRole("link", { name: /console\.anthropic\.com/ })).toHaveAttribute("href", "https://console.anthropic.com/settings/keys");
+      // models wait for Validate; there's no Test Connection any more
+      expect(within(step()).getByRole("combobox", { name: "Model" })).toBeDisabled();
+      expect(within(step()).queryByRole("button", { name: "Test Connection" })).toBeNull();
+      expect(within(step()).getByText(/Haiku is quick and cheap/)).toBeInTheDocument(); // what works well
+      expect(within(step()).getByRole("button", { name: "Validate" })).toBeDisabled();
       await u.type(within(step()).getByLabelText("API key"), "sk-ant-123");
-      await u.click(within(step()).getByRole("button", { name: "Use claude-haiku-5-5" }));
-      expect(within(step()).getByLabelText("Model")).toHaveValue("claude-haiku-5-5");
       expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
-      await u.click(within(step()).getByRole("button", { name: "Test Connection" }));
-      expect(await within(step()).findByText("claude-haiku-5-5 answered correctly.")).toBeInTheDocument();
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      expect(await within(step()).findByText("Key works: 3 models.")).toBeInTheDocument();
+      const model = within(step()).getByRole("combobox", { name: "Model" });
+      expect(model).toBeEnabled();
+      expect([...(model as HTMLSelectElement).options].map((o) => o.value)).toEqual(["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"]);
+      expect(model).toHaveValue("claude-haiku-5-5"); // the best one for Culury, picked for you
+      await u.selectOptions(model, "claude-sonnet-5-5"); // you can change it
       await next(u);
-      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/ai")?.body).toMatchObject({ services: [{ provider: "anthropic", apiKey: "sk-ant-123", model: "claude-haiku-5-5", photos: true }] }));
+      // Next asks the chosen model once, then saves
+      await waitFor(() => expect(s.writes().find((w) => w.path === "/api/settings/ai")?.body).toMatchObject({ services: [{ provider: "anthropic", apiKey: "sk-ant-123", model: "claude-sonnet-5-5", photos: true }] }));
+      expect(s.writes().find((w) => w.path === "/api/settings/ai/test")?.body).toMatchObject({ model: "claude-sonnet-5-5" });
       expect(await at(5, "Backup AI")).toBeInTheDocument();
       // no backup: skip it
       await u.click(within(dialog()).getByRole("button", { name: "Skip Backup" }));
@@ -123,24 +133,67 @@ describe("the setup wizard", () => {
       expect(within(step()).getByRole("switch", { name: /Improve with AI/ })).toBeEnabled();
     });
 
-    it("a backup AI: tested too, saved second", async () => {
-      const s = routes();
+    it("a key that isn't accepted: says so, and the models stay empty", async () => {
+      routes({ "POST /api/settings/ai/models": () => ({ status: 401, json: { error: "Anthropic didn't accept that API key." } }) });
+      const u = userEvent.setup();
+      render(<SetupWizard user={owner} onDone={() => {}} start={S.ai} />);
+      await u.click(within(step()).getByRole("radio", { name: /Anthropic/ }));
+      await next(u);
+      await at(4, "Connect Anthropic");
+      await u.type(within(step()).getByLabelText("API key"), "nope");
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      expect(await within(step()).findByRole("alert")).toHaveTextContent("Anthropic didn't accept that API key.");
+      expect(within(step()).getByRole("combobox", { name: "Model" })).toBeDisabled();
+      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled();
+    });
+
+    it("the chosen model doesn't answer: Next says so and stays", async () => {
+      routes({ "POST /api/settings/ai/test": () => ({ status: 502, json: { error: "claude-haiku-5-5 didn't answer." } }) });
+      const u = userEvent.setup();
+      render(<SetupWizard user={owner} onDone={() => {}} start={S.ai} />);
+      await u.click(within(step()).getByRole("radio", { name: /Anthropic/ }));
+      await next(u);
+      await at(4, "Connect Anthropic");
+      await u.type(within(step()).getByLabelText("API key"), "sk-ant-123");
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      await within(step()).findByText("Key works: 3 models.");
+      await next(u);
+      expect(await within(dialog()).findByText("claude-haiku-5-5 didn't answer.")).toBeInTheDocument();
+      expect(step()).toHaveAccessibleName("Step 4 of 9: Connect Anthropic");
+    });
+
+    it("a home AI: Validate at the end of the address; the photo-reading model is picked; it suggests models to pull", async () => {
+      routes({ "POST /api/settings/ai/models": () => ({ models: ["llama3.1:8b", "mistral:7b", "qwen3-vl:8b"] }) });
       const u = userEvent.setup();
       render(<SetupWizard user={owner} onDone={() => {}} start={S.ai} />);
       await next(u); // Local is picked to start with
       await at(4, "Connect Local");
+      expect(within(step()).getByText(/ollama pull qwen3-vl:8b/)).toBeInTheDocument();
       await u.type(within(step()).getByLabelText("Address"), "http://10.0.0.5:11434/v1");
-      await u.type(within(step()).getByLabelText("Model"), "qwen3-vl:8b");
-      await u.click(within(step()).getByRole("button", { name: "Test Connection" }));
-      await within(step()).findByText("qwen3-vl:8b answered correctly.");
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      expect(await within(step()).findByText("Connected: 3 models.")).toBeInTheDocument();
+      expect(within(step()).getByRole("combobox", { name: "Model" })).toHaveValue("qwen3-vl:8b");
+    });
+
+    it("a backup AI: the same Validate and pick, saved second", async () => {
+      const s = routes({
+        "POST /api/settings/ai/models": (b: any) => ({ models: b.provider === "local" ? ["qwen3-vl:8b"] : ["openai/gpt-4o-mini", "anthropic/claude-haiku-5.5", "google/gemini-2.5-flash"] }),
+      });
+      const u = userEvent.setup();
+      render(<SetupWizard user={owner} onDone={() => {}} start={S.ai} />);
+      await next(u);
+      await at(4, "Connect Local");
+      await u.type(within(step()).getByLabelText("Address"), "http://10.0.0.5:11434/v1");
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      await within(step()).findByText("Connected: 1 model.");
       await next(u);
       await at(5, "Backup AI");
-      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled(); // nothing tested yet
+      expect(within(dialog()).getByRole("button", { name: /^Next/ })).toBeDisabled(); // nothing validated yet
       await u.selectOptions(within(step()).getByLabelText("Service"), "openrouter");
       await u.type(within(step()).getByLabelText("API key"), "sk-or-1");
-      await u.type(within(step()).getByLabelText("Model"), "anthropic/claude-haiku-5.5");
-      await u.click(within(step()).getByRole("button", { name: "Test Connection" }));
-      await within(step()).findByText("anthropic/claude-haiku-5.5 answered correctly.");
+      await u.click(within(step()).getByRole("button", { name: "Validate" }));
+      await within(step()).findByText("Key works: 3 models.");
+      expect(within(step()).getByRole("combobox", { name: "Model" })).toHaveValue("anthropic/claude-haiku-5.5");
       await next(u);
       await waitFor(() => expect(s.writes().filter((w) => w.path === "/api/settings/ai").at(-1)?.body.services).toMatchObject([{ provider: "local", model: "qwen3-vl:8b" }, { provider: "openrouter", model: "anthropic/claude-haiku-5.5", name: "OpenRouter (backup)" }]));
       expect(await at(6, "Fine-Tune AI")).toBeInTheDocument();

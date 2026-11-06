@@ -7,6 +7,7 @@ import { initialsOf, type User } from "../session";
 import { PROVIDERS } from "./AiSettings";
 import { PRESETS } from "./EmailSettings";
 import { Logo } from "./Icons";
+import { bestModel, SUGGESTIONS } from "../aiModels";
 
 // The first sign-in: a wizard over the app (the app shows, blurred, behind it). One short page per
 // step, so nothing scrolls. The owner: Welcome, Passkey, Choose an AI, Connect your AI, Backup AI,
@@ -311,92 +312,91 @@ const GUIDE: Record<Provider, ReactNode[]> = {
   openrouter: ["Sign in at openrouter.ai.", "Add a little credit (one key reaches many providers' models).", "Create a key under Keys, and paste it below."],
 };
 // Models worth starting with (Settings › AI's (i) has more); "Load models" shows what's there today
-const RECOMMENDED: Record<Provider, string[]> = {
-  local: ["qwen3-vl:8b", "llama3.1:8b"],
-  openai: [],
-  anthropic: ["claude-haiku-5-5"],
-  gemini: [],
-  openrouter: ["anthropic/claude-haiku-5.5"],
-};
 const reads = (provider: string, model: string) => provider !== "local" || /vl|vision|llava|gemma3|minicpm-v/i.test(model);
 
-// One AI service's settings, its Test and (for hosted ones) Load models
+// One AI service: Validate (at the end of the key or address box) lists its models and picks the best
+// one for Culury; Next then asks that model once before saving (see check)
 function useService(initial: Provider) {
-  const [provider, setProvider] = useState<Provider>(initial);
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [provider, setProviderRaw] = useState<Provider>(initial);
+  const [baseUrl, setBaseUrlRaw] = useState("");
+  const [apiKey, setApiKeyRaw] = useState("");
   const [model, setModel] = useState("");
   const [models, setModels] = useState<string[]>([]);
-  const [tested, setTested] = useState<Result>(null);
-  const [busy, setBusy] = useState("");
+  const [validated, setValidated] = useState<Result>(null);
+  const [busy, setBusy] = useState(false);
   const p = PROVIDERS.find((x) => x.id === provider)!;
   const body = { name: p.name, enabled: true, provider, model: model.trim(), baseUrl: provider === "local" ? baseUrl.trim() : null, apiKey: provider === "local" ? "" : apiKey.trim(), quick: true, photos: reads(provider, model) };
-  const changed = <T,>(set: (v: T) => void) => (v: T) => (set(v), setTested(null));
-  const filled = !!(body.model || body.baseUrl || body.apiKey);
-  const canTest = !!body.model && (provider === "local" ? !!body.baseUrl : !!body.apiKey);
-  const run = async (what: "test" | "models") => {
-    setBusy(what);
-    try {
-      if (what === "test") {
-        const r = await api<{ message: string }>("POST", "/api/settings/ai/test", body);
-        setTested({ ok: true, text: r.message });
-      } else {
-        const r = await api<{ models: string[] }>("POST", "/api/settings/ai/models", body);
-        setModels(r.models);
-        setTested({ ok: true, text: r.models.length ? `${r.models.length} models found: pick one in the Model box.` : "No models found." });
-      }
-    } catch (e) {
-      setTested({ ok: false, text: (e as Error).message });
-    }
-    setBusy("");
+  // a new key, address or service: validate again
+  const fresh = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setModels([]);
+    setModel("");
+    setValidated(null);
   };
-  return { provider, setProvider: changed(setProvider), p, baseUrl, setBaseUrl: changed(setBaseUrl), apiKey, setApiKey: changed(setApiKey), model, setModel: changed(setModel), models, tested, busy, run, body, filled, canTest, works: tested?.ok === true && tested.text.includes("answered") };
+  const canValidate = provider === "local" ? !!baseUrl.trim() : !!apiKey.trim();
+  const validate = async () => {
+    setBusy(true);
+    setValidated(null);
+    try {
+      const r = await api<{ models: string[] }>("POST", "/api/settings/ai/models", { ...body, model: body.model || "check" });
+      const list = [...new Set(r.models)].sort((a, b) => a.localeCompare(b));
+      setModels(list);
+      setModel(bestModel(provider, list));
+      const n = `${list.length} model${list.length === 1 ? "" : "s"}`;
+      setValidated(list.length ? { ok: true, text: provider === "local" ? `Connected: ${n}.` : `Key works: ${n}.` } : { ok: false, text: provider === "local" ? "Connected, but no models are installed yet. Pull one (see below), then Validate again." : "The key works, but no models came back." });
+    } catch (e) {
+      setModels([]);
+      setModel("");
+      setValidated({ ok: false, text: (e as Error).message });
+    }
+    setBusy(false);
+  };
+  // Next: the chosen model answers once before it's saved
+  const check = async () => void (await api("POST", "/api/settings/ai/test", body));
+  return { provider, setProvider: fresh(setProviderRaw), p, baseUrl, setBaseUrl: fresh(setBaseUrlRaw), apiKey, setApiKey: fresh(setApiKeyRaw), model, setModel, models, validated, busy, validate, canValidate, check, body, works: validated?.ok === true && !!model };
 }
 type Service = ReturnType<typeof useService>;
 
 function ServiceFields({ s, id }: { s: Service; id: string }) {
+  const local = s.provider === "local";
   return (
     <>
-      {s.provider === "local" ? (
-        <label className={label}>
-          Address
-          <input value={s.baseUrl} onChange={(e) => s.setBaseUrl(e.target.value)} placeholder="http://192.168.1.20:11434/v1" className={field} />
+      <div>
+        <label htmlFor={`${id}-key`} className={label}>
+          {local ? "Address" : "API key"}
         </label>
-      ) : (
-        <label className={label}>
-          API key
-          <input type="password" value={s.apiKey} onChange={(e) => s.setApiKey(e.target.value)} autoComplete="off" className={field} />
-        </label>
-      )}
+        <div className="mt-1 flex gap-2">
+          <input
+            id={`${id}-key`}
+            type={local ? "text" : "password"}
+            value={local ? s.baseUrl : s.apiKey}
+            onChange={(e) => (local ? s.setBaseUrl : s.setApiKey)(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && s.canValidate && (e.preventDefault(), void s.validate())}
+            placeholder={local ? "http://192.168.1.20:11434/v1" : "Paste your key"}
+            autoComplete="off"
+            className={`${field} mt-0 flex-1`}
+          />
+          <button type="button" disabled={s.busy || !s.canValidate} onClick={() => void s.validate()} className={`${secondary} shrink-0`}>
+            {s.busy ? "Checking…" : "Validate"}
+          </button>
+        </div>
+      </div>
+      <Status r={s.validated} />
       <label className={label}>
         Model
-        <input value={s.model} list={`${id}-models`} onChange={(e) => s.setModel(e.target.value)} placeholder={s.provider === "local" ? "qwen3-vl:8b" : "the model's name"} className={field} />
-        <datalist id={`${id}-models`}>
+        <select aria-label="Model" value={s.model} disabled={!s.models.length} onChange={(e) => s.setModel(e.target.value)} className={`${field} disabled:opacity-60`}>
+          {!s.models.length && <option value="">Validate first</option>}
           {s.models.map((m) => (
-            <option key={m} value={m} />
+            <option key={m} value={m}>
+              {m}
+            </option>
           ))}
-        </datalist>
+        </select>
       </label>
-      <div className="flex flex-wrap items-center gap-2">
-        {RECOMMENDED[s.provider].map((m) => (
-          <button key={m} type="button" aria-label={`Use ${m}`} onClick={() => s.setModel(m)} className="rounded-full bg-brand-subtle px-3 py-1 text-xs font-semibold text-action hover:bg-active">
-            ⭐ {m}
-          </button>
-        ))}
-        {(s.provider === "local" ? !!s.baseUrl.trim() : !!s.apiKey.trim()) && (
-          <button type="button" disabled={!!s.busy} onClick={() => void s.run("models")} className="text-xs font-semibold text-link hover:underline disabled:opacity-50">
-            {s.busy === "models" ? "Loading…" : "Load models"}
-          </button>
-        )}
-      </div>
-      <button type="button" disabled={!!s.busy || !s.canTest} onClick={() => void s.run("test")} className={`${secondary} self-start`}>
-        {s.busy === "test" ? "Testing…" : "Test Connection"}
-      </button>
-      <Status r={s.tested} />
+      <p className="text-sm text-subtle">💡 {SUGGESTIONS[s.provider]}</p>
     </>
   );
 }
-
 
 // ---------- choose an AI ----------
 function ChooseAi({ s, step }: StepProps & { s: Service }) {
@@ -477,6 +477,7 @@ function Guide({ s }: { s: Service }) {
 function Connect({ s, step }: StepProps & { s: Service }) {
   useEffect(() =>
     step(s.works, async () => {
+      await s.check();
       await api("PUT", "/api/settings/ai", { maxPerRun: 50, timeoutSec: 15, askNextOnNoMatch: false, services: [s.body] });
       forgetAiStatus();
     })
@@ -493,6 +494,7 @@ function Connect({ s, step }: StepProps & { s: Service }) {
 function Backup({ main, s, step }: StepProps & { main: Service; s: Service }) {
   useEffect(() =>
     step(s.works, async () => {
+      await s.check();
       await api("PUT", "/api/settings/ai", { maxPerRun: 50, timeoutSec: 15, askNextOnNoMatch: false, services: [main.body, { ...s.body, name: `${s.p.name} (backup)` }] });
       forgetAiStatus();
     })

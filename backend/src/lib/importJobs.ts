@@ -315,7 +315,9 @@ export function registerFileImport(queue: JobQueue, d: Deps) {
       }
       await d.photos.removeIncoming([file]);
       await logEvent(d.db, { category: "import", level: problems.length ? "warning" : "info", source: name.slice(0, 200), event: `Imported ${imported} recipe${imported === 1 ? "" : "s"} from ${format}`, detail: [skipped && `${skipped} already saved`, problems.length && `${problems.length} couldn't be used`].filter(Boolean).join(", ") || undefined });
-      return { format, imported, skipped, recipeIds, problems: problems.slice(0, 200) };
+      // Improve all automatically (chosen with the pick list): the AI batch starts now, in the background
+      const improving = (job.payload as { improve?: boolean }).improve && recipeIds.length ? (await queue.enqueue("import-improve", { importId: job.id, recipeIds, name }, job.createdBy)).id : undefined;
+      return { format, imported, skipped, recipeIds, problems: problems.slice(0, 200), ...(improving ? { improving } : {}) };
     } catch (e) {
       await logEvent(d.db, { category: "import", level: "warning", source: name.slice(0, 200), event: "Couldn't import a recipe file", detail: (e as Error).message });
       throw e;

@@ -82,15 +82,18 @@ export default async function importRoutes(app: FastifyInstance) {
   // A file listed first (?choose=1): import only the recipes picked (keep: their n). Once.
   app.post("/api/imports/:id/choose", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    const { keep } = z.object({ keep: z.array(z.number().int().min(0)).max(10000) }).strict().parse(req.body ?? {});
+    // improve: then improve them all with AI, started by the import itself when it's done (so the
+    // window can close and the pill shows it all, the import and then the improvements)
+    const { keep, improve } = z.object({ keep: z.array(z.number().int().min(0)).max(10000), improve: z.boolean().optional() }).strict().parse(req.body ?? {});
     const job = await queue.get(id);
     if (!job || job.kind !== "import-file" || !job.result?.choices) throw notFound("Import");
     if (job.result.chosen) throw new HttpError(409, "These recipes have already been imported");
     const known = new Set(job.result.choices.map((c) => c.n));
     const picked = [...new Set(keep)].filter((n) => known.has(n));
     if (!picked.length) throw new HttpError(400, "Choose at least one recipe to import");
+    if (improve) await requireEnhance(db, app.ai);
     const p = job.payload as { file: string; name: string; found?: unknown };
-    const next = await queue.enqueue("import-file", { file: p.file, name: p.name, keep: picked, ...(p.found ? { found: p.found } : {}) }, userOf(req));
+    const next = await queue.enqueue("import-file", { file: p.file, name: p.name, keep: picked, ...(p.found ? { found: p.found } : {}), ...(improve ? { improve: true } : {}) }, userOf(req));
     await db.update(jobs).set({ result: { ...job.result, chosen: next.id } }).where(eq(jobs.id, id));
     return reply.status(202).send(jobView(next));
   });
