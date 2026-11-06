@@ -101,6 +101,31 @@ describe("PDFs", () => {
     await u.click(screen.getByRole("button", { name: "Import" }));
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/5?imported=1"), { timeout: 4000 });
   });
+
+  describe("a file with just one recipe in it (any format)", () => {
+  it("a Paprika file with one recipe opens it, so the AI check runs, like a link", async () => {
+    window.location.hash = "#/recipes";
+    fakeServer(routes({ "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", imported: 1, skipped: 0, recipeIds: [5], problems: [] } }) }));
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "Chili.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/recipes/5?imported=1"), { timeout: 4000 });
+  });
+
+  it("one recipe was already there (skipped): nothing to open, it says so", async () => {
+    window.location.hash = "#/recipes";
+    fakeServer(routes({ "GET /api/imports/31": () => job({ status: "done", result: { format: "Paprika", imported: 0, skipped: 1, recipeIds: [], problems: [] } }) }));
+    const u = userEvent.setup();
+    render(<ImportDialog onClose={() => {}} />);
+    await u.click(screen.getByRole("tab", { name: "From a file" }));
+    await u.upload(screen.getByLabelText("Recipe file"), new File([new Uint8Array([80, 75, 3, 4])], "Chili.paprikarecipes"));
+    await u.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByRole("status", { name: "Import finished" }, { timeout: 4000 });
+    expect(window.location.hash).toBe("#/recipes");
+  });
+  });
 });
 
 describe("after importing many recipes", () => {

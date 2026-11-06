@@ -163,8 +163,9 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     if (job?.status === "done" && r && (r.recipeId || r.recipeIds?.length || (r.imported ?? 0) > 0)) recipesChanged();
   }, [job]);
   useEffect(() => {
-    // One recipe (a link, a photo, or a PDF with one recipe in it): open it
-    const one = job?.result?.recipeId ?? (job?.result?.format === "PDF" && job.result.recipeIds?.length === 1 ? job.result.recipeIds[0] : null);
+    // One recipe (a link, a photo, or a file of any kind with just one recipe in it): open it, and
+    // its AI check runs like after a link. Picked from a file's list: what you chose there happens.
+    const one = job?.result?.recipeId ?? (job?.kind === "import-file" && !then && job.result?.recipeIds?.length === 1 ? job.result.recipeIds[0] : null);
     if (job?.status === "done" && one) {
       importedRef.current?.(one);
       onClose();
@@ -172,7 +173,7 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
       const from = copy ? `&copy=${encodeURIComponent(copy.from)}${copy.date ? `&copied=${copy.date}` : ""}` : "";
       window.location.hash = `#/recipes/${one}${job.result?.warnings?.length ? "?imported=warn" : "?imported=1"}${from}`;
     }
-  }, [job, onClose]);
+  }, [job, then, onClose]);
 
   const start = async (body: object) => {
     setError("");
