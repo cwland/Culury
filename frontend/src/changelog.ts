@@ -10,6 +10,22 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.17.0",
+    date: "2026-11-09",
+    title: "Discover previews, substitutions, a shorter setup, and grams",
+    changes: [
+      "Discover: click a feed item to preview its ingredients and steps; nothing is saved until you press Import, which opens the AI check. Click tags to filter, and work out nutrition per ingredient right there.",
+      "Setup is short pages that never scroll. Choose an AI, then Validate your key or address: the model list fills in with the best one for Culury already picked, and a line says which models work well.",
+      "Substitutions: swap an ingredient (pick it from the recipe as you type) or add an item, with an amount and unit. Tick the ones you like and Make a new version with these changes.",
+      "Sort ingredients A to Z (Settings › Recipes), on the recipe page and in Cook mode.",
+      "Metric shows grams for dry ingredients, like ≈240 g flour (2 cups), from a table of common ingredients or your AI's estimate. US shows cups for grams it knows.",
+      "Nutrition: Calculate nutrition opens a window that says what it's doing, calories are listed per ingredient, and a note says when the recipe changed since.",
+      "Share has two tabs, Link & downloads and Email. Shared emails link to every download format, and the public page opens ready to download.",
+      "Settings: AI Enhance and Auto nutrition are in Recipes (on with your first AI setup); choose how often to check for updates; Delete data can delete just the recipes or reset the whole app; things that need email say so when it isn't set up.",
+      "Fixes: a one-recipe Paprika file gets the AI check; Improve all automatically on a file closes the window and shows progress at the top; picking the same file twice works; runs on older CPUs; database passwords with symbols work.",
+    ],
+  },
+  {
     version: "0.16.0",
     date: "2026-11-01",
     title: "Setup wizard, a simpler AI check, and tidier settings",
