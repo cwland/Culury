@@ -10,6 +10,17 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.17.1",
+    date: "2026-11-10",
+    title: "Importing says what it's doing",
+    changes: [
+      "Import never looks like it did nothing: the button says Uploading Chili.pdf… straight away and can't be pressed twice, then a line under it says what's happening (Reading Chili.pdf with your AI…).",
+      "Any problem shows in red right under the button: the upload was refused, nothing was found, or Culury stopped answering while it checked (the import may still finish).",
+      "PDFs: recipes whose ingredients the AI wrote in groups or in parts (amount, unit, name) are imported instead of being dropped, and when the AI finds a recipe without ingredients it says so.",
+      "When a PDF gives no recipes, Settings › Logs keeps what the AI answered, so it can be looked into.",
+    ],
+  },
+  {
     version: "0.17.0",
     date: "2026-11-09",
     title: "Discover previews, substitutions, a shorter setup, and grams",

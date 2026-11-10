@@ -107,6 +107,45 @@ describe("importing a PDF", () => {
     expect(job.error).toBe("No recipes were found in taxes.pdf.");
   });
 
+  it("nothing found: the log says what the AI answered, so it can be looked into", async () => {
+    await aiOn();
+    t.ai.respond = () => reply({ recipes: [] });
+    await upload("taxes.pdf", await makePdf([["Line 1: income", "Line 2: deductions"]]));
+    const logs = (await t.api("GET", "/api/logs?category=import")).body;
+    const log = logs.find((l: any) => l.event.startsWith("No recipes"));
+    expect(log).toMatchObject({ level: "warning", source: "taxes.pdf", event: "No recipes were found in taxes.pdf" });
+    expect(log.detail).toMatch(/1 page with text, 0 scanned/);
+    expect(log.detail).toContain('{"recipes":[]}');
+  });
+
+  it("the AI found a recipe but gave no ingredients: says so, instead of just 'none found'", async () => {
+    await aiOn();
+    t.ai.respond = () => reply({ recipes: [{ title: "Chile Crisp Fried Rice", ingredients: [], steps: ["Fry."] }] });
+    const job = await upload("rice.pdf", await makePdf([["Chile Crisp Fried Rice", "Fry."]]));
+    expect(job.status).toBe("failed");
+    expect(job.error).toMatch(/found "Chile Crisp Fried Rice" but without any ingredients/);
+    const log = (await t.api("GET", "/api/logs?category=import")).body.find((l: any) => l.event.startsWith("No recipes"));
+    expect(log.detail).toMatch(/Left out "Chile Crisp Fried Rice"/);
+  });
+
+  it("ingredients in groups or as parts (amount, unit, name) are read too, and one recipe without the list around it", async () => {
+    await aiOn();
+    t.ai.respond = () =>
+      reply({
+        title: "Chile Crisp Fried Rice",
+        ingredients: [
+          { heading: "For the rice", items: ["3 cups cooked rice", { quantity: 1, unit: "cup", name: "frozen edamame" }] },
+          { group: "To finish", ingredients: [{ amount: "2", unit: "tbsp", item: "chile crisp" }, { text: "Scallions, sliced" }] },
+        ],
+        steps: [{ text: "Fry the rice." }, "Stir in the chile crisp."],
+      });
+    const job = await upload("rice.pdf", await makePdf([["Chile Crisp Fried Rice", "3 cups cooked rice"]]));
+    expect(job).toMatchObject({ status: "done", result: { imported: 1 } });
+    const r = (await t.api("GET", `/api/recipes/${job.result.recipeIds[0]}`)).body;
+    expect(r.ingredients.map((i: any) => i.raw)).toEqual(["For the rice:", "3 cups cooked rice", "1 cup frozen edamame", "To finish:", "2 tbsp chile crisp", "Scallions, sliced"]);
+    expect(r.steps.map((s: any) => s.text ?? s)).toEqual(expect.arrayContaining(["Fry the rice.", "Stir in the chile crisp."]));
+  });
+
   it("reading a PDF needs AI", async () => {
     const job = await upload("chili.pdf", await makePdf([["Texas Chili", "2 lb chuck"]]));
     expect(job.status).toBe("failed");

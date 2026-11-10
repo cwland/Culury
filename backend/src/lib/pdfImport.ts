@@ -77,29 +77,45 @@ const RULES = `Rules: include every recipe that's complete here; leave out one t
 const TEXT_SYSTEM = `You find every recipe in text from a PDF (a printed recipe or a cookbook) and turn each one into JSON. Reply with JSON only, in this shape:\n${SHAPE}\n${RULES}`;
 const SCAN_SYSTEM = `You read every recipe on these pages (scanned cookbook pages or recipe cards, in order) and turn each one into JSON. Reply with JSON only, in this shape:\n${SHAPE}\n${RULES} Read handwriting carefully.`;
 
-// The recipes in the AI's answer (anything it got wrong is left out)
-function recipesIn(json: Record<string, unknown>): ImportedRecipe[] {
-  const list = Array.isArray(json.recipes) ? json.recipes : [];
+// What happened while reading, for the log when nothing came of it
+export interface PdfReport {
+  textPages: number;
+  scannedPages: number;
+  answers: string[]; // what the AI replied, each cut short
+  leftOut: { title: string; why: string }[]; // recipes in a reply that couldn't be used
+}
+export const newReport = (): PdfReport => ({ textPages: 0, scannedPages: 0, answers: [], leftOut: [] });
+
+// The recipes in the AI's answer (anything it got wrong is left out, and noted). A reply of one
+// recipe without the list around it counts too.
+function recipesIn(json: Record<string, unknown>, report: PdfReport): ImportedRecipe[] {
+  report.answers.push(JSON.stringify(json).slice(0, 400));
+  const one = (json.recipe && typeof json.recipe === "object" ? json.recipe : json.title ? json : null) as unknown;
+  const list = Array.isArray(json.recipes) ? json.recipes : one ? [one] : [];
   return list.flatMap((r) => {
+    if (!r || typeof r !== "object") return [];
     try {
-      return r && typeof r === "object" ? [aiRecipe(r as Record<string, unknown>)] : [];
-    } catch {
+      return [aiRecipe(r as Record<string, unknown>)];
+    } catch (e) {
+      report.leftOut.push({ title: String((r as { title?: unknown }).title ?? "").trim() || "(no title)", why: (e as Error).message });
       return [];
     }
   });
 }
 
 // Every recipe in a PDF. name: the file's name (it becomes the recipes' source).
-export async function recipesFromPdf(ai: AiService, data: Buffer, name: string): Promise<ImportedRecipe[]> {
+export async function recipesFromPdf(ai: AiService, data: Buffer, name: string, report = newReport()): Promise<ImportedRecipe[]> {
   if (!(await ai.active())) throw new AiError("Reading a PDF needs AI. Turn on AI in Settings › AI.");
   const pages = await readPdf(data);
+  report.scannedPages = pages.filter((p) => p.scanned).length;
+  report.textPages = pages.length - report.scannedPages;
   const found: ImportedRecipe[] = [];
 
   // Text: parts of about PART_CHARS, each starting with the last page of the one before
   const ask = async (ps: PdfPage[]) => {
     const body = ps.map((p) => `--- Page ${p.number} ---\n${p.text}`).join("\n\n");
     const { json } = await ai.ask("recipe", TEXT_SYSTEM, `From ${name}, pages ${ps[0].number}–${ps[ps.length - 1].number}:\n\n${body}`, { maxTokens: 8000 });
-    found.push(...recipesIn(json));
+    found.push(...recipesIn(json, report));
   };
   let part: PdfPage[] = [];
   let fresh = 0; // pages in this part not already sent in the one before
@@ -121,7 +137,7 @@ export async function recipesFromPdf(ai: AiService, data: Buffer, name: string):
     const group = scans.slice(i, i + SCANS_PER_ASK);
     const images = await pdfPagePictures(data, group.map((p) => p.number));
     const { json } = await ai.ask("photo", SCAN_SYSTEM, `From ${name}: ${group.length === 1 ? `page ${group[0].number}` : `pages ${group.map((p) => p.number).join(", ")}`}.`, { maxTokens: 8000, images });
-    found.push(...recipesIn(json));
+    found.push(...recipesIn(json, report));
   }
 
   // A recipe found twice (in the overlap) is kept once: the fuller copy

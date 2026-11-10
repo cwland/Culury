@@ -121,6 +121,9 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
   const [text, setText] = useState(initial && !startLink ? initial : "");
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState<string | null>(null); // the file being sent, before the import starts
+  const misses = useRef(0); // checks on the import in a row that got no answer
+  const progress = useRef<HTMLElement>(null);
   const started = useRef(false);
   const importedRef = useRef(onImported);
   importedRef.current = onImported;
@@ -153,9 +156,28 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
   // Follow the import until it's done
   useEffect(() => {
     if (!job || job.status === "done" || job.status === "failed") return;
-    const t = setTimeout(() => void api<ImportJob>("GET", `/api/imports/${job.id}`).then(setJob).catch((e) => setError((e as Error).message)), 900);
+    const t = setTimeout(
+      () =>
+        void api<ImportJob>("GET", `/api/imports/${job.id}`)
+          .then((j) => {
+            misses.current = 0;
+            setJob(j);
+          })
+          .catch((e) => {
+            // A blip is tried again; a few in a row and it says so, instead of going quiet
+            if (++misses.current < 3) return setJob({ ...job });
+            misses.current = 0;
+            setJob(null);
+            setError(`Lost touch with Culury while checking on the import (${(e as Error).message}). It may still finish: watch the bar at the top, or look in your recipes in a minute.`);
+          }),
+      900,
+    );
     return () => clearTimeout(t);
   }, [job]);
+  // Whatever it says now is in view (the dialog can be scrolled down on a phone)
+  useEffect(() => {
+    progress.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); // (newer browsers give back a promise: never return it to React)
+  }, [uploading, job?.status, error]);
   // Recipes came in: the recipe list behind this window reloads
   useEffect(() => {
     const r = job?.result;
@@ -178,7 +200,7 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     setError("");
     setJob(null);
     try {
-      setJob(await api<ImportJob>("POST", "/api/recipes/import", body));
+      setJob(followable(await api<ImportJob>("POST", "/api/recipes/import", body)));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -188,23 +210,28 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     // A file, or a PDF chosen on the photo tab (PDFs are read like files: one recipe or many)
     const pdf = tab === "photo" ? files.find((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) : undefined;
     if (tab === "file" || pdf) {
+      const file = pdf ?? recipeFile!;
       setError("");
       setJob(null);
+      setUploading(file.name);
       try {
-        setJob(await uploadFile<ImportJob>("/api/recipes/import/file?choose=1", pdf ?? recipeFile!));
+        setJob(followable(await uploadFile<ImportJob>("/api/recipes/import/file?choose=1", file)));
       } catch (err) {
         setError((err as Error).message);
       }
+      setUploading(null);
       return;
     }
     if (tab !== "photo") return void start(tab === "link" ? { url: url.trim() } : { text });
     setError("");
     setJob(null);
+    setUploading(files.length === 1 ? files[0].name : `${files.length} photos`);
     try {
-      setJob(await uploadFiles<ImportJob>("/api/recipes/import/photos", files));
+      setJob(followable(await uploadFiles<ImportJob>("/api/recipes/import/photos", files)));
     } catch (err) {
       setError((err as Error).message);
     }
+    setUploading(null);
   };
   // Shared from another app: start right away
   useEffect(() => {
@@ -214,7 +241,7 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
     }
   }, [startLink, page]);
 
-  const busy = !!job && (job.status === "queued" || job.status === "running");
+  const busy = !!uploading || (!!job && (job.status === "queued" || job.status === "running"));
   const tabClass = (on: boolean) => `-mb-px flex-1 border-b-[3px] px-4 py-2.5 text-sm font-semibold ${on ? "border-primary text-ink" : "border-transparent text-subtle hover:text-ink"}`;
 
   return (
@@ -312,7 +339,7 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="submit" disabled={busy || (tab === "link" ? !url.trim() : tab === "photo" ? !files.length : tab === "file" ? !recipeFile : text.trim().length < 20)} className="rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed disabled:opacity-60">
-              {busy ? "Importing…" : "Import"}
+              {uploading ? `Uploading ${uploading}…` : busy ? "Importing…" : "Import"}
             </button>
             <a href="#/recipes/new" onClick={onClose} className="px-2 py-2.5 font-semibold text-subtle hover:underline">
               Type it in instead
@@ -320,10 +347,23 @@ export default function ImportDialog({ initial, page, onClose, onImported }: { i
           </div>
         </form>
 
-        {job?.status === "done" && job.result?.choices && !job.result.chosen ? <PickList choices={job.result.choices} canImprove={ai.enhance} onAccept={(keep, next) => void pick(keep, next)} /> : <Status job={job} error={error} onTab={setTab} canPhoto={ai.photos} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance && then !== "none"} />}
+        <section ref={progress} aria-label="Import progress" aria-live="polite">
+        {uploading ? (
+          <p role="status" className="mt-4 flex items-center gap-3 rounded-lg bg-pressed px-4 py-3">
+            <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden />
+            Uploading {uploading}…
+          </p>
+        ) : job?.status === "done" && job.result?.choices && !job.result.chosen ? <PickList choices={job.result.choices} canImprove={ai.enhance} onAccept={(keep, next) => void pick(keep, next)} /> : <Status job={job} error={error} onTab={setTab} canPhoto={ai.photos} onRetry={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, {}).then(setJob)} onForce={() => job && void api<ImportJob>("POST", `/api/imports/${job.id}/retry`, { force: true }).then(setJob)} onClose={onClose} canReview={ai.enhance && then !== "none"} />}
+        </section>
       </div>
     </Popup>
   );
+}
+
+// The answer to starting an import must be the import to follow; anything else is said, not ignored
+function followable(j: ImportJob): ImportJob {
+  if (!j || typeof j !== "object" || j.id == null || !j.status) throw new Error("Culury didn't say the import started. Try again; if it keeps happening, Settings › Logs may say why.");
+  return j;
 }
 
 // After a file brought in several recipes: go through them one by one, or let the AI improve them
@@ -399,7 +439,7 @@ function Status({ job, error, onRetry, onForce, onClose, canReview, onTab, canPh
     return (
       <p role="status" className="mt-4 flex items-center gap-3 rounded-lg bg-pressed px-4 py-3">
         <span className="size-4 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden />
-        {job.kind === "import-url" ? "Reading the page…" : job.kind === "import-photo" ? "Reading the photo…" : job.kind === "import-file" ? "Importing your recipes… a big collection can take a few minutes." : "Reading the recipe…"} This can take a little while when AI is used.
+        {job.kind === "import-url" ? "Reading the page…" : job.kind === "import-photo" ? "Reading the photo…" : job.kind === "import-file" ? (/\.pdf$/i.test(job.source ?? "") ? `Reading ${job.source} with your AI. This can take a minute or two for a long PDF…` : "Importing your recipes… a big collection can take a few minutes.") : "Reading the recipe…"} This can take a little while when AI is used.
       </p>
     );
   if (job.status === "done" && job.kind === "import-file" && job.result) {

@@ -16,7 +16,7 @@ import { createRecipe, saveRecipe } from "./recipes.js";
 import { recipeAdded } from "./nutrition.js";
 import { firstVersion } from "./versions.js";
 import { tidyIngredientLine } from "./ingredients.js";
-import { recipesFromPdf } from "./pdfImport.js";
+import { newReport, recipesFromPdf } from "./pdfImport.js";
 import { recordImported } from "./inbox.js";
 import type { EventBus } from "./events.js";
 
@@ -279,9 +279,18 @@ export function registerFileImport(queue: JobQueue, d: Deps) {
     try {
       // A PDF is read by AI (one recipe or a whole cookbook); other files are another app's export
       const pdf = name.toLowerCase().endsWith(".pdf");
-      const read: ReadResult = pdf && readBefore ? { format: "PDF", recipes: readBefore, problems: [] } : pdf ? { format: "PDF", recipes: await recipesFromPdf(d.ai, await d.photos.readIncoming(file), name), problems: [] } : readRecipeFile(name, await d.photos.readIncoming(file));
+      const report = newReport();
+      const read: ReadResult = pdf && readBefore ? { format: "PDF", recipes: readBefore, problems: [] } : pdf ? { format: "PDF", recipes: await recipesFromPdf(d.ai, await d.photos.readIncoming(file), name, report), problems: [] } : readRecipeFile(name, await d.photos.readIncoming(file));
       const { format, problems } = read;
-      if (pdf && !read.recipes.length) throw new Error(`No recipes were found in ${name}.`);
+      if (pdf && !read.recipes.length) {
+        // Nothing came of it: the log keeps what the AI said, so it can be looked into
+        const pages = `${report.textPages} page${report.textPages === 1 ? "" : "s"} with text, ${report.scannedPages} scanned.`;
+        const left = report.leftOut.map((l) => `Left out "${l.title}": ${l.why}`).join(" ");
+        await logEvent(d.db, { category: "import", level: "warning", source: name.slice(0, 120), event: `No recipes were found in ${name}`, detail: [pages, left, `The AI answered: ${report.answers.join(" | ")}`].filter(Boolean).join(" ") });
+        const noList = report.leftOut.filter((l) => /ingredients/.test(l.why));
+        if (noList.length) throw new Error(`Your AI found "${noList[0].title}"${noList.length > 1 ? ` and ${noList.length - 1} more` : ""} but without any ingredients, so nothing could be imported. Try again, or try another AI model in Settings › AI.`);
+        throw new Error(`No recipes were found in ${name}.`);
+      }
       if (choose && read.recipes.length > 1) {
         const choices = [];
         for (const [n, r] of read.recipes.entries()) choices.push({ n, title: r.title, already: !!(await sameRecipe(d.db, r)) });

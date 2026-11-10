@@ -261,10 +261,31 @@ export async function recipeFromPhotos(ai: AiService, images: AiImage[]): Promis
 }
 
 // The AI's JSON -> a recipe (or why not)
+// Ingredient lines however an AI wrote them: plain lines (asked for), but also groups
+// ({heading, items}) and parts ({quantity, unit, name}), which some models answer with
+export function ingredientLines(v: unknown): string[] {
+  const str = (x: unknown) => (typeof x === "string" ? x.trim() : typeof x === "number" ? String(x) : "");
+  return [v].flat().flatMap((x): string[] => {
+    if (typeof x === "string") return [x];
+    if (!x || typeof x !== "object" || Array.isArray(x)) return Array.isArray(x) ? ingredientLines(x) : [];
+    const o = x as Record<string, unknown>;
+    const items = o.items ?? o.ingredients ?? o.list;
+    if (Array.isArray(items)) {
+      const head = str(o.heading) || str(o.group) || str(o.section) || str(o.title) || str(o.name);
+      return [...(head ? [head.replace(/:?$/, ":")] : []), ...ingredientLines(items)];
+    }
+    const text = str(o.text) || str(o.line) || str(o.raw) || str(o.original);
+    if (text) return [text];
+    const what = [str(o.quantity) || str(o.amount) || str(o.qty), str(o.unit), str(o.name) || str(o.item) || str(o.ingredient)].filter(Boolean).join(" ");
+    const note = str(o.preparation) || str(o.note) || str(o.notes);
+    return what ? [note ? `${what}, ${note}` : what] : [];
+  });
+}
+
 export function aiRecipe(r: Record<string, unknown>, none = "No recipe was found there."): ImportedRecipe {
   if (r.isRecipe === false) throw new AiError(none);
   const title = plain(r.title);
-  const ingredients = [r.ingredients].flat().map(plain).filter(Boolean);
+  const ingredients = ingredientLines(r.ingredients).map(plain).filter(Boolean);
   if (!title || !ingredients.length) throw new AiError("The AI couldn't find a recipe with ingredients there.");
   const num = (v: unknown) => (typeof v === "number" && v > 0 ? Math.round(v) : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null);
   return {
