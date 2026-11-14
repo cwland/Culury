@@ -191,7 +191,8 @@ export type RecipeRoute = { view: "away" } | { view: "list"; params: URLSearchPa
 export function recipeRoute(): RecipeRoute {
   const [path, query] = window.location.hash.replace(/^#\/?/, "").split("?");
   const parts = path.split("/").filter(Boolean); // ["recipes", "12", "edit"]
-  if (parts[0] !== "recipes") return { view: "away" }; // leaving for another section
+  // No section at all ("", "#/") is Recipes, as AppShell reads it: opening Culury while signed in
+  if (parts.length > 0 && parts[0] !== "recipes") return { view: "away" }; // leaving for another section
   if (parts[1] === "new") return { view: "new" };
   if (parts[1] === "review" && Number(parts[2]) > 0) return { view: "review", job: Number(parts[2]) }; // #/recipes/review/31: an import's recipes, one by one
   if (parts[1] === "receive") return { view: "receive" }; // #/recipes/receive: a page from the Send to Culury bookmark

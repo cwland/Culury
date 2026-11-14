@@ -51,6 +51,16 @@ describe("recipe addresses", () => {
     expect(recipeRoute()).toEqual({ view: "receive" });
     window.location.hash = "";
   });
+
+  it("no address (opening Culury while signed in) is the recipe list, as the app frame reads it", () => {
+    for (const hash of ["", "#/", "#"]) {
+      window.location.hash = hash;
+      expect(recipeRoute()).toMatchObject({ view: "list" });
+    }
+    window.location.hash = "#/plan";
+    expect(recipeRoute()).toEqual({ view: "away" });
+    window.location.hash = "";
+  });
 });
 
 

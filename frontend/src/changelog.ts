@@ -10,6 +10,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.17.2",
+    date: "2026-11-13",
+    title: "Recipes show when you open Culury",
+    changes: [
+      "Opening Culury while already signed in showed a blank page until you went to another section and back. Your recipes now show straight away.",
+    ],
+  },
+  {
     version: "0.17.1",
     date: "2026-11-10",
     title: "Importing says what it's doing",
