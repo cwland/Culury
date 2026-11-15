@@ -36,6 +36,9 @@ import {
   ShoppingCart,
   LogOut,
   Plus,
+  Minus,
+  LayoutGrid,
+  List as LucideList,
   RotateCcw,
   Search,
   Settings,
@@ -64,6 +67,9 @@ export const GroceryIcon = icon(ShoppingCart, "size-5", 1.8);
 export const PantryIcon = icon(Refrigerator, "size-5", 1.8);
 export const LogoutIcon = icon(LogOut, "size-5", 1.8);
 export const PlusIcon = icon(Plus, "size-5");
+export const MinusIcon = icon(Minus, "size-4");
+export const GridViewIcon = icon(LayoutGrid, "size-4", 1.8);
+export const ListViewIcon = icon(LucideList, "size-4", 1.8);
 export const GearIcon = icon(Settings, "size-5", 1.8);
 export const GripIcon = icon(GripVertical, "size-4");
 export const UserIcon = icon(User, "size-5", 1.8);

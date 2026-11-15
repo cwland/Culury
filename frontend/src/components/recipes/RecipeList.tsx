@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { formatMinutes, recipesChanged, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
-import { ChefIcon, ClockIcon, FilterIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
+import { ChefIcon, ClockIcon, FilterIcon, GridViewIcon, ListViewIcon, MinusIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
+import { MAX_ACROSS, MIN_ACROSS, gridClass, loadView, saveView, type RecipeView } from "./recipeView";
 import { Popup } from "../Popup";
 import ImportDialog from "./ImportDialog";
 
@@ -41,6 +42,11 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
   const [noCategory, setNoCategory] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setViewState] = useState<RecipeView>(loadView);
+  const setView = (v: RecipeView) => {
+    setViewState(v);
+    saveView(v);
+  };
   // ?import=<link or text>: shared from another app (Android share sheet), or a bookmarklet
   const [importing, setImporting] = useState<{ initial?: string } | null>(() => (params.get("import") ? { initial: params.get("import")! } : null));
   useEffect(() => {
@@ -208,6 +214,7 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
             ))}
             {f.collection && <option value="collection">Collection order</option>}
           </select>
+          <ViewControls view={view} onChange={setView} />
         </div>
 
         {error && <p role="alert" className="mt-4 rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p>}
@@ -219,11 +226,14 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
         )}
 
         {data && data.recipes.length > 0 && (
-          <ul className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
+          <ul
+            aria-label="Recipes"
+            data-view={view.mode}
+            data-across={view.mode === "cards" ? view.across : undefined}
+            className={view.mode === "list" ? "mt-3 flex flex-col gap-2" : `mt-3 grid gap-3 sm:gap-4 ${gridClass(view.across)}`}
+          >
             {data.recipes.map((r) => (
-              <li key={r.id}>
-                <RecipeCard r={r} />
-              </li>
+              <li key={r.id}>{view.mode === "list" ? <RecipeRow r={r} /> : <RecipeCard r={r} />}</li>
             ))}
           </ul>
         )}
@@ -383,7 +393,7 @@ export function RecipeImage({ src, title, className = "" }: { src: string | null
 function RecipeCard({ r }: { r: RecipeSummary }) {
   const time = formatMinutes(r.totalMinutes);
   return (
-    <a href={`#/recipes/${r.id}`} className="group flex h-full flex-col overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
+    <a href={`#/recipes/${r.id}`} className="group @container flex h-full flex-col overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
       <div className="relative">
         <RecipeImage src={r.imageUrl} title={r.title} className="aspect-[4/3] w-full" />
         <div className="absolute right-2 top-2 flex gap-1">
@@ -399,10 +409,11 @@ function RecipeCard({ r }: { r: RecipeSummary }) {
           )}
         </div>
       </div>
-      <div className="p-3">
-        {/* Every card the same size: the title always takes two lines, the details one */}
-        <h3 className="line-clamp-2 min-h-[2lh] font-semibold leading-snug group-hover:text-action">{r.title}</h3>
-        <p className="mt-1 flex min-h-[1lh] min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap text-xs text-subtle">
+      <div className="p-2.5 @[12rem]:p-3 @[20rem]:p-4">
+        {/* Every card the same size: the title always takes two lines, the details one.
+            Text follows the tile's width, so small tiles don't cut it off. */}
+        <h3 className="line-clamp-2 min-h-[2lh] text-sm font-semibold leading-snug group-hover:text-action @[12rem]:text-base @[20rem]:text-lg">{r.title}</h3>
+        <p className="mt-1 flex min-h-[1lh] min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap text-[11px] text-subtle @[12rem]:text-xs @[20rem]:text-sm">
           {time && (
             <span className="flex shrink-0 items-center gap-1">
               <ClockIcon className="size-3.5" /> {time}
@@ -411,6 +422,65 @@ function RecipeCard({ r }: { r: RecipeSummary }) {
           {r.rating && <span aria-label={`Rated ${r.rating} of 5`}>{"★".repeat(r.rating)}</span>}
           {r.sourceName && <span className="min-w-0 truncate">{r.sourceName}</span>}
         </p>
+      </div>
+    </a>
+  );
+}
+
+function ViewControls({ view, onChange }: { view: RecipeView; onChange: (v: RecipeView) => void }) {
+  const btn = "flex size-8 items-center justify-center rounded-md text-subtle hover:bg-brand-subtle hover:text-action disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-subtle";
+  const list = view.mode === "list";
+  const label = list ? "Show as cards" : "Show as a list";
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-line bg-container p-1">
+      {!list && (
+        // phones always show 2 across, so the size buttons only show on wider screens
+        <span className="hidden items-center gap-1 sm:flex">
+          <button type="button" aria-label="Fewer tiles across" title="Fewer tiles across" disabled={view.across <= MIN_ACROSS} onClick={() => onChange({ ...view, across: view.across - 1 })} className={btn}>
+            <MinusIcon />
+          </button>
+          <span aria-hidden className="w-4 text-center text-sm font-semibold tabular-nums">{view.across}</span>
+          <button type="button" aria-label="More tiles across" title="More tiles across" disabled={view.across >= MAX_ACROSS} onClick={() => onChange({ ...view, across: view.across + 1 })} className={btn}>
+            <PlusIcon className="size-4" />
+          </button>
+          <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
+        </span>
+      )}
+      <button type="button" aria-label={label} title={label} onClick={() => onChange({ ...view, mode: list ? "cards" : "list" })} className={btn}>
+        {list ? <GridViewIcon /> : <ListViewIcon />}
+      </button>
+    </div>
+  );
+}
+
+function RecipeRow({ r }: { r: RecipeSummary }) {
+  const time = formatMinutes(r.totalMinutes);
+  return (
+    <a href={`#/recipes/${r.id}`} className="group flex items-center gap-3 overflow-hidden rounded-xl bg-container p-2 pr-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+      <RecipeImage src={r.imageUrl} title={r.title} className="aspect-[4/3] w-20 shrink-0 rounded-lg sm:w-24" />
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-semibold group-hover:text-action">{r.title}</h3>
+        <p className="mt-0.5 flex min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap text-xs text-subtle">
+          {time && (
+            <span className="flex shrink-0 items-center gap-1">
+              <ClockIcon className="size-3.5" /> {time}
+            </span>
+          )}
+          {r.rating && <span aria-label={`Rated ${r.rating} of 5`}>{"★".repeat(r.rating)}</span>}
+          {r.sourceName && <span className="min-w-0 truncate">{r.sourceName}</span>}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-1">
+        {r.pinned && (
+          <span title="Pinned" className="text-action">
+            <PinIcon filled className="size-4" />
+          </span>
+        )}
+        {r.favorite && (
+          <span title="Favorite" className="text-warning">
+            <StarIcon filled className="size-4" />
+          </span>
+        )}
       </div>
     </a>
   );

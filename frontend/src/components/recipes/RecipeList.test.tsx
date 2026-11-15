@@ -149,3 +149,43 @@ describe("after an import adds recipes", () => {
     expect(screen.queryByText(/No recipes match/)).toBeNull();
   });
 });
+
+describe("card or list view and tiles across", () => {
+  const grid = () => screen.getByRole("list", { name: "Recipes" });
+
+  it("starts as cards 4 across; + and − change it and it sticks", async () => {
+    localStorage.clear();
+    const u = userEvent.setup();
+    setup();
+    await screen.findByRole("heading", { name: "Chili" });
+    expect(grid()).toHaveAttribute("data-across", "4");
+    await u.click(screen.getByRole("button", { name: "More tiles across" }));
+    expect(grid()).toHaveAttribute("data-across", "5");
+    await u.click(screen.getByRole("button", { name: "More tiles across" }));
+    expect(screen.getByRole("button", { name: "More tiles across" })).toBeDisabled();
+    expect(JSON.parse(localStorage.getItem("culury-recipe-view")!)).toEqual({ mode: "cards", across: 6 });
+    for (let i = 0; i < 4; i++) await u.click(screen.getByRole("button", { name: "Fewer tiles across" }));
+    expect(grid()).toHaveAttribute("data-across", "2");
+    expect(screen.getByRole("button", { name: "Fewer tiles across" })).toBeDisabled();
+  });
+
+  it("the view icon switches to a list (no tile size buttons) and back", async () => {
+    localStorage.clear();
+    const u = userEvent.setup();
+    setup();
+    await screen.findByRole("heading", { name: "Chili" });
+    await u.click(screen.getByRole("button", { name: "Show as a list" }));
+    expect(grid()).toHaveAttribute("data-view", "list");
+    expect(screen.queryByRole("button", { name: "More tiles across" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("culury-recipe-view")!).mode).toBe("list");
+    await u.click(screen.getByRole("button", { name: "Show as cards" }));
+    expect(grid()).toHaveAttribute("data-view", "cards");
+  });
+
+  it("opens in the view picked last time", async () => {
+    localStorage.setItem("culury-recipe-view", JSON.stringify({ mode: "list", across: 3 }));
+    setup();
+    await screen.findByRole("heading", { name: "Chili" });
+    expect(grid()).toHaveAttribute("data-view", "list");
+  });
+});

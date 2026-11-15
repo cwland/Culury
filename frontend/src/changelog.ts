@@ -10,6 +10,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.1.0",
+    date: "2026-11-14",
+    title: "Cards or a list, and bigger or smaller tiles",
+    changes: [
+      "Recipes: the new icon beside Sort switches between cards and a compact list.",
+      "In card view, − and + pick how many tiles go across (2 to 6, 4 to start). Pictures and text grow or shrink with the tiles so titles aren't cut off. Phones keep 2 across.",
+      "Culury remembers your choice on each device.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-11-14",
     title: "Culury 1.0: the first release",
