@@ -38,7 +38,9 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   step(`Reading ${lines.length === 1 ? "1 ingredient" : `${lines.length} ingredients`}`);
   const servings = r.servings ?? null;
   const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
-  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, 800 + 300 * lines.length), ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.onStep ? { onProgress: (p: AiProgress) => step(progressLine(p)) } : {}) });
+  // Room for each line's numbers (about 300 tokens), plus at least 4000 so a model that thinks
+  // first still gets to the answer; OpenRouter models are asked to keep the thinking short
+  const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, Math.max(4000, 800 + 300 * lines.length)), reasoning: "low", ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.onStep ? { onProgress: (p: AiProgress) => step(progressLine(p)) } : {}) });
   step("Adding up each ingredient");
   const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
   const common = {

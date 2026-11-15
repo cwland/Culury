@@ -230,6 +230,23 @@ describe("estimating nutrition per ingredient", () => {
     expect(t.ai.calls.at(-1)!.body.max_tokens).toBeGreaterThanOrEqual(800 + 300 * 12);
   });
 
+  // Cory's 7-line Ninja Creami recipe: both OpenRouter models stopped with "length" after 2–3
+  // lines, because thinking used up most of the room (one answer came back empty)
+  it("leaves room for a model that thinks before answering, even for a short recipe", async () => {
+    const id = await recipe(1, "300 ml chocolate milk\n100 ml almond milk\n1/2 tsp arrowroot\n1 pinch salt");
+    t.ai.respond = () => reply({ ingredients: [pork] });
+    await t.api("POST", `/api/recipes/${id}/nutrition`);
+    expect(t.ai.calls.at(-1)!.body.max_tokens).toBeGreaterThanOrEqual(4000);
+  });
+
+  it("OpenRouter: asks the model to keep its thinking short, so the answer has room", async () => {
+    await t.api("PUT", "/api/settings/ai", { services: [{ name: "OpenRouter", provider: "openrouter", model: "anthropic/claude-haiku-5.5", apiKey: "k" }], maxPerRun: 50 });
+    const id = await recipe(1, "300 ml chocolate milk\n1 pinch salt");
+    t.ai.respond = () => reply({ ingredients: [pork] });
+    await t.api("POST", `/api/recipes/${id}/nutrition`);
+    expect(t.ai.calls.at(-1)!.body.reasoning).toEqual({ effort: "low" });
+  });
+
   it("adding a lot of sugar raises the calories", async () => {
     const id = await recipe(10, "1 (5-pound) boneless pork butt roast");
     t.ai.respond = () => reply({ ingredients: [pork] });

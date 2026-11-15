@@ -117,7 +117,8 @@ export type AiProgress =
   | { kind: "thinking"; service: string }
   | { kind: "writing"; service: string; words: number }
   | { kind: "failover"; from: string; to: string; reason: string };
-type StreamOpts = { stream?: boolean; signal?: AbortSignal; onProgress?: (p: AiProgress) => void };
+// reasoning: how much an OpenRouter model may think first ("low" leaves the room for the answer)
+type StreamOpts = { stream?: boolean; signal?: AbortSignal; onProgress?: (p: AiProgress) => void; reasoning?: "low" };
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 const trimSlash = (s: string) => s.replace(/\/+$/, "");
@@ -262,8 +263,8 @@ export class AiService {
       onProgress?.({ kind: "asking", service: sv.name, model: sv.model, serviceId: sv.id, next: next ? { id: next.id, name: next.name } : null });
       try {
         const { text, stop } = opts.stream
-          ? await this.streamRaw(sv, system, user, maxTokens, timeoutMs, images, { signal: opts.signal, onProgress })
-          : await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images);
+          ? await this.streamRaw(sv, system, user, maxTokens, timeoutMs, images, { signal: opts.signal, onProgress, reasoning: opts.reasoning })
+          : await this.chatRaw(sv, system, user, maxTokens, timeoutMs, images, opts.reasoning);
         return { text, stop, service: sv, index, failures };
       } catch (e) {
         if (e instanceof AiStopped) throw e; // stopped on purpose: don't move on to the next one
@@ -285,11 +286,11 @@ export class AiService {
   // The same request, with the answer read as the model writes it. Waits up to firstMs for it to
   // start (loading a model and thinking take a while), then gives up only if it goes quiet for a
   // minute: a slow model that keeps writing is never cut off.
-  private async streamRaw(c: AiConfig, system: string, user: string, maxTokens: number, firstMs: number, images: AiImage[], o: { signal?: AbortSignal; onProgress?: (p: AiProgress) => void }): Promise<{ text: string; stop: string | null }> {
+  private async streamRaw(c: AiConfig, system: string, user: string, maxTokens: number, firstMs: number, images: AiImage[], o: { signal?: AbortSignal; onProgress?: (p: AiProgress) => void; reasoning?: "low" }): Promise<{ text: string; stop: string | null }> {
     if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
     if (!c.model) throw new HttpError(400, "Choose a model first");
     const base = this.base(c);
-    const { url, body } = this.requestFor(c, base, system, user, maxTokens, images, true);
+    const { url, body } = this.requestFor(c, base, system, user, maxTokens, images, true, o.reasoning);
     const idleMs = 60000 * this.timeScale;
     const abort = new AbortController();
     let why: AiError | null = null;
@@ -451,15 +452,15 @@ export class AiService {
   }
 
   // The reply text, and why the model stopped ("length" = it ran out of room)
-  private async chatRaw(c: AiConfig, system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = []): Promise<{ text: string; stop: string | null }> {
+  private async chatRaw(c: AiConfig, system: string, user: string, maxTokens: number, timeoutMs: number, images: AiImage[] = [], reasoning?: "low"): Promise<{ text: string; stop: string | null }> {
     if (c.provider !== "local" && !c.apiKey) throw new HttpError(400, "Enter an API key first");
     if (!c.model) throw new HttpError(400, "Choose a model first");
-    const { url, body } = this.requestFor(c, this.base(c), system, user, maxTokens, images, false);
+    const { url, body } = this.requestFor(c, this.base(c), system, user, maxTokens, images, false, reasoning);
     return readReply(c.provider, await this.request(url, this.authHeaders(c), body, "POST", timeoutMs));
   }
 
   // Each provider's address and request body (stream: the answer comes in pieces)
-  private requestFor(c: AiConfig, base: string, system: string, user: string, maxTokens: number, images: AiImage[], stream: boolean): { url: string; body: unknown } {
+  private requestFor(c: AiConfig, base: string, system: string, user: string, maxTokens: number, images: AiImage[], stream: boolean, reasoning?: "low"): { url: string; body: unknown } {
     if (c.provider === "anthropic")
       return {
         url: `${base}/messages`,
@@ -495,13 +496,14 @@ export class AiService {
           { role: "user", content: images.length ? [{ type: "text", text: user }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.base64}` } }))] : user },
         ],
         ...(stream && { stream: true }),
+        ...(reasoning && c.provider === "openrouter" && { reasoning: { effort: reasoning } }),
       },
     };
   }
 
   // One job for AI: the right services for it, failover, and the reply read as JSON. Throws AiError
   // when AI is off (or no service takes this job) or no answer could be read.
-  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string; minWaitSec?: number; onProgress?: (p: AiProgress) => void; stream?: boolean; signal?: AbortSignal; skip?: string[] } = {}) {
+  async ask(task: AiTask, system: string, user: string, opts: { maxTokens?: number; images?: AiImage[]; off?: string; minWaitSec?: number; onProgress?: (p: AiProgress) => void; stream?: boolean; signal?: AbortSignal; skip?: string[]; reasoning?: "low" } = {}) {
     const found = await this.active(task);
     // Services the person chose to skip this time (too slow)
     const active = found && opts.skip?.length ? { ...found, services: found.services.filter((sv) => !opts.skip!.includes(sv.id)) } : found;
@@ -511,7 +513,7 @@ export class AiService {
     // service that's down: the next one is asked
     let left = active.services;
     for (;;) {
-      const { text, stop, service } = await this.chatWithFailover(left, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000 * this.timeScale, opts.images, opts.onProgress, { stream: opts.stream, signal: opts.signal });
+      const { text, stop, service } = await this.chatWithFailover(left, system, user, opts.maxTokens ?? 2000, Math.max(active.timeoutSec, opts.minWaitSec ?? (task === "quick" ? 30 : 60)) * 1000 * this.timeScale, opts.images, opts.onProgress, { stream: opts.stream, signal: opts.signal, reasoning: opts.reasoning });
       const json = parseJsonReply(text);
       if (json !== null && typeof json === "object") return { json: json as Record<string, unknown>, service };
       // Keep what it said, so Settings › Logs shows why

@@ -10,6 +10,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.17.3",
+    date: "2026-11-14",
+    title: "Nutrition answers don't run out of room",
+    changes: [
+      "Calculate nutrition could fail with “the answer couldn't be read (it ran out of room)”, even for a short recipe: models that think before answering used up the room. Nutrition now leaves at least twice as much room, and OpenRouter models are asked to keep their thinking short.",
+    ],
+  },
+  {
     version: "0.17.2",
     date: "2026-11-13",
     title: "Recipes show when you open Culury",
