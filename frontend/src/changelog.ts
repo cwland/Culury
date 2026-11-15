@@ -10,6 +10,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.0.0",
+    date: "2026-11-14",
+    title: "Culury 1.0: the first release",
+    changes: [
+      "Culury is now version 1.0, its first full release: recipes, importing, Cook Mode, meal plans, grocery lists, sharing and AI help all in one place.",
+      "Nutrition for a recipe with no servings set is now for the whole recipe (1 serving), instead of a quarter of it. The AI is told the same, so the serving size matches the numbers. Press Re-calculate nutrition on older recipes without servings to update them.",
+    ],
+  },
+  {
     version: "0.17.3",
     date: "2026-11-14",
     title: "Nutrition answers don't run out of room",

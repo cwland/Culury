@@ -37,7 +37,8 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   const step = opts.onStep ?? (() => {});
   step(`Reading ${lines.length === 1 ? "1 ingredient" : `${lines.length} ingredients`}`);
   const servings = r.servings ?? null;
-  const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText || "unknown (assume 4 servings)"}\nIngredients:\n${lines.join("\n")}`;
+  // No servings given: the whole recipe is 1 serving (and the AI is told so, so its serving size matches)
+  const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText ? `${r.yieldText} (count it as 1 serving)` : "1 serving"}\nIngredients:\n${lines.join("\n")}`;
   // Room for each line's numbers (about 300 tokens), plus at least 4000 so a model that thinks
   // first still gets to the answer; OpenRouter models are asked to keep the thinking short
   const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, Math.max(4000, 800 + 300 * lines.length)), reasoning: "low", ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.onStep ? { onProgress: (p: AiProgress) => step(progressLine(p)) } : {}) });
@@ -45,14 +46,14 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   const per = Array.isArray(json.ingredients) ? (json.ingredients as Record<string, unknown>[]).filter((x) => x && typeof x === "object") : null;
   const common = {
     source: "ai" as const,
-    servings: servings ?? (r.yieldText ? null : 4),
+    servings: servings ?? 1,
     servingSize: typeof json.servingSize === "string" && json.servingSize.trim() ? json.servingSize.trim().slice(0, 100) : null,
     note: typeof json.note === "string" && json.note.trim() ? json.note.trim().slice(0, 300) : null,
   };
   let out: Nutrition;
   if (per) {
-    // added up here: each line is the whole amount, so divide by the servings (4 when unknown)
-    const by = servings ?? 4;
+    // added up here: each line is the whole amount, so divide by the servings (1 when unknown)
+    const by = servings ?? 1;
     const total = (k: (typeof NUMBERS)[number]) => per.reduce((sum, x) => sum + (num(x[k], k === "sodium" ? 1e7 : 1e6) ?? 0), 0);
     if (!per.some((x) => num(x.calories, 1e6) !== null)) throw new AiError("The AI didn't give a calorie estimate. Try again.");
     out = { ...(Object.fromEntries(NUMBERS.map((k) => [k, round1(total(k) / by)])) as Record<(typeof NUMBERS)[number], number>), ...common };

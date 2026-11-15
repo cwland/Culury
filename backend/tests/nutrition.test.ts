@@ -267,10 +267,19 @@ describe("estimating nutrition per ingredient", () => {
     ]);
   });
 
-  it("no servings given: divides by 4, like before", async () => {
+  // Cory: "default 1 serving if none are specified" (a Ninja Creami pint is one serving; dividing
+  // by 4 gave 70 kcal next to a serving size of half the pint)
+  it("no servings given: the whole recipe is 1 serving", async () => {
     const id = await recipe(null, "4 1/4 cup white sugar");
     t.ai.respond = () => reply({ ingredients: [sugar] });
-    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ calories: 822.5, servings: 4 });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ calories: 3290, servings: 1 });
+  });
+
+  it("no servings given: the AI is told it's 1 serving, so its serving size matches the numbers", async () => {
+    const id = (await t.api("POST", "/api/recipes", { title: "Ice cream", yieldText: "1 pint", ingredients: "300 ml chocolate milk" })).body.id as number;
+    t.ai.respond = () => reply({ ingredients: [sugar] });
+    expect((await t.api("POST", `/api/recipes/${id}/nutrition`)).body).toMatchObject({ servings: 1 });
+    expect(t.ai.calls.at(-1)!.body.messages.at(-1).content).toContain("Makes: 1 pint (count it as 1 serving)");
   });
 
   it("a line with a missing or odd number counts as 0 for that number; no calories at all is an error", async () => {
