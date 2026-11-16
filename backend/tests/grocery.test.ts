@@ -229,6 +229,26 @@ describe("archiving and weekly lists", () => {
     expect(again.body.listId).not.toBe(first.body.listId);
   });
 
+  it("adds arriving together make one week list, not two", async () => {
+    const r = await Promise.all(["milk", "eggs", "bread", "butter"].map((text) => t.api("POST", "/api/grocery/items", { text })));
+    expect(r.map((x) => x.status)).toEqual([201, 201, 201, 201]);
+    expect(new Set(r.map((x) => x.body.listId)).size).toBe(1);
+    expect((await t.api("GET", "/api/grocery/lists")).body.filter((l: any) => l.name === weekListName())).toHaveLength(1);
+  });
+
+  it("the same name twice at once: one list, one friendly refusal", async () => {
+    const r = await Promise.all([1, 2, 3].map(() => t.api("POST", "/api/grocery/lists", { name: "Costco" })));
+    expect(r.map((x) => x.status).sort()).toEqual([201, 409, 409]);
+    expect(r.find((x) => x.status === 409)!.body.error).toBe('There\'s already a list called "Costco"');
+  });
+
+  it("archiving the only list, then Home Assistant adds: this week's list is made", async () => {
+    await t.api("POST", `/api/grocery/lists/${listId}/archive`);
+    expect((await t.api("GET", "/api/grocery/lists")).body).toEqual([]);
+    await t.api("POST", "/api/grocery/items", { text: "milk" });
+    expect((await t.api("GET", "/api/grocery/lists")).body.map((l: any) => l.name)).toEqual([weekListName()]);
+  });
+
   it("uses a list you renamed to this week's name", async () => {
     const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
     await t.api("PATCH", `/api/grocery/lists/${costco.id}`, { name: weekListName() });

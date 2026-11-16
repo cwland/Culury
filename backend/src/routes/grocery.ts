@@ -146,16 +146,33 @@ export default async function groceryRoutes(app: FastifyInstance) {
     if (same) throw new HttpError(409, `There's already a list called "${same.name}"`);
   };
   // When no list is named: this week's list ("Week of November 16"), made if it isn't there
+  const activeNamed = async (name: string) => {
+    const [l] = await db.select().from(groceryLists).where(and(isNull(groceryLists.archivedAt), sql`lower(btrim(${groceryLists.name})) = lower(btrim(${name}))`)).orderBy(asc(groceryLists.id)).limit(1);
+    return l;
+  };
   const weekList = async () => {
     const name = weekListName();
-    const [l] = await db.select().from(groceryLists).where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name})`)).limit(1);
-    return l ?? (await newList(name));
+    const found = await activeNamed(name);
+    if (found) return found;
+    try {
+      return await newList(name);
+    } catch (e) {
+      const again = await activeNamed(name); // another add made it at the same moment
+      if (again) return again;
+      throw e;
+    }
   };
+  // The database refuses a second active list with the same name (grocery_lists_active_name)
   const newList = async (name: string) => {
     const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${groceryLists.sortOrder}), -1) + 1` }).from(groceryLists);
-    const [row] = await db.insert(groceryLists).values({ name, sortOrder: Number(n) }).returning();
-    return row;
+    try {
+      const [row] = await db.insert(groceryLists).values({ name, sortOrder: Number(n) }).returning();
+      return row;
+    } catch (e) {
+      throw nameTaken(e, name);
+    }
   };
+  const nameTaken = (e: unknown, name: string) => ((e as { code?: string; cause?: { code?: string } }).code ?? (e as { cause?: { code?: string } }).cause?.code) === "23505" ? new HttpError(409, `There's already a list called "${name.trim()}"`) : e;
   const items = (listId: number) => db.select().from(groceryItems).where(eq(groceryItems.listId, listId)).orderBy(asc(groceryItems.checked), aisleOrder, asc(groceryItems.position), asc(groceryItems.id));
 
   app.get("/api/grocery/aisles", async () => AISLES);
@@ -177,8 +194,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
   });
   app.get("/api/grocery/this-week", async () => {
     const name = weekListName();
-    const [l] = await db.select({ id: groceryLists.id }).from(groceryLists).where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name})`)).limit(1);
-    return { name, listId: l?.id ?? null };
+    return { name, listId: (await activeNamed(name))?.id ?? null };
   });
   app.post("/api/grocery/lists", async (req, reply) => {
     const { name } = z.object({ name: z.string().trim().min(1, "Name the list").max(100) }).strict().parse(req.body);
@@ -192,7 +208,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
     const { name } = z.object({ name: z.string().trim().min(1).max(100) }).strict().parse(req.body);
     await activeListOr404(id);
     await nameFree(name, id);
-    const [row] = await db.update(groceryLists).set({ name }).where(eq(groceryLists.id, id)).returning();
+    const [row] = await db.update(groceryLists).set({ name }).where(eq(groceryLists.id, id)).returning().catch((e) => Promise.reject(nameTaken(e, name)));
     changed(req, "grocery");
     return row;
   });

@@ -43,6 +43,7 @@ export default function GroceryPage() {
       const got = await api<GroceryItem[]>("GET", `/api/grocery/lists/${listId}/items`);
       if (showing.current !== listId) return;
       setItems(got);
+      setPicked((p) => (p.size ? new Set([...p].filter((id) => got.some((i) => i.id === id))) : p)); // picks that are gone (someone else took them off)
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -86,6 +87,7 @@ export default function GroceryPage() {
     stopSelecting();
     void run(() => api("POST", "/api/grocery/items/delete", { ids }));
   };
+  useEffect(stopSelecting, [listId]); // another list: start over
   const toggle = (i: GroceryItem) => {
     setItems((list) => list?.map((x) => (x.id === i.id ? { ...x, checked: !x.checked } : x)) ?? null); // right away
     void run(() => api("PATCH", `/api/grocery/items/${i.id}`, { checked: !i.checked }));

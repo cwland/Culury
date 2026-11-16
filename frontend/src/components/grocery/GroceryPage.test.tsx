@@ -76,6 +76,33 @@ describe("grocery list: edit mode", () => {
     expect(screen.getByRole("dialog", { name: "Edit item" })).toBeInTheDocument();
   });
 
+  it("switching to another list leaves edit mode", async () => {
+    fakeServer({ ...routes(), "GET /api/grocery/lists": () => [...lists, { id: 2, name: "Costco", open: 1, done: 0 }] });
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Select items to delete" }));
+    await u.click(screen.getByRole("checkbox", { name: "Select eggs" }));
+    await u.click(screen.getByRole("button", { name: "Costco (1)" }));
+    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Delete items" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("checkbox", { name: /^Select / })).not.toBeInTheDocument();
+  });
+
+  it("a live update that takes a picked item away drops it from the picks", async () => {
+    let now = [item(1, "eggs"), item(2, "milk"), item(3, "bread")];
+    const s = fakeServer({ ...routes(), "GET /api/grocery/lists/:id/items": () => now });
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Select items to delete" }));
+    await u.click(screen.getByRole("checkbox", { name: "Select eggs" }));
+    await u.click(screen.getByRole("checkbox", { name: "Select milk" }));
+    now = [item(2, "milk"), item(3, "bread")]; // someone else deleted the eggs
+    live.fn?.();
+    expect(await screen.findByRole("button", { name: "Delete 1 item" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Delete 1 item" }));
+    await u.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ path: "/api/grocery/items/delete", body: { ids: [2] } }));
+  });
+
   it("the tab shows how many are left in brackets", async () => {
     fakeServer(routes());
     page();

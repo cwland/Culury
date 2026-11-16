@@ -459,7 +459,10 @@ export const groceryLists = pgTable("grocery_lists", {
   sortOrder: integer("sort_order").notNull().default(0),
   archivedAt: timestamp("archived_at", { withTimezone: true }), // null: an active list; set: kept read-only
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Active lists have different names (capitals and outer spaces don't count); archived ones may repeat
+  uniqueIndex("grocery_lists_active_name").on(sql`lower(btrim(${t.name}))`).where(sql`${t.archivedAt} is null`),
+]);
 
 // Where an item on the list came from ("Chili", "Pizza") so you know what it's for
 export interface ItemSource {
