@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
 import { setupTestApp, type TestApp } from "./helpers.js";
 import { guessAisle, itemKey, sameItem, splitLine, tidy, weekListName } from "../src/lib/grocery.js";
 
@@ -105,6 +106,57 @@ describe("grocery list", () => {
     const r = await t.api("POST", "/api/grocery/items", { text: "milk" }, { "x-api-key": key });
     expect(r.body).toMatchObject({ listId, added: 1 });
     expect((await t.api("GET", `/api/grocery/lists/${listId}/items`, undefined, { "x-api-key": key })).status).toBe(403); // write only
+  });
+});
+
+describe("bulk delete and archived lists", () => {
+  const archive = (id: number) => t.db.execute(sql`update grocery_lists set archived_at = now() where id = ${id}`);
+
+  it("deletes several items at once", async () => {
+    await add({ text: "eggs, milk, bread" });
+    const ids = (await items()).filter((i: any) => i.name !== "bread").map((i: any) => i.id);
+    expect((await t.api("POST", "/api/grocery/items/delete", { ids })).body).toEqual({ deleted: 2 });
+    expect((await items()).map((i: any) => i.name)).toEqual(["bread"]);
+  });
+
+  it("bulk delete is all or nothing", async () => {
+    await add({ text: "eggs, milk" });
+    const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
+    await add({ text: "paper towels" }, costco.id);
+    const mine = (await items()).map((i: any) => i.id);
+    expect((await t.api("POST", "/api/grocery/items/delete", { ids: [...mine, 999999] })).status).toBe(404);
+    expect(await items()).toHaveLength(2);
+    const theirs = (await items(costco.id)).map((i: any) => i.id);
+    expect((await t.api("POST", "/api/grocery/items/delete", { ids: [mine[0], ...theirs] })).body).toEqual({ deleted: 2 });
+  });
+
+  it("archived lists can be read but not changed", async () => {
+    await add({ text: "eggs" });
+    const old = (await t.api("POST", "/api/grocery/lists", { name: "Last week" })).body;
+    await add({ text: "milk" }, old.id);
+    const milk = (await items(old.id))[0];
+    const eggs = (await items())[0];
+    await archive(old.id);
+    expect((await t.api("GET", `/api/grocery/lists/${old.id}/items`)).status).toBe(200);
+    expect((await t.api("GET", "/api/grocery/lists")).body.map((l: any) => l.name)).toEqual(["Groceries"]);
+    expect((await add({ text: "bread" }, old.id)).status).toBe(409);
+    expect((await t.api("PATCH", `/api/grocery/items/${milk.id}`, { checked: true })).status).toBe(409);
+    expect((await t.api("DELETE", `/api/grocery/items/${milk.id}`)).status).toBe(409);
+    expect((await t.api("POST", "/api/grocery/items/delete", { ids: [eggs.id, milk.id] })).status).toBe(409);
+    expect((await t.api("POST", `/api/grocery/lists/${old.id}/clear-checked`, {})).status).toBe(409);
+    expect((await t.api("PATCH", `/api/grocery/items/${eggs.id}`, { listId: old.id })).status).toBe(409);
+    expect((await items()).map((i: any) => i.name)).toEqual(["eggs"]);
+  });
+
+  it("active lists have different names; archived ones may repeat", async () => {
+    const r = await t.api("POST", "/api/grocery/lists", { name: " groceries " });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('There\'s already a list called "Groceries"');
+    const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
+    expect((await t.api("PATCH", `/api/grocery/lists/${costco.id}`, { name: "GROCERIES" })).status).toBe(409);
+    expect((await t.api("PATCH", `/api/grocery/lists/${costco.id}`, { name: "costco" })).status).toBe(200); // its own name, new capitals
+    await archive(listId);
+    expect((await t.api("POST", "/api/grocery/lists", { name: "Groceries" })).status).toBe(201);
   });
 });
 

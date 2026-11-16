@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { groceryItems, groceryLists, mealPlan, pantryItems, recipes, type ItemSource } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
@@ -125,8 +125,28 @@ export default async function groceryRoutes(app: FastifyInstance) {
     if (!l) throw notFound("List");
     return l;
   };
+  // Lists you can still change: an archived list is kept as is (read-only)
+  const activeListOr404 = async (id: number) => {
+    const l = await listOr404(id);
+    if (l.archivedAt) throw new HttpError(409, "That list is archived");
+    return l;
+  };
+  const listOfItem = async (itemId: number) => {
+    const [row] = await db.select({ listId: groceryItems.listId, archivedAt: groceryLists.archivedAt }).from(groceryItems).innerJoin(groceryLists, eq(groceryLists.id, groceryItems.listId)).where(eq(groceryItems.id, itemId));
+    if (!row) throw notFound("Item");
+    if (row.archivedAt) throw new HttpError(409, "That list is archived");
+    return row.listId;
+  };
+  // Active lists have different names (capitals and spaces don't count); archived ones may repeat
+  const nameFree = async (name: string, except?: number) => {
+    const [same] = await db
+      .select({ name: groceryLists.name })
+      .from(groceryLists)
+      .where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name.trim()})`, except ? ne(groceryLists.id, except) : undefined));
+    if (same) throw new HttpError(409, `There's already a list called "${same.name}"`);
+  };
   const firstList = async () => {
-    const [l] = await db.select().from(groceryLists).orderBy(asc(groceryLists.sortOrder), asc(groceryLists.id)).limit(1);
+    const [l] = await db.select().from(groceryLists).where(isNull(groceryLists.archivedAt)).orderBy(asc(groceryLists.sortOrder), asc(groceryLists.id)).limit(1);
     if (l) return l;
     const [made] = await db.insert(groceryLists).values({ name: "Groceries" }).returning();
     return made;
@@ -145,10 +165,12 @@ export default async function groceryRoutes(app: FastifyInstance) {
         done: sql<number>`(select count(*)::int from grocery_items gi where gi.list_id = "grocery_lists"."id" and gi.checked)`,
       })
       .from(groceryLists)
+      .where(isNull(groceryLists.archivedAt))
       .orderBy(asc(groceryLists.sortOrder), asc(groceryLists.id))
   );
   app.post("/api/grocery/lists", async (req, reply) => {
     const { name } = z.object({ name: z.string().trim().min(1, "Name the list").max(100) }).strict().parse(req.body);
+    await nameFree(name);
     const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${groceryLists.sortOrder}), -1) + 1` }).from(groceryLists);
     const [row] = await db.insert(groceryLists).values({ name, sortOrder: Number(n) }).returning();
     changed(req, "grocery");
@@ -157,7 +179,8 @@ export default async function groceryRoutes(app: FastifyInstance) {
   app.patch("/api/grocery/lists/:id", async (req) => {
     const { id } = idParam.parse(req.params);
     const { name } = z.object({ name: z.string().trim().min(1).max(100) }).strict().parse(req.body);
-    await listOr404(id);
+    await activeListOr404(id);
+    await nameFree(name, id);
     const [row] = await db.update(groceryLists).set({ name }).where(eq(groceryLists.id, id)).returning();
     changed(req, "grocery");
     return row;
@@ -182,7 +205,7 @@ export default async function groceryRoutes(app: FastifyInstance) {
   // Add: { text: "2 lb chicken\neggs" }, one { name, quantity, unit }, or { items: [...] }
   app.post("/api/grocery/lists/:id/items", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    await listOr404(id);
+    await activeListOr404(id);
     const result = await db.transaction((tx) => addToList(tx, id, linesFrom(req.body), userOf(req)));
     changed(req, "grocery", id);
     return reply.status(201).send({ ...result, items: await items(id) });
@@ -209,7 +232,8 @@ export default async function groceryRoutes(app: FastifyInstance) {
       })
       .strict()
       .parse(req.body);
-    if (body.listId) await listOr404(body.listId);
+    await listOfItem(id);
+    if (body.listId) await activeListOr404(body.listId);
     const [row] = await db
       .update(groceryItems)
       .set({
@@ -229,17 +253,34 @@ export default async function groceryRoutes(app: FastifyInstance) {
 
   app.delete("/api/grocery/items/:id", async (req, reply) => {
     const { id } = idParam.parse(req.params);
+    await listOfItem(id);
     const [row] = await db.delete(groceryItems).where(eq(groceryItems.id, id)).returning();
     if (!row) throw notFound("Item");
     changed(req, "grocery", row.listId);
     return reply.status(204).send();
   });
 
+  // Take several items off at once (say a recipe was added by mistake). All or nothing.
+  app.post("/api/grocery/items/delete", async (req) => {
+    const { ids } = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) }).strict().parse(req.body);
+    const wanted = [...new Set(ids)];
+    const found = await db
+      .select({ id: groceryItems.id, listId: groceryItems.listId, archivedAt: groceryLists.archivedAt })
+      .from(groceryItems)
+      .innerJoin(groceryLists, eq(groceryLists.id, groceryItems.listId))
+      .where(inArray(groceryItems.id, wanted));
+    if (found.length < wanted.length) throw notFound("Item");
+    if (found.some((f) => f.archivedAt)) throw new HttpError(409, "That list is archived");
+    await db.delete(groceryItems).where(inArray(groceryItems.id, wanted));
+    for (const listId of new Set(found.map((f) => f.listId))) changed(req, "grocery", listId);
+    return { deleted: wanted.length };
+  });
+
   // Done shopping: take the checked items off (optionally putting them in the pantry)
   app.post("/api/grocery/lists/:id/clear-checked", async (req) => {
     const { id } = idParam.parse(req.params);
     const { toPantry } = z.object({ toPantry: z.boolean().optional() }).strict().parse(req.body ?? {});
-    await listOr404(id);
+    await activeListOr404(id);
     const done = await db.transaction(async (tx) => {
       const rows = await tx.delete(groceryItems).where(and(eq(groceryItems.listId, id), eq(groceryItems.checked, true))).returning();
       if (toPantry && rows.length) await addToPantry(tx, rows.map((r) => ({ name: r.name, quantity: r.quantity, unit: r.unit })));
