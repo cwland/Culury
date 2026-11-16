@@ -2,22 +2,17 @@
 
 **Your recipes, meal plans and groceries, self-hosted.** A recipe manager for the homelab: import from any site, a photo or a handwritten card, cook step by step, plan the week, and shop from one shared list. AI is optional and can run on your own hardware.
 
-## Status
+## What it does
 
-Built in steps:
+- **Recipes**: import from a link, a photo or a handwritten card, a PDF cookbook, or Paprika files; tags, categories, collections, favorites, ratings, notes, versions and full-text search.
+- **Cook Mode**: one step at a time, ingredient checklist, tap-to-start timers, scaling, metric/US units, the screen kept awake.
+- **Meal plan and groceries**: plan the week by drag and drop, then shop from shared weekly grocery lists sorted by aisle, with a pantry. Changes show live on every device in the household.
+- **Discover**: recipes from your favorite sites' RSS feeds, previewed before you save them.
+- **Sharing**: public read-only links, PDF and other downloads, email.
+- **AI is optional**: OpenAI, Claude, Gemini, OpenRouter or a home server like Ollama, with failover, for reading recipes, nutrition, aisle sorting and meal ideas.
+- **Self-hosted**: one Docker image plus PostgreSQL, daily backups, passkeys and OAuth sign-in, API keys for Home Assistant, Shortcuts and the [Culury Companion](https://github.com/cwland/Culury-Companion) browser extension.
 
-| Step | What | Status |
-|---|---|---|
-| 1 | Foundation: sign-in (password, passkeys, OAuth), devices, API keys with scopes, AI services with failover, email, logs, backups, themes + dark mode, Docker, CI | **Done** |
-| 2 | Recipes: database, add/edit, ingredient parsing, tags, categories, collections, favorites, ratings, notes, substitutions, full-text search | **Done** |
-| 3 | Import: schema.org JSON-LD, AI fallback, pasted text, background jobs, photo uploads, Android share | **Done** |
-| 4 | Cook Mode: wake lock, step by step, ingredient checklist, tap-to-start timers, servings scaling, metric/US units | **Done** |
-| 5 | Meal planner (drag and drop week, custom meal slots) and household members (owner / member) | **Done** |
-| 6 | Grocery lists and pantry, household sync | **Done** |
-| 7 | More AI: photos and handwriting, nutrition, aisle sorting, meal ideas, model cascading | **Done** |
-| 8 | Sharing and export (HTML email, JSON-LD, PDF), photos in backups, meal plan emails | **Done** |
-
-The version is in `backend/package.json` and `frontend/package.json` (keep them the same); "What's new" notes are in `frontend/src/changelog.ts`.
+What changed in each version is under **What's new** in the app (`frontend/src/changelog.ts`). The version is in `backend/package.json` and `frontend/package.json` (keep them the same).
 
 ## Run it on the homelab (Docker)
 
@@ -31,10 +26,9 @@ docker compose pull
 docker compose up -d
 ```
 
-Open `http://<server>:4000` and create your account.
+Open `http://<server>:4000` and create your account. The image won't start while `JWT_SECRET` is still the example value: it signs every sign-in, and the example is public.
 
 - Everything is kept in `./data`: `./data/app` is the app's `/app/data` (backups, and later photos), `./data/postgres` is the database.
-- While the repository is private, sign Docker in to GitHub's registry once: `echo <token> | docker login ghcr.io -u cwland --password-stdin` (a classic token with `read:packages`).
 - Build it yourself instead: `docker buildx build --platform linux/amd64 -t culury .` (or `docker compose build`).
 - Database migrations run when the container starts.
 
@@ -132,6 +126,9 @@ A household inbox for things other apps send in to look at later. In the app: th
 - Rate limits per address on sign-in, setup, password reset and passkey/OAuth sign-in (10 a minute), plus a lockout after 5 failed passwords. Guessing API keys blocks the address for a while.
 - Logins are bearer tokens (not cookies), so cross-site request forgery doesn't apply; the API is same-origin only (no CORS).
 - Saved secrets (AI keys, email password, OAuth client secret) are encrypted with a key derived from `JWT_SECRET`.
+- The Docker image refuses to start with the example `JWT_SECRET` from `.env.example` (development only warns). Make your own with `openssl rand -base64 48`.
+
+Found a security problem? Please report it privately through GitHub's **Security → Report a vulnerability** on this repository rather than in a public issue.
 
 ## Household
 
@@ -142,12 +139,16 @@ A household inbox for things other apps send in to look at later. In the app: th
 
 ## Grocery list and pantry
 
-- **Grocery** (#/grocery): type or paste items (“eggs, 2 lb chicken thighs, milk”). They're sorted by store aisle; tap one to put it in the cart, tap ⋯ to change the amount, aisle, note or list.
+- **Grocery** (#/grocery): type or paste items (“eggs, 2 lb chicken thighs, milk”). They're sorted by store aisle; tap one to put it in the cart, tap ⋯ to change the amount, aisle, note or list. Each tab shows how many are left to get, like (6).
+- **Lists are weekly**: whenever no list is named, items go to “Week of <Monday>” (the Monday of this week, in the server's time zone), made if it isn't there. Two current lists can't share a name. **Rename**, **Archive this list** and **Delete** are at the bottom of a list.
+- **Edit** (top of the list) picks several items to delete at once, for example after adding the wrong recipe.
+- **Archived** (top of the page) shows archived lists, read-only, as they were (checked and unchecked). Tick what you still need and add it to a current list or a new one.
 - **Add to grocery list** on a recipe (at the servings you chose) or **Week ▾ › Add this week to the grocery list** on the meal plan. The same ingredient from several recipes is added up into one line. Items in the pantry start unticked, and staples are never added.
 - When you're done shopping, **Done: put them in the pantry** moves what's in the cart to the pantry.
 - **Pantry** (#/pantry): what you have, with use-by dates and staples (salt, oil, spices). **Cook with what you have** lists recipes you can mostly make from it.
 - Changes show up live on every signed-in device in the household (grocery list, pantry and meal plan).
-- Home Assistant: make an API key with **Grocery list write** access and `POST /api/grocery/items` with `{"text": "milk"}` (header `x-api-key`). It goes on the first list.
+- Home Assistant: make an API key with **Grocery list write** access and `POST /api/grocery/items` with `{"text": "milk"}` (header `x-api-key`). It goes on this week's list.
+- API: `GET /api/grocery/lists` (current lists; `?archived=1` archived ones, newest first), `GET /api/grocery/this-week` (`{ name, listId }`), `POST /api/grocery/items/delete` (`{ ids }`, all or nothing), `POST /api/grocery/lists/:id/archive`, `POST /api/grocery/lists/:id/bring-forward` (`{ itemIds, listId }` or `{ itemIds, name }` for a new list). Archived lists can be read but not changed (409).
 
 ## AI
 
@@ -238,8 +239,12 @@ A passkey belongs to the address it was added on, and browsers only offer them o
 
 ## New version bar
 
-When a newer release is published on GitHub (`UPDATE_REPO`, default `cwland/Culury`), a bar at the top offers its notes. While the repository is private, set `GITHUB_TOKEN` (fine-grained, this repo only, Contents: Read-only). Choose how often to look in **Settings → Data → Updates**: every hour, 6 hours, day (the default), week or month, or never. The server looks each hour whether a check is due; the app asks after you sign in. API: `PUT /api/updates/settings` `{"every":"hour"|"6h"|"day"|"week"|"month"|"never"}`.
+When a newer release is published on GitHub (`UPDATE_REPO`, default `cwland/Culury`), a bar at the top offers its notes. Choose how often to look in **Settings → Data → Updates**: every hour, 6 hours, day (the default), week or month, or never. The server looks each hour whether a check is due; the app asks after you sign in. API: `PUT /api/updates/settings` `{"every":"hour"|"6h"|"day"|"week"|"month"|"never"}`.
 
 ## Credits
 
 Built from the platform of Zero Smart Budget (Corys Dollar). Icons: [Lucide](https://lucide.dev) (ISC).
+
+## License
+
+[MIT](LICENSE): anyone may use, change and share Culury, including commercially, as long as the license notice stays with it. It comes with no warranty.

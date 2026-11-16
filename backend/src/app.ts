@@ -128,6 +128,12 @@ export function buildApp({ db, jwtSecret, logger = false, backupDir = defaultBac
   if (!jwtSecret || jwtSecret.length < 16) {
     throw new Error("JWT_SECRET must be set to at least 16 characters");
   }
+  // The example value is public (it's in the repo): anyone could forge a sign-in with it
+  if (jwtSecret.trim().toLowerCase().startsWith("change-me")) {
+    const msg = "JWT_SECRET is still the example value from .env.example. Set your own: openssl rand -base64 48";
+    if (process.env.NODE_ENV === "production") throw new Error(msg);
+    console.warn(`${msg} (allowed in development only)`);
+  }
 
   // Behind a proxy on this machine or the local network (Vite in development, a reverse proxy in
   // Docker), take the visitor's address from X-Forwarded-For so devices show their real IP
