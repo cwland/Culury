@@ -17,6 +17,10 @@ export default function GroceryPage() {
   const [editing, setEditing] = useState<GroceryItem | null>(null);
   const [newList, setNewList] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  // Edit mode: pick several items and take them off at once (not the same as checking them off)
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const loadLists = useCallback(async () => {
     const l = await api<GroceryList[]>("GET", "/api/grocery/lists");
@@ -53,6 +57,24 @@ export default function GroceryPage() {
     setText("");
     void run(() => api("POST", `/api/grocery/lists/${listId}/items`, { text: t }));
   };
+  const stopSelecting = () => {
+    setSelecting(false);
+    setPicked(new Set());
+    setConfirmDelete(false);
+  };
+  const pick = (id: number) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const deletePicked = () => {
+    const ids = [...picked];
+    setItems((list) => list?.filter((x) => !picked.has(x.id)) ?? null);
+    stopSelecting();
+    void run(() => api("POST", "/api/grocery/items/delete", { ids }));
+  };
   const toggle = (i: GroceryItem) => {
     setItems((list) => list?.map((x) => (x.id === i.id ? { ...x, checked: !x.checked } : x)) ?? null); // right away
     void run(() => api("PATCH", `/api/grocery/items/${i.id}`, { checked: !i.checked }));
@@ -68,6 +90,11 @@ export default function GroceryPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold">Grocery list</h1>
         {open.length > 0 && <span className="text-sm text-subtle">{open.length} to get</span>}
+        {!!items?.length && !selecting && (
+          <button type="button" onClick={() => setSelecting(true)} aria-label="Select items to delete" title="Select items to delete" className="flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
+            <Trash /> Edit
+          </button>
+        )}
         {open.length > 0 && (
           <button type="button" onClick={() => setEmailing(true)} className="flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
             <MailIcon /> Email
@@ -80,7 +107,12 @@ export default function GroceryPage() {
         {lists.map((l) => (
           <button key={l.id} type="button" aria-current={l.id === listId} onClick={() => setListId(l.id)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${l.id === listId ? "bg-primary text-white" : "bg-container text-subtle hover:text-ink"}`}>
             {l.name}
-            {l.open > 0 && <span className="ml-1.5 opacity-70">{l.open}</span>}
+            {l.open > 0 && (
+              <>
+                {" "}
+                <span className={`ml-1 rounded-full px-1.5 py-0.5 text-xs font-bold ${l.id === listId ? "bg-white/25 text-white" : "bg-primary/10 text-primary"}`}>({l.open})</span>
+              </>
+            )}
           </button>
         ))}
         <button type="button" onClick={() => setNewList(true)} className="shrink-0 rounded-full border border-dashed border-strong px-4 py-2 text-sm font-semibold text-subtle hover:text-ink">
@@ -103,6 +135,35 @@ export default function GroceryPage() {
           </button>
         </div>
       </form>
+      {selecting && (
+        <div role="toolbar" aria-label="Delete items" className="sticky top-[4.5rem] z-10 mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-container px-3 py-2 shadow-sm">
+          {confirmDelete ? (
+            <>
+              <span className="mr-auto font-semibold">
+                Delete {picked.size} item{picked.size === 1 ? "" : "s"}?
+              </span>
+              <button type="button" onClick={deletePicked} className="rounded-lg bg-error px-3 py-1.5 text-sm font-semibold text-white">
+                Delete
+              </button>
+              <button type="button" onClick={() => setConfirmDelete(false)} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold">
+                Keep them
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => setPicked(new Set((items ?? []).map((i) => i.id)))} className="rounded-lg px-2 py-1.5 text-sm font-semibold text-action hover:bg-pressed">
+                Select all
+              </button>
+              <button type="button" onClick={stopSelecting} className="mr-auto rounded-lg px-2 py-1.5 text-sm font-semibold text-subtle hover:bg-pressed">
+                Cancel
+              </button>
+              <button type="button" disabled={!picked.size} onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 rounded-lg bg-error px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+                <Trash /> Delete {picked.size} item{picked.size === 1 ? "" : "s"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {error && <p role="alert" className="mt-3 rounded-lg bg-error-subtle px-4 py-3 text-error">{error}</p>}
 
       {items && open.length === 0 && done.length === 0 && (
@@ -117,7 +178,7 @@ export default function GroceryPage() {
           <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">{AISLE_NAMES[g.aisle]}</h2>
           <ul className="mt-1.5 overflow-hidden rounded-2xl bg-container">
             {g.list.map((i) => (
-              <ItemRow key={i.id} i={i} onToggle={() => toggle(i)} onEdit={() => setEditing(i)} />
+              <ItemRow key={i.id} i={i} onToggle={() => toggle(i)} onEdit={() => setEditing(i)} selecting={selecting} selected={picked.has(i.id)} onSelect={() => pick(i.id)} />
             ))}
           </ul>
         </section>
@@ -127,16 +188,20 @@ export default function GroceryPage() {
         <section aria-label="In the cart" className="mt-8">
           <div className="flex flex-wrap items-center gap-2 px-1">
             <h2 className="mr-auto text-xs font-semibold uppercase tracking-wide text-muted">In the cart ({done.length})</h2>
-            <button type="button" onClick={() => void run(() => api("POST", `/api/grocery/lists/${listId}/clear-checked`, { toPantry: true }))} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white">
-              Done: put them in the pantry
-            </button>
-            <button type="button" onClick={() => void run(() => api("POST", `/api/grocery/lists/${listId}/clear-checked`, {}))} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold">
-              Clear
-            </button>
+            {!selecting && (
+              <>
+                <button type="button" onClick={() => void run(() => api("POST", `/api/grocery/lists/${listId}/clear-checked`, { toPantry: true }))} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white">
+                  Done: put them in the pantry
+                </button>
+                <button type="button" onClick={() => void run(() => api("POST", `/api/grocery/lists/${listId}/clear-checked`, {}))} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold">
+                  Clear
+                </button>
+              </>
+            )}
           </div>
           <ul className="mt-1.5 overflow-hidden rounded-2xl bg-container opacity-70">
             {done.map((i) => (
-              <ItemRow key={i.id} i={i} onToggle={() => toggle(i)} onEdit={() => setEditing(i)} />
+              <ItemRow key={i.id} i={i} onToggle={() => toggle(i)} onEdit={() => setEditing(i)} selecting={selecting} selected={picked.has(i.id)} onSelect={() => pick(i.id)} />
             ))}
           </ul>
         </section>
@@ -161,12 +226,17 @@ export default function GroceryPage() {
   );
 }
 
-function ItemRow({ i, onToggle, onEdit }: { i: GroceryItem; onToggle: () => void; onEdit: () => void }) {
+// selecting: edit mode, where a tap picks the item to delete instead of checking it off
+function ItemRow({ i, onToggle, onEdit, selecting, selected, onSelect }: { i: GroceryItem; onToggle: () => void; onEdit: () => void; selecting: boolean; selected: boolean; onSelect: () => void }) {
   const amount = itemAmount(i);
   return (
-    <li className="flex items-center border-b border-line last:border-0">
-      <button type="button" role="checkbox" aria-checked={i.checked} onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
-        <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition ${i.checked ? "border-action bg-action text-white" : "border-strong"}`}>{i.checked && <Check className="size-4" />}</span>
+    <li className={`flex items-center border-b border-line last:border-0 ${selecting && selected ? "bg-error-subtle" : ""}`}>
+      <button type="button" role="checkbox" aria-checked={selecting ? selected : i.checked} aria-label={selecting ? `Select ${i.name}` : undefined} onClick={selecting ? onSelect : onToggle} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
+        {selecting ? (
+          <span className={`flex size-6 shrink-0 items-center justify-center rounded-md border-2 transition ${selected ? "border-error bg-error text-white" : "border-strong"}`}>{selected && <Check className="size-4" />}</span>
+        ) : (
+          <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition ${i.checked ? "border-action bg-action text-white" : "border-strong"}`}>{i.checked && <Check className="size-4" />}</span>
+        )}
         <span className="min-w-0 flex-1">
           <span className={`block ${i.checked ? "text-muted line-through" : ""}`}>
             {amount && <strong className="font-semibold">{amount} </strong>}
@@ -175,9 +245,11 @@ function ItemRow({ i, onToggle, onEdit }: { i: GroceryItem; onToggle: () => void
           {(i.note || i.sources.length > 0) && <span className="block truncate text-xs text-muted">{[i.note, i.sources.length ? `for ${i.sources.map((s) => s.title).join(", ")}` : ""].filter(Boolean).join(" · ")}</span>}
         </span>
       </button>
-      <button type="button" onClick={onEdit} aria-label={`Edit ${i.name}`} title={`Edit ${i.name}`} className="self-stretch px-4 text-muted hover:text-ink">
-        ⋯
-      </button>
+      {!selecting && (
+        <button type="button" onClick={onEdit} aria-label={`Edit ${i.name}`} title={`Edit ${i.name}`} className="self-stretch px-4 text-muted hover:text-ink">
+          ⋯
+        </button>
+      )}
     </li>
   );
 }
