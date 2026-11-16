@@ -10,6 +10,20 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-16",
+    title: "Grocery lists: delete many at once, archive, weekly lists",
+    changes: [
+      "Edit (top of the grocery list) lets you tick several items and delete them together, say after adding the wrong recipe. Tapping an item still checks it off, and ⋯ still edits one item.",
+      "Archive this list (bottom of a list, beside Delete) keeps the list as it is, checked and unchecked, and takes it off the tabs.",
+      "Archived (top of the page) shows your archived lists. Open one to look at it, tick what you still need, and add those to a current list or a new one.",
+      "Rename a list at the bottom of the page. Two current lists can't have the same name.",
+      "Lists are weekly: when no list is named, items go to \"Week of <Monday>\", made if it isn't there. That includes Home Assistant, Shortcuts and other apps that add without picking a list.",
+      "Add to grocery list on a recipe picks this week's list, or starts it when there are no lists. You can also start a new list right there.",
+      "The tabs show what's left to get in brackets, e.g. (3).",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-11-14",
     title: "Cards or a list, and bigger or smaller tiles",

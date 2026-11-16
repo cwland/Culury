@@ -5,7 +5,8 @@ import GroceryPage from "./GroceryPage";
 import { SessionContext, type User } from "../../session";
 import { fakeServer } from "../../test/fakeServer";
 
-vi.mock("../../live", () => ({ useLive: () => {} }));
+const live = vi.hoisted(() => ({ fn: null as null | (() => void) }));
+vi.mock("../../live", () => ({ useLive: (_t: unknown, fn: () => void) => void (live.fn = fn) }));
 
 const user = { id: 1, username: "cory", displayName: "Cory", email: null, role: "owner" } as User;
 const item = (id: number, name: string, over: Record<string, unknown> = {}) => ({ id, listId: 1, name, quantity: null, unit: null, note: null, aisle: "dairy", aisleBy: "words", checked: false, position: id, sources: [], ...over });
@@ -128,6 +129,44 @@ describe("grocery list: archive, rename, no lists", () => {
     await u.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "PATCH", path: "/api/grocery/lists/1", body: { name: "Big shop" } }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename list" })).not.toBeInTheDocument());
+  });
+
+  it("archiving the last list clears its items off the page", async () => {
+    let active = lists;
+    const r = routes();
+    fakeServer({ ...r, "GET /api/grocery/lists": (_b: any, path: string) => (path.includes("archived=1") ? archived : active), "POST /api/grocery/lists/:id/archive": () => ((active = []), {}) });
+    const u = userEvent.setup();
+    page();
+    await screen.findByRole("checkbox", { name: "eggs" });
+    await u.click(screen.getByRole("button", { name: "Archive this list" }));
+    await u.click(screen.getByRole("button", { name: /It moves to Archived lists/ }));
+    expect(await screen.findByText("No grocery lists right now.")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "eggs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select items to delete" })).not.toBeInTheDocument();
+  });
+
+  it("a slow reply for a list you've left doesn't put its items back", async () => {
+    let active = lists;
+    let release = () => {};
+    let slow = false;
+    const r = routes();
+    fakeServer({
+      ...r,
+      "GET /api/grocery/lists": (_b: any, path: string) => (path.includes("archived=1") ? archived : active),
+      "GET /api/grocery/lists/:id/items": () => (slow ? new Promise((res) => (release = () => res([item(1, "eggs")]))) : [item(1, "eggs")]),
+      "POST /api/grocery/lists/:id/archive": () => ((active = []), {}),
+    });
+    const u = userEvent.setup();
+    page();
+    await screen.findByRole("checkbox", { name: "eggs" });
+    slow = true;
+    live.fn?.(); // someone else changed the list: reload, but the answer is slow
+    await u.click(screen.getByRole("button", { name: "Archive this list" }));
+    await u.click(screen.getByRole("button", { name: /It moves to Archived lists/ }));
+    await screen.findByText("No grocery lists right now.");
+    release();
+    await new Promise((res) => setTimeout(res, 50));
+    expect(screen.queryByRole("checkbox", { name: "eggs" })).not.toBeInTheDocument();
   });
 
   it("no lists left: offers this week's list", async () => {

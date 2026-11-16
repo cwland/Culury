@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api";
 import { useLive } from "../../live";
 import { AISLE_NAMES, AISLE_ORDER, itemAmount, type GroceryItem, type GroceryList } from "../../recipes";
@@ -33,11 +33,16 @@ export default function GroceryPage() {
     if (!l.length) void api<{ name: string }>("GET", "/api/grocery/this-week").then((w) => setThisWeek(w.name), () => {});
     setListId((id) => (id && l.some((x) => x.id === id) ? id : l[0]?.id ?? null));
   }, []);
+  // The list on screen now: a slow answer for a list you've since left (or archived) is dropped
+  const showing = useRef(listId);
+  showing.current = listId;
   const loadItems = useCallback(async () => {
-    if (!listId) return;
+    if (!listId) return setItems(null); // no list (the last one was archived or deleted): nothing to show
     history.replaceState(null, "", `#/grocery?list=${listId}`);
     try {
-      setItems(await api<GroceryItem[]>("GET", `/api/grocery/lists/${listId}/items`));
+      const got = await api<GroceryItem[]>("GET", `/api/grocery/lists/${listId}/items`);
+      if (showing.current !== listId) return;
+      setItems(got);
       setError("");
     } catch (e) {
       setError((e as Error).message);

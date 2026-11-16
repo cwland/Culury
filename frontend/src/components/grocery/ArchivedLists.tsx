@@ -136,7 +136,7 @@ function ArchivedList({ list, active, onBack, onClose, onBrought }: { list: Groc
                   <option value="new">New list…</option>
                 </select>
               </label>
-              {target === "new" && <input aria-label="New list name" value={name} onChange={(e) => setName(e.target.value)} placeholder="List name" className={`min-w-0 flex-1 ${field}`} />}
+              {target === "new" && <input aria-label="New list name" value={name} onChange={(e) => setName(e.target.value)} placeholder="List name" className={`min-w-0 basis-full sm:basis-auto sm:flex-1 ${field}`} />}
               <button type="button" disabled={busy || !keep.size || (target === "new" && !name.trim())} onClick={() => void bring()} className="ml-auto rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-50">
                 Add {keep.size} item{keep.size === 1 ? "" : "s"}
               </button>

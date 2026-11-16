@@ -130,7 +130,7 @@ export default function AddToListDialog({ source, title, onClose }: { source: So
                 <option value="new">New list…</option>
               </select>
             </label>
-            {listId === "new" && <input aria-label="New list name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="List name" className="min-w-0 flex-1 rounded-lg border border-line bg-page px-2 py-1.5" />}
+            {listId === "new" && <input aria-label="New list name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="List name" className="min-w-0 basis-full rounded-lg sm:flex-1 sm:basis-auto border border-line bg-page px-2 py-1.5" />}
             <span className="text-sm text-subtle">{keep.size} of {lines.length}</span>
             <button type="button" disabled={!keep.size || (listId === "new" && !newName.trim())} onClick={() => void add()} className="ml-auto rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-50">
               Add {keep.size} item{keep.size === 1 ? "" : "s"}
