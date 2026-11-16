@@ -5,11 +5,15 @@ import { AISLE_NAMES, AISLE_ORDER, itemAmount, type GroceryItem, type GroceryLis
 import { Check, MailIcon, PlusIcon, Trash } from "../Icons";
 import { Popup } from "../Popup";
 import { useSession } from "../../session";
+import ArchivedLists from "./ArchivedLists";
 
 // The grocery list, by store aisle. Tap to put it in the cart. Everyone in the household sees changes
 // as they happen, so two people can shop from one list.
 export default function GroceryPage() {
   const [lists, setLists] = useState<GroceryList[]>([]);
+  const [listsLoaded, setListsLoaded] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [thisWeek, setThisWeek] = useState("");
   const [listId, setListId] = useState<number | null>(() => Number(new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("list")) || null);
   const [items, setItems] = useState<GroceryItem[] | null>(null);
   const [text, setText] = useState("");
@@ -25,6 +29,8 @@ export default function GroceryPage() {
   const loadLists = useCallback(async () => {
     const l = await api<GroceryList[]>("GET", "/api/grocery/lists");
     setLists(l);
+    setListsLoaded(true);
+    if (!l.length) void api<{ name: string }>("GET", "/api/grocery/this-week").then((w) => setThisWeek(w.name), () => {});
     setListId((id) => (id && l.some((x) => x.id === id) ? id : l[0]?.id ?? null));
   }, []);
   const loadItems = useCallback(async () => {
@@ -95,6 +101,9 @@ export default function GroceryPage() {
             <Trash /> Edit
           </button>
         )}
+        <button type="button" onClick={() => setShowArchived(true)} aria-label="Archived lists" title="Archived lists" className="rounded-lg border border-line bg-container px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
+          Archived
+        </button>
         {open.length > 0 && (
           <button type="button" onClick={() => setEmailing(true)} className="flex items-center gap-1.5 rounded-lg border border-line bg-container px-3 py-1.5 text-sm font-semibold hover:bg-pressed">
             <MailIcon /> Email
@@ -120,8 +129,28 @@ export default function GroceryPage() {
         </button>
       </nav>
 
+      {listsLoaded && lists.length === 0 && (
+        <section className="mt-6 rounded-2xl bg-container px-6 py-12 text-center">
+          <p className="text-lg">No grocery lists right now.</p>
+          <p className="mt-1 text-subtle">Start this week's list, or bring items back from an archived one.</p>
+          {thisWeek && (
+            <button
+              type="button"
+              onClick={() =>
+                void run(async () => {
+                  setListId((await api<GroceryList>("POST", "/api/grocery/lists", { name: thisWeek })).id);
+                })
+              }
+              className="mt-4 rounded-lg bg-primary px-5 py-2.5 font-semibold text-white"
+            >
+              Start {thisWeek}
+            </button>
+          )}
+        </section>
+      )}
+
       {/* Add: type or paste, one per line or "eggs, milk, bread" */}
-      <form onSubmit={add} className="sticky top-0 z-10 -mx-3 mt-4 bg-page/95 px-3 py-2 backdrop-blur sm:mx-0 sm:px-0">
+      {listId && <form onSubmit={add} className="sticky top-0 z-10 -mx-3 mt-4 bg-page/95 px-3 py-2 backdrop-blur sm:mx-0 sm:px-0">
         <div className="flex gap-2">
           <input
             aria-label="Add items"
@@ -134,7 +163,7 @@ export default function GroceryPage() {
             <PlusIcon />
           </button>
         </div>
-      </form>
+      </form>}
       {selecting && (
         <div role="toolbar" aria-label="Delete items" className="sticky top-[4.5rem] z-10 mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-container px-3 py-2 shadow-sm">
           {confirmDelete ? (
@@ -219,8 +248,17 @@ export default function GroceryPage() {
           }}
         />
       )}
-      {current && lists.length > 1 && (
-        <ListActions list={current} onChanged={() => (setListId(null), void loadLists())} />
+      {current && <ListActions list={current} onChanged={(keep) => (keep || setListId(null), void loadLists())} />}
+      {showArchived && (
+        <ArchivedLists
+          active={lists}
+          onClose={() => setShowArchived(false)}
+          onBrought={(id) => {
+            setShowArchived(false);
+            setListId(id);
+            void loadLists();
+          }}
+        />
       )}
     </div>
   );
@@ -365,23 +403,62 @@ function NewList({ onClose, onMade }: { onClose: () => void; onMade: (id: number
   );
 }
 
-function ListActions({ list, onChanged }: { list: GroceryList; onChanged: () => void }) {
-  const [confirm, setConfirm] = useState(false);
+// Bottom of a list: rename it, archive it (kept read-only under Archived lists), or delete it
+function ListActions({ list, onChanged }: { list: GroceryList; onChanged: (keepSelected?: boolean) => void }) {
+  const [confirm, setConfirm] = useState<"archive" | "delete" | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [error, setError] = useState("");
+  const act = async (what: "archive" | "delete") => {
+    if (confirm !== what) return setConfirm(what);
+    try {
+      await api(what === "archive" ? "POST" : "DELETE", what === "archive" ? `/api/grocery/lists/${list.id}/archive` : `/api/grocery/lists/${list.id}`);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const btn = "rounded-lg px-3 py-2 text-sm font-semibold";
   return (
-    <div className="mt-10 flex justify-center">
-      <button
-        type="button"
-        onClick={async () => {
-          if (!confirm) return setConfirm(true);
-          await api("DELETE", `/api/grocery/lists/${list.id}`);
-          onChanged();
-        }}
-        onBlur={() => setConfirm(false)}
-        className={`rounded-lg px-3 py-2 text-sm font-semibold ${confirm ? "bg-error text-white" : "text-error hover:bg-error-subtle"}`}
-      >
-        {confirm ? `Delete "${list.name}" and everything on it?` : `Delete the "${list.name}" list`}
+    <div className="mt-10 flex flex-wrap justify-center gap-2">
+      <button type="button" onClick={() => setRenaming(true)} aria-label="Rename this list" className={`${btn} text-subtle hover:bg-pressed`}>
+        Rename
       </button>
+      <button type="button" onClick={() => void act("archive")} onBlur={() => setConfirm(null)} className={`${btn} ${confirm === "archive" ? "bg-primary text-white" : "text-action hover:bg-pressed"}`}>
+        {confirm === "archive" ? `Archive "${list.name}"? It moves to Archived lists.` : "Archive this list"}
+      </button>
+      <button type="button" onClick={() => void act("delete")} onBlur={() => setConfirm(null)} className={`${btn} ${confirm === "delete" ? "bg-error text-white" : "text-error hover:bg-error-subtle"}`}>
+        {confirm === "delete" ? `Delete "${list.name}" and everything on it?` : `Delete the "${list.name}" list`}
+      </button>
+      {error && <p role="alert" className="w-full text-center text-error">{error}</p>}
+      {renaming && <RenameList list={list} onClose={() => setRenaming(false)} onDone={() => (setRenaming(false), onChanged(true))} />}
     </div>
+  );
+}
+
+function RenameList({ list, onClose, onDone }: { list: GroceryList; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState(list.name);
+  const [error, setError] = useState("");
+  return (
+    <Popup title="Rename list" onClose={onClose}>
+      <form
+        className="flex gap-2 p-5"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          try {
+            await api("PATCH", `/api/grocery/lists/${list.id}`, { name });
+            onDone();
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        <input autoFocus aria-label="List name" value={name} onChange={(e) => (setName(e.target.value), setError(""))} className="min-w-0 flex-1 rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action" />
+        <button type="submit" disabled={!name.trim()} className="rounded-lg bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50">
+          Save
+        </button>
+      </form>
+      {error && <p role="alert" className="px-5 pb-5 text-error">{error}</p>}
+    </Popup>
   );
 }
 

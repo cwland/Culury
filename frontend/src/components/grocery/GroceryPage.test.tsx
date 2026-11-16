@@ -82,3 +82,94 @@ describe("grocery list: edit mode", () => {
     expect(within(tab).getByText("(3)")).toHaveClass("font-bold");
   });
 });
+
+describe("grocery list: archive, rename, no lists", () => {
+  const archived = [{ id: 9, name: "Week of November 9", archivedAt: "2026-11-15T18:00:00Z", open: 1, done: 1 }];
+  const oldItems = [item(20, "chicken", { listId: 9, quantity: 2, unit: "lb", aisle: "meat" }), item(21, "rice", { listId: 9, aisle: "pantry", checked: true })];
+  const routes = (active = lists) => ({
+    "GET /api/grocery/lists": (_b: any, path: string) => (path.includes("archived=1") ? archived : active),
+    "GET /api/grocery/this-week": () => ({ name: "Week of November 16", listId: active.find((l) => l.name === "Week of November 16")?.id ?? null }),
+    "GET /api/grocery/lists/:id/items": (_b: any, path: string) => (path.includes("/9/") ? oldItems : [item(1, "eggs")]),
+    "POST /api/grocery/lists/:id/archive": () => ({}),
+    "POST /api/grocery/lists/:id/bring-forward": (b: any) => ({ status: 201, json: { listId: b.listId ?? 5, added: b.itemIds.length, merged: 0 } }),
+    "POST /api/grocery/lists": (b: any) => ({ status: 201, json: { id: 5, name: b.name, open: 0, done: 0 } }),
+    "PATCH /api/grocery/lists/:id": (b: any) => (b.name === "Costco" ? { status: 409, json: { error: 'There\'s already a list called "Costco"' } } : { id: 1, name: b.name }),
+  });
+
+  it("archives the list after a confirm", async () => {
+    const s = fakeServer(routes());
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Archive this list" }));
+    expect(s.writes()).toEqual([]);
+    await u.click(screen.getByRole("button", { name: 'Archive "Week of November 16"? It moves to Archived lists.' }));
+    await waitFor(() => expect(s.writes()).toEqual([expect.objectContaining({ method: "POST", path: "/api/grocery/lists/1/archive" })]));
+  });
+
+  it("Delete is there even with one list", async () => {
+    fakeServer(routes());
+    page();
+    expect(await screen.findByRole("button", { name: 'Delete the "Week of November 16" list' })).toBeInTheDocument();
+  });
+
+  it("renames a list, and says when the name is taken", async () => {
+    const s = fakeServer(routes());
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Rename this list" }));
+    const box = screen.getByRole("textbox", { name: "List name" });
+    expect(box).toHaveValue("Week of November 16");
+    await u.clear(box);
+    await u.type(box, "Costco");
+    await u.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent('There\'s already a list called "Costco"');
+    await u.clear(box);
+    await u.type(box, "Big shop");
+    await u.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(s.writes().at(-1)).toMatchObject({ method: "PATCH", path: "/api/grocery/lists/1", body: { name: "Big shop" } }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename list" })).not.toBeInTheDocument());
+  });
+
+  it("no lists left: offers this week's list", async () => {
+    const s = fakeServer(routes([]));
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Start Week of November 16" }));
+    await waitFor(() => expect(s.writes()).toEqual([expect.objectContaining({ method: "POST", path: "/api/grocery/lists", body: { name: "Week of November 16" } })]));
+  });
+
+  it("opens an archived list read-only and brings chosen items forward", async () => {
+    const s = fakeServer(routes());
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Archived lists" }));
+    const popup = screen.getByRole("dialog", { name: "Archived lists" });
+    await u.click(await within(popup).findByRole("button", { name: /Week of November 9/ }));
+    const view = await screen.findByRole("dialog", { name: "Week of November 9" });
+    expect(await within(view).findByText("chicken")).toBeInTheDocument();
+    expect(within(view).queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+    // all ticked to start; untick rice
+    expect(within(view).getByRole("checkbox", { name: /chicken/ })).toBeChecked();
+    await u.click(within(view).getByRole("checkbox", { name: /rice/ }));
+    expect(within(view).getByRole("combobox", { name: "Add to" })).toHaveValue("1");
+    await u.click(within(view).getByRole("button", { name: "Add 1 item" }));
+    await waitFor(() => expect(s.writes()).toEqual([expect.objectContaining({ method: "POST", path: "/api/grocery/lists/9/bring-forward", body: { itemIds: [20], listId: 1 } })]));
+    expect(await within(view).findByText("Added 1 item to Week of November 16.")).toBeInTheDocument();
+  });
+
+  it("brings items forward onto a new list", async () => {
+    const s = fakeServer(routes());
+    const u = userEvent.setup();
+    page();
+    await u.click(await screen.findByRole("button", { name: "Archived lists" }));
+    await u.click(await screen.findByRole("button", { name: /Week of November 9/ }));
+    const view = await screen.findByRole("dialog", { name: "Week of November 9" });
+    await within(view).findByText("chicken");
+    await u.selectOptions(within(view).getByRole("combobox", { name: "Add to" }), "new");
+    const name = within(view).getByRole("textbox", { name: "New list name" });
+    await u.clear(name);
+    await u.type(name, "Costco run");
+    await u.click(within(view).getByRole("button", { name: "Add 2 items" }));
+    await waitFor(() => expect(s.writes()[0]).toMatchObject({ body: { itemIds: [20, 21], name: "Costco run" } }));
+  });
+});

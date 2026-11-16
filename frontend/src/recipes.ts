@@ -240,6 +240,7 @@ export interface GroceryList {
   name: string;
   open: number;
   done: number;
+  archivedAt?: string | null; // only on archived lists (GET /api/grocery/lists?archived=1)
 }
 export interface PantryItem {
   id: number;
