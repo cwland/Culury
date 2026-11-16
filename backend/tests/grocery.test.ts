@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestApp, type TestApp } from "./helpers.js";
-import { guessAisle, itemKey, sameItem, splitLine, tidy } from "../src/lib/grocery.js";
+import { guessAisle, itemKey, sameItem, splitLine, tidy, weekListName } from "../src/lib/grocery.js";
 
 let t: TestApp;
 beforeAll(async () => (t = await setupTestApp()));
@@ -27,6 +27,15 @@ describe("aisles and matching", () => {
     expect(sameItem("extra-virgin olive oil", "olive oil")).toBe(true);
     expect(sameItem("chicken stock", "chicken breast")).toBe(false);
     expect(sameItem("eggs", "egg")).toBe(true);
+  });
+});
+
+describe("weekly lists", () => {
+  it("names the list after this week's Monday", () => {
+    expect(weekListName(new Date(2026, 10, 16, 9))).toBe("Week of November 16"); // Monday
+    expect(weekListName(new Date(2026, 10, 22, 23))).toBe("Week of November 16"); // Sunday
+    expect(weekListName(new Date(2026, 10, 23, 0, 30))).toBe("Week of November 23");
+    expect(weekListName(new Date(2027, 0, 1))).toBe("Week of December 28"); // crosses the year
   });
 });
 

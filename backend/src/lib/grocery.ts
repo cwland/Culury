@@ -111,3 +111,9 @@ export function shoppingNames(name: string): string[] {
   const t = name.replace(/\b(?:to taste|as needed|for serving|for garnish|optional|if desired)\b/gi, "").replace(/[,\s]+$/, "").trim();
   return t.split(/\s*(?:,|&|\band\b)\s*/i).map((x) => x.trim().toLowerCase()).filter(Boolean);
 }
+
+// Lists are weekly: "Week of November 16", named after the Monday of today's week (server time zone)
+export function weekListName(now: Date = new Date()): string {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  return `Week of ${monday.toLocaleDateString("en-US", { month: "long", day: "numeric" })}`;
+}

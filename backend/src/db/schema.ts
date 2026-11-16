@@ -457,6 +457,7 @@ export const groceryLists = pgTable("grocery_lists", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }), // null: an active list; set: kept read-only
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
