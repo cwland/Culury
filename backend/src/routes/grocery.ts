@@ -1,13 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { groceryItems, groceryLists, mealPlan, pantryItems, recipes, type ItemSource } from "../db/schema.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam, idList, isoDate } from "../lib/validation.js";
 import { parseIngredient } from "../lib/ingredients.js";
 import { learnedAisles, rememberAisle, sortAislesSoon } from "../lib/aiHelpers.js";
-import { AISLE_IDS, AISLES, addable, convertTo, guessAisle, itemKey, round, sameItem, shoppingNames, splitLine, tidy } from "../lib/grocery.js";
+import { AISLE_IDS, AISLES, addable, convertTo, guessAisle, itemKey, round, sameItem, shoppingNames, splitLine, tidy, weekListName } from "../lib/grocery.js";
 import { userOf } from "./recipes.js";
 
 type Tx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -145,34 +145,45 @@ export default async function groceryRoutes(app: FastifyInstance) {
       .where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name.trim()})`, except ? ne(groceryLists.id, except) : undefined));
     if (same) throw new HttpError(409, `There's already a list called "${same.name}"`);
   };
-  const firstList = async () => {
-    const [l] = await db.select().from(groceryLists).where(isNull(groceryLists.archivedAt)).orderBy(asc(groceryLists.sortOrder), asc(groceryLists.id)).limit(1);
-    if (l) return l;
-    const [made] = await db.insert(groceryLists).values({ name: "Groceries" }).returning();
-    return made;
+  // When no list is named: this week's list ("Week of November 16"), made if it isn't there
+  const weekList = async () => {
+    const name = weekListName();
+    const [l] = await db.select().from(groceryLists).where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name})`)).limit(1);
+    return l ?? (await newList(name));
+  };
+  const newList = async (name: string) => {
+    const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${groceryLists.sortOrder}), -1) + 1` }).from(groceryLists);
+    const [row] = await db.insert(groceryLists).values({ name, sortOrder: Number(n) }).returning();
+    return row;
   };
   const items = (listId: number) => db.select().from(groceryItems).where(eq(groceryItems.listId, listId)).orderBy(asc(groceryItems.checked), aisleOrder, asc(groceryItems.position), asc(groceryItems.id));
 
   app.get("/api/grocery/aisles", async () => AISLES);
 
   // ---------- lists ----------
-  app.get("/api/grocery/lists", async () =>
-    db
+  app.get("/api/grocery/lists", async (req) => {
+    const { archived } = z.object({ archived: z.enum(["0", "1"]).optional() }).parse(req.query);
+    return db
       .select({
         id: groceryLists.id,
         name: groceryLists.name,
+        ...(archived === "1" ? { archivedAt: groceryLists.archivedAt } : {}),
         open: sql<number>`(select count(*)::int from grocery_items gi where gi.list_id = "grocery_lists"."id" and not gi.checked)`,
         done: sql<number>`(select count(*)::int from grocery_items gi where gi.list_id = "grocery_lists"."id" and gi.checked)`,
       })
       .from(groceryLists)
-      .where(isNull(groceryLists.archivedAt))
-      .orderBy(asc(groceryLists.sortOrder), asc(groceryLists.id))
-  );
+      .where(archived === "1" ? sql`${groceryLists.archivedAt} is not null` : isNull(groceryLists.archivedAt))
+      .orderBy(...(archived === "1" ? [desc(groceryLists.archivedAt), desc(groceryLists.id)] : [asc(groceryLists.sortOrder), asc(groceryLists.id)]));
+  });
+  app.get("/api/grocery/this-week", async () => {
+    const name = weekListName();
+    const [l] = await db.select({ id: groceryLists.id }).from(groceryLists).where(and(isNull(groceryLists.archivedAt), sql`lower(trim(${groceryLists.name})) = lower(${name})`)).limit(1);
+    return { name, listId: l?.id ?? null };
+  });
   app.post("/api/grocery/lists", async (req, reply) => {
     const { name } = z.object({ name: z.string().trim().min(1, "Name the list").max(100) }).strict().parse(req.body);
     await nameFree(name);
-    const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${groceryLists.sortOrder}), -1) + 1` }).from(groceryLists);
-    const [row] = await db.insert(groceryLists).values({ name, sortOrder: Number(n) }).returning();
+    const row = await newList(name);
     changed(req, "grocery");
     return reply.status(201).send({ ...row, open: 0, done: 0 });
   });
@@ -187,12 +198,41 @@ export default async function groceryRoutes(app: FastifyInstance) {
   });
   app.delete("/api/grocery/lists/:id", async (req, reply) => {
     const { id } = idParam.parse(req.params);
-    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(groceryLists);
-    if (n <= 1) throw new HttpError(400, "Keep at least one list");
     const gone = await db.delete(groceryLists).where(eq(groceryLists.id, id)).returning({ id: groceryLists.id });
     if (!gone.length) throw notFound("List");
     changed(req, "grocery");
     return reply.status(204).send();
+  });
+
+  // Done with a list: keep it as is (checked and unchecked), read-only, off the tabs
+  app.post("/api/grocery/lists/:id/archive", async (req) => {
+    const { id } = idParam.parse(req.params);
+    await activeListOr404(id);
+    const [row] = await db.update(groceryLists).set({ archivedAt: new Date() }).where(eq(groceryLists.id, id)).returning();
+    changed(req, "grocery", id);
+    return row;
+  });
+  // Copy chosen items from a list (usually an archived one) onto a current list or a new one
+  app.post("/api/grocery/lists/:id/bring-forward", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ itemIds: z.array(z.number().int().positive()).min(1).max(500), listId: z.number().int().positive().optional(), name: z.string().trim().min(1, "Name the list").max(100).optional() })
+      .strict()
+      .refine((b) => (b.listId === undefined) !== (b.name === undefined), "Pick a list or name a new one")
+      .parse(req.body);
+    await listOr404(id);
+    const from = await db.select().from(groceryItems).where(and(eq(groceryItems.listId, id), inArray(groceryItems.id, body.itemIds)));
+    if (from.length < new Set(body.itemIds).size) throw new HttpError(400, "Those items aren't on that list");
+    let target: number;
+    if (body.listId !== undefined) target = (await activeListOr404(body.listId)).id;
+    else {
+      await nameFree(body.name!);
+      target = (await newList(body.name!)).id;
+    }
+    const lines = from.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, note: i.note, sources: i.sources }));
+    const result = await db.transaction((tx) => addToList(tx, target, lines, userOf(req)));
+    changed(req, "grocery", target);
+    return reply.status(201).send({ listId: target, ...result });
   });
 
   // ---------- items ----------
@@ -210,9 +250,9 @@ export default async function groceryRoutes(app: FastifyInstance) {
     changed(req, "grocery", id);
     return reply.status(201).send({ ...result, items: await items(id) });
   });
-  // The same, onto the first list (for Home Assistant, Shortcuts, voice assistants)
+  // The same, onto this week's list (for Home Assistant, Shortcuts, voice assistants)
   app.post("/api/grocery/items", async (req, reply) => {
-    const list = await firstList();
+    const list = await weekList();
     const result = await db.transaction((tx) => addToList(tx, list.id, linesFrom(req.body), userOf(req)));
     changed(req, "grocery", list.id);
     return reply.status(201).send({ listId: list.id, ...result });

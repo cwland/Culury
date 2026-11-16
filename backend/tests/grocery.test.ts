@@ -97,15 +97,11 @@ describe("grocery list", () => {
     expect((await t.api("GET", "/api/pantry")).body.map((p: any) => [p.name, p.quantity, p.unit])).toEqual([["chicken thighs", 2, "lb"]]);
   });
 
-  it("several lists; Home Assistant adds to the first one", async () => {
+  it("several lists, each with its own items", async () => {
     const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
     await add({ name: "paper towels" }, costco.id);
     expect((await items(costco.id)).map((i: any) => i.name)).toEqual(["paper towels"]);
-    const key = (await t.api("POST", "/api/keys", { name: "ha", access: "grocery_write" })).body.key;
-    t.setToken("");
-    const r = await t.api("POST", "/api/grocery/items", { text: "milk" }, { "x-api-key": key });
-    expect(r.body).toMatchObject({ listId, added: 1 });
-    expect((await t.api("GET", `/api/grocery/lists/${listId}/items`, undefined, { "x-api-key": key })).status).toBe(403); // write only
+    expect(await items()).toEqual([]);
   });
 });
 
@@ -157,6 +153,86 @@ describe("bulk delete and archived lists", () => {
     expect((await t.api("PATCH", `/api/grocery/lists/${costco.id}`, { name: "costco" })).status).toBe(200); // its own name, new capitals
     await archive(listId);
     expect((await t.api("POST", "/api/grocery/lists", { name: "Groceries" })).status).toBe(201);
+  });
+});
+
+describe("archiving and weekly lists", () => {
+  it("archives a list as is and lists it under archived", async () => {
+    await add({ text: "eggs, milk" });
+    const eggs = (await items()).find((i: any) => i.name === "eggs");
+    await t.api("PATCH", `/api/grocery/items/${eggs.id}`, { checked: true });
+    const r = await t.api("POST", `/api/grocery/lists/${listId}/archive`);
+    expect(r.status).toBe(200);
+    expect(r.body.archivedAt).toBeTruthy();
+    expect((await t.api("GET", "/api/grocery/lists")).body).toEqual([]);
+    const archived = (await t.api("GET", "/api/grocery/lists?archived=1")).body;
+    expect(archived.map((l: any) => [l.name, l.open, l.done])).toEqual([["Groceries", 1, 1]]);
+    expect((await t.api("POST", `/api/grocery/lists/${listId}/archive`)).status).toBe(409);
+  });
+
+  it("lists archived lists newest first", async () => {
+    const b = (await t.api("POST", "/api/grocery/lists", { name: "B" })).body;
+    await t.api("POST", `/api/grocery/lists/${listId}/archive`);
+    await t.api("POST", `/api/grocery/lists/${b.id}/archive`);
+    expect((await t.api("GET", "/api/grocery/lists?archived=1")).body.map((l: any) => l.name)).toEqual(["B", "Groceries"]);
+  });
+
+  it("brings chosen items forward onto a current or a new list", async () => {
+    await add({ text: "2 lb chicken, rice" });
+    const list = await items();
+    const c = list.find((i: any) => i.name === "chicken");
+    await t.api("PATCH", `/api/grocery/items/${c.id}`, { checked: true });
+    await t.api("POST", `/api/grocery/lists/${listId}/archive`);
+    const now = (await t.api("POST", "/api/grocery/lists", { name: "This week" })).body;
+    const r = await t.api("POST", `/api/grocery/lists/${listId}/bring-forward`, { itemIds: [c.id], listId: now.id });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ listId: now.id, added: 1, merged: 0 });
+    expect((await items(now.id)).map((i: any) => [i.name, i.quantity, i.unit, i.checked])).toEqual([["chicken", 2, "lb", false]]);
+    // the same again adds up instead of a second line
+    expect((await t.api("POST", `/api/grocery/lists/${listId}/bring-forward`, { itemIds: [c.id], listId: now.id })).body).toMatchObject({ merged: 1 });
+    expect((await items(now.id))[0].quantity).toBe(4);
+    // onto a new list
+    const n = await t.api("POST", `/api/grocery/lists/${listId}/bring-forward`, { itemIds: list.map((i: any) => i.id), name: "Costco" });
+    expect(n.body.added).toBe(2);
+    expect((await t.api("GET", "/api/grocery/lists")).body.map((l: any) => l.name)).toEqual(["This week", "Costco"]);
+    // the archived list is unchanged
+    expect(await items()).toHaveLength(2);
+    // only that list's items; a taken name is refused
+    expect((await t.api("POST", `/api/grocery/lists/${now.id}/bring-forward`, { itemIds: [c.id], listId: now.id })).status).toBe(400);
+    expect((await t.api("POST", `/api/grocery/lists/${listId}/bring-forward`, { itemIds: [c.id], name: "costco" })).status).toBe(409);
+  });
+
+  it("the last list can be deleted", async () => {
+    expect((await t.api("DELETE", `/api/grocery/lists/${listId}`)).status).toBe(204);
+    expect((await t.api("GET", "/api/grocery/lists")).body).toEqual([]);
+  });
+
+  it("Home Assistant adds to this week's list", async () => {
+    const key = (await t.api("POST", "/api/keys", { name: "ha", access: "grocery_write" })).body.key;
+    const week = weekListName();
+    expect((await t.api("GET", "/api/grocery/this-week")).body).toEqual({ name: week, listId: null });
+    const me = t.getToken();
+    t.setToken("");
+    const first = await t.api("POST", "/api/grocery/items", { text: "milk" }, { "x-api-key": key });
+    expect(first.body).toMatchObject({ added: 1 });
+    expect(first.body.listId).not.toBe(listId);
+    expect((await t.api("POST", "/api/grocery/items", { text: "eggs" }, { "x-api-key": key })).body.listId).toBe(first.body.listId);
+    expect((await t.api("GET", `/api/grocery/lists/${listId}/items`, undefined, { "x-api-key": key })).status).toBe(403); // write only
+    t.setToken(me);
+    expect((await t.api("GET", "/api/grocery/this-week")).body).toEqual({ name: week, listId: first.body.listId });
+    const names = (await t.api("GET", "/api/grocery/lists")).body.map((l: any) => l.name);
+    expect(names).toEqual(["Groceries", week]);
+    // archived: the next add starts a fresh list with the same name
+    await t.api("POST", `/api/grocery/lists/${first.body.listId}/archive`);
+    t.setToken("");
+    const again = await t.api("POST", "/api/grocery/items", { text: "bread" }, { "x-api-key": key });
+    expect(again.body.listId).not.toBe(first.body.listId);
+  });
+
+  it("uses a list you renamed to this week's name", async () => {
+    const costco = (await t.api("POST", "/api/grocery/lists", { name: "Costco" })).body;
+    await t.api("PATCH", `/api/grocery/lists/${costco.id}`, { name: weekListName() });
+    expect((await t.api("POST", "/api/grocery/items", { text: "milk" })).body.listId).toBe(costco.id);
   });
 });
 
