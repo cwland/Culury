@@ -11,18 +11,26 @@ export default function AddToListDialog({ source, title, onClose }: { source: So
   const [lines, setLines] = useState<PreviewLine[] | null>(null);
   const [keep, setKeep] = useState<Set<string>>(new Set());
   const [lists, setLists] = useState<GroceryList[]>([]);
-  const [listId, setListId] = useState<number | null>(null);
+  const [listId, setListId] = useState<number | "new" | null>(null);
+  const [newName, setNewName] = useState("");
+  const [doneName, setDoneName] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ added: number; merged: number } | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [p, l] = await Promise.all([api<{ lines: PreviewLine[] }>("POST", "/api/grocery/preview", source), api<GroceryList[]>("GET", "/api/grocery/lists")]);
+        const [p, l, week] = await Promise.all([
+          api<{ lines: PreviewLine[] }>("POST", "/api/grocery/preview", source),
+          api<GroceryList[]>("GET", "/api/grocery/lists"),
+          api<{ name: string; listId: number | null }>("GET", "/api/grocery/this-week"),
+        ]);
         setLines(p.lines);
         setKeep(new Set(p.lines.filter((x) => !x.pantry).map((x) => x.key)));
         setLists(l);
-        setListId(l[0]?.id ?? null);
+        // This week's list if there is one; no lists at all: start "Week of <Monday>"
+        setListId(week.listId ?? l[0]?.id ?? "new");
+        if (!week.listId) setNewName(week.name);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -34,7 +42,18 @@ export default function AddToListDialog({ source, title, onClose }: { source: So
     if (!lines || !listId) return;
     try {
       const items = lines.filter((x) => keep.has(x.key)).map(({ name, quantity, unit, sources }) => ({ name, quantity, unit, sources }));
-      setDone(await api("POST", `/api/grocery/lists/${listId}/items`, { items }));
+      let id: number;
+      if (listId === "new") {
+        const made = await api<GroceryList>("POST", "/api/grocery/lists", { name: newName.trim() });
+        id = made.id;
+        setLists((l) => [...l, made]);
+        setListId(id);
+        setDoneName(made.name);
+      } else {
+        id = listId;
+        setDoneName(lists.find((l) => l.id === id)?.name ?? "the list");
+      }
+      setDone(await api("POST", `/api/grocery/lists/${id}/items`, { items }));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -51,7 +70,7 @@ export default function AddToListDialog({ source, title, onClose }: { source: So
       <Popup title="Added" onClose={onClose}>
         <div className="p-5">
           <p className="text-lg">
-            {done.added + done.merged} item{done.added + done.merged === 1 ? "" : "s"} on {lists.find((l) => l.id === listId)?.name}
+            {done.added + done.merged} item{done.added + done.merged === 1 ? "" : "s"} on {doneName}
             {done.merged > 0 && <span className="text-subtle"> ({done.merged} added to what was already there)</span>}.
           </p>
           <div className="mt-4 flex gap-3">
@@ -100,20 +119,20 @@ export default function AddToListDialog({ source, title, onClose }: { source: So
         ))}
         {lines && lines.length > 0 && (
           <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-wrap items-center gap-3 border-t border-line bg-container px-5 py-4">
-            {lists.length > 1 && (
-              <label className="text-sm font-semibold text-subtle">
-                List{" "}
-                <select aria-label="List" value={listId ?? ""} onChange={(e) => setListId(Number(e.target.value))} className="ml-1 rounded-lg border border-line bg-page px-2 py-1.5">
-                  {lists.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="text-sm font-semibold text-subtle">
+              List{" "}
+              <select aria-label="List" value={listId ?? ""} onChange={(e) => setListId(e.target.value === "new" ? "new" : Number(e.target.value))} className="ml-1 rounded-lg border border-line bg-page px-2 py-1.5">
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+                <option value="new">New list…</option>
+              </select>
+            </label>
+            {listId === "new" && <input aria-label="New list name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="List name" className="min-w-0 flex-1 rounded-lg border border-line bg-page px-2 py-1.5" />}
             <span className="text-sm text-subtle">{keep.size} of {lines.length}</span>
-            <button type="button" disabled={!keep.size} onClick={() => void add()} className="ml-auto rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-50">
+            <button type="button" disabled={!keep.size || (listId === "new" && !newName.trim())} onClick={() => void add()} className="ml-auto rounded-lg bg-primary px-5 py-2.5 font-semibold text-white disabled:opacity-50">
               Add {keep.size} item{keep.size === 1 ? "" : "s"}
             </button>
           </div>
