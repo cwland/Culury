@@ -500,6 +500,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
             setEnhancing(false);
             setDone(imported ? "Recipe added" : "Recipe updated");
           }}
+          onChanged={setR}
           onFinished={() => {
             setEnhancing(false);
             skipAiCheck();

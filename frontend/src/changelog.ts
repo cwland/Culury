@@ -10,6 +10,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.1",
+    date: "2026-11-18",
+    title: "Improve with AI: rename the recipe, servings and Makes",
+    changes: [
+      "The pencil beside the recipe's name at the top of Improve with AI renames it (on the first step). Press Enter to save, Esc to cancel.",
+      "The first step shows Servings, Serving size and Makes. Any that are empty are ready to type in, and the pencil edits all of them. Later steps show them on one line.",
+      "A serving size typed in when the recipe has no nutrition yet is saved with the AI's nutrition, if you accept it.",
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-11-16",
     title: "Grocery lists: delete many at once, archive, weekly lists",

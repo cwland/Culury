@@ -248,6 +248,13 @@ function Part({ title, badge, changes, original, suggested, editing, onEdit, onD
   );
 }
 
+// The nutrition fields the server takes back (a loaded recipe's nutrition carries a few more, like outdated)
+const NUTRITION_KEYS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "addedSugar", "protein", "sodium", "source", "servings", "servingSize", "note", "perIngredient"] as const;
+const nutritionBody = (n: Nutrition, servingSize: string | null) => {
+  const all = n as unknown as Record<string, unknown>;
+  return { ...Object.fromEntries(NUTRITION_KEYS.filter((k) => all[k] !== undefined).map((k) => [k, all[k]])), servingSize };
+};
+
 const box = "w-full rounded-lg border border-line bg-page px-3 py-2 text-sm leading-relaxed outline-none focus:border-action";
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
@@ -257,7 +264,8 @@ const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 // last part the accepted parts are saved (what the recipe was stays in the version history).
 // The pencil edits the AI's version first. onFinished: the end with nothing accepted (or nothing
 // to change); onClose: the ✕. position and onStop: an import's recipes one by one.
-export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, position, onStop }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void; onFinished?: () => void; position?: { n: number; of: number }; onStop?: () => void }) {
+// onChanged: the name, servings, serving size or Makes were saved from the first step (the wizard stays open).
+export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, onChanged, position, onStop }: { recipe: Recipe; onClose: () => void; onApplied: (r: Recipe) => void; onFinished?: () => void; onChanged?: (r: Recipe) => void; position?: { n: number; of: number }; onStop?: () => void }) {
   const [e, setE] = useState<Enhancement | null>(null);
   const [error, setError] = useState("");
   const [applyError, setApplyError] = useState("");
@@ -268,6 +276,14 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
   const [mine, setMine] = useState<{ ingredients?: string[]; steps?: string[]; nutrition?: Nutrition | null; categories?: string[]; tags?: string[] }>({});
   const [editing, setEditing] = useState<Key | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // The name, servings, Makes and serving size as saved from the first step
+  const [now, setNow] = useState({ title: recipe.title, servings: recipe.servings, yieldText: recipe.yieldText, servingSize: recipe.nutrition?.servingSize ?? null });
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // What was typed into servings, serving size and Makes (a field not typed in stays as it is)
+  const [dd, setDd] = useState<Partial<Record<"servings" | "servingSize" | "yieldText", string>>>({});
+  const [detailsError, setDetailsError] = useState("");
+  const [savingDetails, setSavingDetails] = useState(false);
 
   const [lines, setLines] = useState<Progress[]>([]);
   const [errorStatus, setErrorStatus] = useState(0);
@@ -328,6 +344,54 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
     categories: mine.categories ?? e.organize.categories,
     tags: mine.tags ?? e.organize.tags,
   };
+
+  // The serving size shown: yours, else the AI's suggestion
+  const servingSize = now.servingSize ?? sug?.nutrition?.servingSize ?? null;
+  async function patch(body: Record<string, unknown>) {
+    const r = await api<Recipe>("PATCH", `/api/recipes/${recipe.id}`, body);
+    setNow((x) => ({ ...x, title: r.title, servings: r.servings, yieldText: r.yieldText }));
+    onChanged?.(r);
+  }
+  async function rename() {
+    const t = (renaming ?? "").trim();
+    setRenaming(null);
+    if (!t || t === now.title) return;
+    setDetailsError("");
+    try {
+      await patch({ title: t });
+    } catch (err) {
+      setDetailsError((err as Error).message);
+    }
+  }
+  async function saveDetails() {
+    const servingsText = dd.servings?.trim();
+    const servings = servingsText ? Number(servingsText) : null;
+    if (servingsText && !(Number.isInteger(servings) && servings! > 0 && servings! <= 1000)) return setDetailsError("Servings should be a whole number. Put things like “2 loaves” in Makes.");
+    const yieldText = dd.yieldText?.trim() || null;
+    const size = dd.servingSize?.trim() || null;
+    const body: Record<string, unknown> = {};
+    if (dd.servings !== undefined && servings !== now.servings) body.servings = servings;
+    if (dd.yieldText !== undefined && yieldText !== now.yieldText) body.yieldText = yieldText;
+    // The serving size lives with the nutrition: the recipe's own, and the AI's suggested numbers
+    if (dd.servingSize !== undefined && size !== servingSize) {
+      if (recipe.nutrition) body.nutrition = nutritionBody(recipe.nutrition, size);
+      if (sug?.nutrition) setMine((m) => ({ ...m, nutrition: { ...sug.nutrition!, servingSize: size } }));
+      setNow((x) => ({ ...x, servingSize: size }));
+    }
+    setDetailsError("");
+    if (Object.keys(body).length) {
+      setSavingDetails(true);
+      try {
+        await patch(body);
+      } catch (err) {
+        return setDetailsError((err as Error).message);
+      } finally {
+        setSavingDetails(false);
+      }
+    }
+    setDetailsOpen(false);
+    setDd({});
+  }
 
   async function save(choices: Record<Key, boolean>) {
     if (!e || !sug) return;
@@ -476,9 +540,90 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
     else void save(next);
   };
   const button = "rounded-lg px-4 py-2 font-semibold disabled:opacity-50";
+  const first = at === 0;
+  const sizeHint = !recipe.nutrition && !sug?.nutrition ? "Comes with the nutrition" : !recipe.nutrition ? "Saved with the nutrition step" : undefined;
+
+  // The header: the name, with a pencil on the first step
+  const heading =
+    renaming !== null ? (
+      <input
+        aria-label="Recipe name"
+        autoFocus
+        value={renaming}
+        maxLength={300}
+        onChange={(ev) => setRenaming(ev.target.value)}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") void rename();
+          if (ev.key === "Escape") {
+            ev.stopPropagation(); // (not the window's Escape, which closes the wizard)
+            setRenaming(null);
+          }
+        }}
+        onBlur={() => void rename()}
+        className="w-full max-w-md rounded-lg border border-action bg-container px-3 py-1 text-center text-xl font-bold outline-none"
+      />
+    ) : (
+      <h2 className="flex items-center gap-1.5 text-xl font-bold">
+        {now.title}
+        {first && (
+          <button type="button" aria-label="Rename the recipe" title="Rename the recipe" onClick={() => setRenaming(now.title)} className="flex size-8 items-center justify-center rounded-lg text-subtle hover:bg-container/70 hover:text-ink">
+            <EditIcon />
+          </button>
+        )}
+      </h2>
+    );
+
+  // Servings, serving size and Makes: on the first step you can fill them in (empty ones are open to type in)
+  const detailRow = (key: "servings" | "servingSize" | "yieldText", label: string, value: string | null, hint?: string) => {
+    const open = detailsOpen || (!value && !(key === "servingSize" && !recipe.nutrition && !sug?.nutrition));
+    return (
+      <div key={key} className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-subtle">{label}</span>
+        {open ? (
+          <input aria-label={label} value={dd[key] ?? value ?? ""} onChange={(ev) => setDd({ ...dd, [key]: ev.target.value })} placeholder={key === "servings" ? "4" : key === "yieldText" ? "24 cookies" : "About 1 cup"} inputMode={key === "servings" ? "numeric" : undefined} className={box} />
+        ) : (
+          <span>{value ?? "–"}</span>
+        )}
+        {hint && <span className="text-xs text-muted">{hint}</span>}
+      </div>
+    );
+  };
+  const anyOpen = detailsOpen || !now.servings || !now.yieldText || (!servingSize && !!(recipe.nutrition || sug?.nutrition));
+  const dirty = Object.keys(dd).length > 0;
+  const details = first ? (
+    <div role="group" aria-label="Recipe details" className="rounded-xl border border-line p-3">
+      <div className="grid grid-cols-3 gap-3 text-sm">
+        {detailRow("servings", "Servings", now.servings == null ? null : String(now.servings))}
+        {detailRow("servingSize", "Serving size", servingSize, sizeHint)}
+        {detailRow("yieldText", "Makes", now.yieldText)}
+      </div>
+      <div className="mt-2 flex items-center justify-end gap-2">
+        {detailsError && <p role="alert" className="mr-auto text-sm text-error">{detailsError}</p>}
+        {!detailsOpen && (
+          <button type="button" aria-label="Edit servings and size" title="Edit servings and size" onClick={() => setDetailsOpen(true)} className="flex size-8 items-center justify-center rounded-lg text-subtle hover:bg-pressed hover:text-ink">
+            <EditIcon />
+          </button>
+        )}
+        {detailsOpen && (
+          <button type="button" onClick={() => (setDetailsOpen(false), setDd({}), setDetailsError(""))} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-subtle hover:bg-page">
+            Cancel
+          </button>
+        )}
+        {anyOpen && (
+          <button type="button" aria-label="Save details" disabled={savingDetails || !dirty} onClick={() => void saveDetails()} className="rounded-lg bg-action px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {savingDetails ? "Saving…" : "Save"}
+          </button>
+        )}
+      </div>
+    </div>
+  ) : (
+    <p className="text-sm text-subtle">
+      {[now.servings && `Serves ${now.servings}`, servingSize && `${servingSize} per serving`, now.yieldText && `Makes ${now.yieldText}`].filter(Boolean).join(" · ")}
+    </p>
+  );
 
   return (
-    <Popup title={recipe.title} onClose={onClose} wide tall>
+    <Popup title={now.title} heading={heading} onClose={onClose} wide tall>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         {e && parts.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -499,6 +644,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
             </div>
           </div>
         )}
+        {details}
         {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
         {error && (
           <div role="alert" className="rounded-xl bg-error-subtle p-4">

@@ -286,3 +286,71 @@ describe("AI check nutrition", () => {
   });
 });
 
+
+describe("The name, servings, serving size and Makes on the first step", () => {
+  it("a pencil by the name at the top renames the recipe on the first step", async () => {
+    const u = userEvent.setup();
+    const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion(), "PATCH /api/recipes/7": () => recipeJson({ title: "Best Chili" }) });
+    const onChanged = vi.fn();
+    render(<EnhanceWizard recipe={recipe} onClose={() => {}} onApplied={() => {}} onChanged={onChanged} />);
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Rename the recipe" }));
+    const name = screen.getByRole("textbox", { name: "Recipe name" });
+    await u.clear(name);
+    await u.type(name, "Best Chili{Enter}");
+    await screen.findByRole("dialog", { name: "Best Chili" });
+    expect(server.writes().find((w) => w.path === "/api/recipes/7" && w.method === "PATCH")!.body).toEqual({ title: "Best Chili" });
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ title: "Best Chili" }));
+  });
+
+  it("the name's pencil is only on the first step", async () => {
+    const u = userEvent.setup();
+    open();
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    expect(screen.getByRole("button", { name: "Rename the recipe" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
+    expect(screen.queryByRole("button", { name: "Rename the recipe" })).toBeNull();
+  });
+
+  it("shows servings, serving size and Makes; one that isn't filled in can be typed in and saved", async () => {
+    const u = userEvent.setup();
+    const server = fakeServer({ "POST /api/recipes/7/enhance": () => suggestion(), "PATCH /api/recipes/7": () => recipeJson({ yieldText: "8 bowls" }) });
+    render(<EnhanceWizard recipe={recipe} onClose={() => {}} onApplied={() => {}} />);
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    const details = screen.getByRole("group", { name: "Recipe details" });
+    expect(within(details).getByText("Servings")).toBeInTheDocument();
+    expect(within(details).getByText("4")).toBeInTheDocument();
+    expect(within(details).getByText("Serving size")).toBeInTheDocument();
+    await u.type(within(details).getByRole("textbox", { name: "Makes" }), "8 bowls");
+    await u.click(within(details).getByRole("button", { name: "Save details" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.method === "PATCH")?.body).toEqual({ yieldText: "8 bowls" }));
+    expect(await within(details).findByText("8 bowls")).toBeInTheDocument();
+  });
+
+  it("the details pencil edits servings; the serving size typed in goes with the nutrition you accept", async () => {
+    const u = userEvent.setup();
+    const { server } = open({ "PATCH /api/recipes/7": () => recipeJson({ servings: 6 }) });
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    const details = screen.getByRole("group", { name: "Recipe details" });
+    await u.click(within(details).getByRole("button", { name: "Edit servings and size" }));
+    const servings = within(details).getByRole("textbox", { name: "Servings" });
+    await u.clear(servings);
+    await u.type(servings, "6");
+    await u.type(within(details).getByRole("textbox", { name: "Serving size" }), "1½ cups");
+    await u.click(within(details).getByRole("button", { name: "Save details" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.method === "PATCH")?.body).toEqual({ servings: 6 }));
+    for (let i = 0; i < 4; i++) await u.click(await screen.findByRole("button", { name: "Accept change" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")).toBeTruthy());
+    expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body.nutrition).toMatchObject({ servingSize: "1½ cups" });
+  });
+
+  it("later steps still show the servings and Makes, without editing", async () => {
+    const u = userEvent.setup();
+    fakeServer({ "POST /api/recipes/7/enhance": () => suggestion() });
+    render(<EnhanceWizard recipe={{ ...recipe, yieldText: "8 bowls" }} onClose={() => {}} onApplied={() => {}} />);
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    await u.click(screen.getByRole("button", { name: "Accept change" }));
+    expect(screen.queryByRole("group", { name: "Recipe details" })).toBeNull();
+    expect(screen.getByText(/Serves 4 · Makes 8 bowls/)).toBeInTheDocument();
+  });
+});

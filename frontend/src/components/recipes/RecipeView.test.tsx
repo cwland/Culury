@@ -104,6 +104,19 @@ describe("AI Enhance on the recipe page", () => {
     expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Brown the beef well.");
   });
 
+  it("renaming the recipe in the wizard's header changes the page's title too, and the wizard stays open", async () => {
+    window.location.hash = "#/recipes/7?imported=1";
+    server(on, recipeJson(), { "PATCH /api/recipes/7": () => recipeJson({ title: "Best Chili" }) });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("button", { name: "Rename the recipe" }, { timeout: 3000 }));
+    const name = screen.getByRole("textbox", { name: "Recipe name" });
+    await u.clear(name);
+    await u.type(name, "Best Chili{Enter}");
+    expect(await screen.findByRole("dialog", { name: "Best Chili" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Best Chili");
+  });
+
   it("imported with AI Enhance off: no review opens", async () => {
     window.location.hash = "#/recipes/7?imported=1";
     server({ ready: true, photos: false, enhance: false });
