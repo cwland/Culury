@@ -495,7 +495,7 @@ describe("editing in place", () => {
     await u.type(box, "\n1 tsp salt");
     await u.click(within(ing).getByRole("button", { name: "Save" }));
     const ask = await screen.findByRole("dialog", { name: "Save your changes" });
-    await u.click(within(ask).getByRole("button", { name: "Save as new version" }));
+    await u.click(within(ask).getByRole("button", { name: "New version" }));
     await waitFor(() => expect(writes(s)).toHaveLength(1));
     expect(writes(s)[0].body).toEqual({ ingredients: "1 lb ground beef\n2 tbsp chili powder\n1 tsp salt", version: "new" });
     await waitFor(() => expect(within(ing).queryByRole("textbox")).toBeNull());
@@ -515,7 +515,7 @@ describe("editing in place", () => {
     expect(writes(s)).toHaveLength(0);
   });
 
-  it("the version question's three buttons sit in one row across the bottom, all the same size and style", async () => {
+  it("the version question's three buttons sit in one row across the bottom, small and all the same size and style", async () => {
     editable();
     const u = userEvent.setup();
     render(<RecipeView id={7} />);
@@ -526,8 +526,8 @@ describe("editing in place", () => {
     const ask = await screen.findByRole("dialog", { name: "Save your changes" });
     const row = within(ask).getByRole("group", { name: "Save choices" });
     const buttons = within(row).getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["Cancel", "Save to current version", "Save as new version"]);
-    expect(row.className).toMatch(/grid-cols-3/);
+    expect(buttons.map((b) => b.textContent)).toEqual(["Update", "New version", "Cancel"]);
+    for (const b of buttons) expect(b.className).toMatch(/text-sm/); // small buttons
     // the same shape and size: only the colors may differ
     const shape = (b: HTMLElement) => b.className.split(" ").filter((c) => !/^(bg-|text-|border-|hover:)/.test(c) || c === "border").sort().join(" ");
     expect(new Set(buttons.map(shape)).size).toBe(1);
@@ -559,7 +559,7 @@ describe("editing in place", () => {
     await u.click(within(notes).getByRole("button", { name: "Edit notes" }));
     await u.type(within(notes).getByRole("textbox", { name: "Notes" }), "Freezes well.");
     await u.click(within(notes).getByRole("button", { name: "Save" }));
-    await u.click(await screen.findByRole("button", { name: "Save to current version" }));
+    await u.click(await screen.findByRole("button", { name: "Update" }));
     await waitFor(() => expect(writes(s)[0].body).toEqual({ notes: "Freezes well.", version: "current" }));
     await waitFor(() => expect(notes).toHaveTextContent("Freezes well."));
   });
@@ -579,7 +579,7 @@ describe("editing in place", () => {
     await u.clear(within(form).getByLabelText("Servings"));
     await u.type(within(form).getByLabelText("Servings"), "6");
     await u.click(within(form).getByRole("button", { name: "Save" }));
-    await u.click(await screen.findByRole("button", { name: "Save as new version" }));
+    await u.click(await screen.findByRole("button", { name: "New version" }));
     await waitFor(() => expect(writes(s)).toHaveLength(1));
     expect(writes(s)[0].body).toMatchObject({ title: "Texas Chili", servings: 6, prepMinutes: 10, cookMinutes: 40, version: "new" });
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Texas Chili"));

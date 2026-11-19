@@ -114,7 +114,7 @@ describe("editing a recipe", () => {
     await u.clear(name);
     await u.type(name, "Best Chili");
     await u.click(screen.getByRole("button", { name: "Save changes" }));
-    await u.click(await screen.findByRole("button", { name: "Save to current version" }));
+    await u.click(await screen.findByRole("button", { name: "Update" }));
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/7"));
     expect(server.writes()[0]).toMatchObject({ method: "PATCH", body: { title: "Best Chili", categories: [3], tags: ["beef"], version: "current" } });
   });
@@ -135,9 +135,9 @@ describe("saving changes with recipe versioning", () => {
     await u.type(screen.getByLabelText("Ingredients"), "\n1 tsp salt");
     await u.click(screen.getByRole("button", { name: "Save changes" }));
     const ask = await screen.findByRole("dialog", { name: "Save your changes" });
-    expect(ask).toHaveTextContent("Save changes to the current version, or save them as a new version?");
+    expect(ask).toHaveTextContent("Update the current version, or save your changes as a new version?");
     expect(server.writes()).toHaveLength(0);
-    await u.click(within(ask).getByRole("button", { name: "Save as new version" }));
+    await u.click(within(ask).getByRole("button", { name: "New version" }));
     await waitFor(() => expect(window.location.hash).toBe("#/recipes/7"));
     expect(server.writes()[0].body).toMatchObject({ version: "new" });
   });

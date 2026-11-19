@@ -10,6 +10,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-18",
+    title: "Smaller version buttons; servings choices after the AI",
+    changes: [
+      "Save your changes has three small buttons: Update (the current version), New version and Cancel.",
+      "How many servings? shows only “Working out some sensible portions…” until the AI's suggestions are in, then all the choices at once, Something else included.",
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-11-18",
     title: "Servings before nutrition, tidier version question, filters that stay",

@@ -189,6 +189,21 @@ describe("Calculate nutrition on a recipe with no servings", () => {
     expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/portions"]); // nothing calculated yet
   });
 
+  it("while the AI works out the portions, only that shows: no choices or buttons until they're in", async () => {
+    const u = userEvent.setup();
+    let answer: (v: unknown) => void = () => {};
+    noServings({ "POST /api/recipes/7/portions": () => new Promise((r) => (answer = r)) });
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    const dlg = await screen.findByRole("dialog", { name: "How many servings?" });
+    expect(within(dlg).getByRole("status")).toHaveTextContent(/Working out/);
+    expect(within(dlg).queryByRole("radio")).toBeNull();
+    expect(within(dlg).queryByRole("button", { name: "Save and calculate" })).toBeNull();
+    answer(portions);
+    expect(await within(dlg).findByRole("radio", { name: "Something else" })).toBeInTheDocument();
+    expect(within(dlg).getByRole("button", { name: "Save and calculate" })).toBeInTheDocument();
+    expect(within(dlg).queryByRole("status")).toBeNull();
+  });
+
   it("picking one saves the servings and Makes on the recipe, then calculates with that serving size", async () => {
     const u = userEvent.setup();
     const { server, onChange, onRecipe } = noServings();

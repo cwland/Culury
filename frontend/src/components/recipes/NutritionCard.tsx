@@ -191,6 +191,9 @@ function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: n
           </p>
         )}
         {ideasError && <p className="rounded-lg bg-page p-3 text-sm">{ideasError}</p>}
+        {/* the choices come once the AI's suggestions are in (or it couldn't make any) */}
+        {(ideas || ideasError) && (
+          <>
         {ideas?.totalGrams && <p className="text-sm text-subtle">The whole recipe comes to about {ideas.totalGrams.toLocaleString()} g.</p>}
         <div role="radiogroup" aria-label="Portions" className="flex flex-col gap-2">
           {ideas?.options.map((o, i) => (
@@ -236,6 +239,8 @@ function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: n
             {saving ? "Saving…" : "Save and calculate"}
           </button>
         </div>
+          </>
+        )}
       </div>
     </Popup>
   );

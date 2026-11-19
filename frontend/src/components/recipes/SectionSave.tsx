@@ -63,25 +63,25 @@ export function SectionButtons({ busy, error, onCancel }: { busy: boolean; error
   );
 }
 
-// Save to the current version, or as a new one? Three buttons of the same size in a row across the
-// bottom (Cancel, then the two saves, the new version filled in as the usual choice).
+// Save to the current version (Update), or as a new one? Three small buttons of the same size in
+// a row across the bottom; New version is filled in as the usual choice.
 export function VersionChoice({ onCurrent, onNew, onCancel }: { onCurrent: () => void; onNew: () => void; onCancel: () => void }) {
-  const shape = "flex min-h-11 items-center justify-center rounded-lg border px-3 py-2.5 text-center text-sm font-semibold leading-tight sm:text-base";
+  const shape = "min-w-[6.5rem] rounded-lg border px-3 py-1.5 text-sm font-semibold";
   return (
     <Popup title="Save your changes" onClose={onCancel}>
       <div className="p-6 pb-5">
-        <p>Save changes to the current version, or save them as a new version?</p>
+        <p>Update the current version, or save your changes as a new version?</p>
         <p className="mt-2 text-sm text-subtle">A new version keeps the recipe as it was in Version history, so you can go back to it.</p>
       </div>
-      <div role="group" aria-label="Save choices" className="grid grid-cols-3 gap-2 border-t border-line bg-page px-4 py-4 sm:gap-3 sm:px-6">
-        <button type="button" onClick={onCancel} className={`${shape} border-line bg-container text-ink hover:bg-pressed`}>
-          Cancel
-        </button>
+      <div role="group" aria-label="Save choices" className="flex flex-wrap justify-end gap-2 border-t border-line bg-page px-6 py-3">
         <button type="button" onClick={onCurrent} className={`${shape} border-line bg-container text-ink hover:bg-pressed`}>
-          Save to current version
+          Update
         </button>
         <button type="button" onClick={onNew} className={`${shape} border-primary bg-primary text-white hover:bg-primary-pressed`}>
-          Save as new version
+          New version
+        </button>
+        <button type="button" onClick={onCancel} className={`${shape} border-line bg-container text-ink hover:bg-pressed`}>
+          Cancel
         </button>
       </div>
     </Popup>
