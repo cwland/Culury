@@ -99,8 +99,9 @@ export default function RecipeList({ params, restore }: { params: URLSearchParam
   useEffect(() => {
     const qs = toParams(f).toString();
     const hash = `#/recipes${qs ? `?${qs}` : ""}`;
-    // (only while still on the list: never rewrite the address of a page you're going to)
-    if (window.location.hash.startsWith("#/recipes") && !/^#\/recipes\/./.test(window.location.hash)) {
+    // (only while still on the list, including Culury opened at its plain address: never rewrite
+    // the address of a page you're going to)
+    if (onList()) {
       history.replaceState(null, "", hash);
       rememberList(hash);
     }

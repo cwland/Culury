@@ -10,6 +10,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-18",
+    title: "Servings before nutrition, tidier version question, filters that stay",
+    changes: [
+      "Calculate nutrition on a recipe with no servings asks how many it makes first. The AI suggests a few sensible portions from the ingredients (like 46 cookies at 25 g or 28 at 40 g), or you type your own. Your choice is saved on the recipe (Servings and Makes), and nutrition is worked out with that serving size.",
+      "Save your changes (current version or a new one) has its three buttons in one row along the bottom, all the same size.",
+      "A search or tag on the recipe list stays on after you open a recipe and come back, also when Culury was opened from its plain address or the home screen app. The Recipes button in the menu goes back to that list too. Clear filters yourself with All recipes.",
+    ],
+  },
+  {
     version: "1.2.2",
     date: "2026-11-18",
     title: "Back to where you were in the recipe list",

@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AppShell from "./AppShell";
 import { SessionContext, type User } from "../session";
 import { fakeServer } from "../test/fakeServer";
+import { rememberList } from "../recipes";
 
 // The navigation: Discover is a page of its own. On phones the bottom bar has room for six, so
 // Settings moves into the Account menu there.
@@ -25,6 +26,17 @@ describe("the navigation", () => {
     const [rail] = navs();
     expect(within(rail).getAllByRole("link").map((a) => a.getAttribute("aria-label"))).toEqual(["Recipes", "Discover", "Meal plan", "Grocery", "Pantry", "Settings"]);
     expect(within(rail).getByRole("link", { name: "Discover" })).toHaveAttribute("href", "#/discover");
+  });
+
+  it("Recipes goes back to the list as you left it (a tag still on), in both bars", () => {
+    shell();
+    rememberList("#/recipes?tag=beef");
+    act(() => {
+      window.location.hash = "#/discover";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    for (const nav of navs()) expect(within(nav).getByRole("link", { name: "Recipes" })).toHaveAttribute("href", "#/recipes?tag=beef");
+    rememberList("#/recipes");
   });
 
   it("the phone's bottom bar: Discover in, Settings in the Account menu instead", async () => {

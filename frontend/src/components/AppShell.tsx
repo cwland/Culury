@@ -10,12 +10,16 @@ import { APP_VERSION, showWhatsNew, versionLabel } from "../version";
 import { isNewer } from "../changelog";
 import { useSession } from "../session";
 import { api } from "../api";
+import { listAddress } from "../recipes";
 import WhatsNew from "./WhatsNew";
 import UpdateBar from "./UpdateBar";
 import { BackgroundPill } from "./BackgroundPill";
 import { InboxButton, InboxDrawer } from "./Inbox";
 import { DiscoverIcon, GearIcon, GroceryIcon, Logo, PantryIcon, PlannerIcon, RecipesIcon } from "./Icons";
 import DiscoveryPage from "./discovery/DiscoveryPage";
+
+// Recipes goes back to the list as you left it (a search or tag stays on until you clear it)
+const navHref = (id: string) => (id === "recipes" ? listAddress() : `#/${id}`);
 
 type Page = "recipes" | "discover" | "plan" | "grocery" | "pantry" | "settings";
 const PAGES: { id: Page; label: string; icon: JSX.Element }[] = [
@@ -82,7 +86,7 @@ export default function AppShell() {
           {PAGES.map((p) => (
             <a
               key={p.id}
-              href={`#/${p.id}`}
+              href={navHref(p.id)}
               aria-label={p.label}
               title={p.label}
               aria-current={page === p.id ? "page" : undefined}
@@ -111,7 +115,7 @@ export default function AppShell() {
         {PAGES.filter((p) => p.id !== "settings").map((p) => ( // Settings: in the Account menu on phones
           <a
             key={p.id}
-            href={`#/${p.id}`}
+            href={navHref(p.id)}
             aria-label={p.label} title={p.label}
             aria-current={page === p.id ? "page" : undefined}
             className={`flex flex-col items-center text-xs ${page === p.id ? "text-action" : "text-subtle"}`}
