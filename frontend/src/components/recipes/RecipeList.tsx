@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { formatMinutes, recipesChanged, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
 import { ChefIcon, ClockIcon, FilterIcon, GridViewIcon, ListViewIcon, MinusIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
@@ -32,10 +32,23 @@ const SORTS = [
   { id: "rating", label: "Your rating" },
 ];
 
-export default function RecipeList({ params }: { params: URLSearchParams }) {
+// The list as you left it: how far down it was scrolled (by its address) and the recipes it showed,
+// so coming back from a recipe puts you where you were without waiting for the list to load again
+type ListData = { total: number; recipes: RecipeSummary[] };
+let keptScroll: { hash: string; y: number } | null = null;
+let keptData: { query: string; data: ListData } | null = null;
+const onList = () => window.location.hash === "" || window.location.hash === "#/" || (window.location.hash.startsWith("#/recipes") && !/^#\/recipes\/./.test(window.location.hash));
+const listQuery = (f: Filters) => {
+  const q = toParams(f);
+  q.set("limit", "200");
+  return q.toString();
+};
+
+// restore: you're coming back from a recipe (its page, editing or Cook mode), so go back to where the list was
+export default function RecipeList({ params, restore }: { params: URLSearchParams; restore?: boolean }) {
   const [f, setF] = useState<Filters>(() => fromParams(params));
   const [search, setSearch] = useState(f.q);
-  const [data, setData] = useState<{ total: number; recipes: RecipeSummary[] } | null>(null);
+  const [data, setData] = useState<ListData | null>(() => (restore && keptData?.query === listQuery(f) ? keptData.data : null));
   const [error, setError] = useState("");
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [categories, setCategories] = useState<TagInfo[]>([]);
@@ -91,16 +104,37 @@ export default function RecipeList({ params }: { params: URLSearchParams }) {
       history.replaceState(null, "", hash);
       rememberList(hash);
     }
-    const query = toParams(f);
-    query.set("limit", "200");
+    const query = listQuery(f);
     let live = true;
-    api<{ total: number; recipes: RecipeSummary[] }>("GET", `/api/recipes?${query}`)
-      .then((d) => live && (setData(d), setError("")))
+    api<ListData>("GET", `/api/recipes?${query}`)
+      .then((d) => {
+        if (!live) return;
+        setData(d);
+        setError("");
+        keptData = { query, data: d };
+      })
       .catch((e) => live && setError((e as Error).message));
     return () => {
       live = false;
     };
   }, [f, reload]);
+
+  // Remember how far down the list is scrolled (only while the list is what's showing)
+  useEffect(() => {
+    const note = () => {
+      if (onList()) keptScroll = { hash: window.location.hash, y: window.scrollY };
+    };
+    window.addEventListener("scroll", note, { passive: true });
+    return () => window.removeEventListener("scroll", note);
+  }, []);
+  // Coming back from a recipe: once the recipes are showing, scroll to where you were (else the top)
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    if (placed.current || (restore && !data)) return;
+    placed.current = true;
+    const y = restore && keptScroll && keptScroll.hash === window.location.hash ? keptScroll.y : 0;
+    window.scrollTo(0, y);
+  }, [data, restore]);
 
   // Search as you type (a moment after you stop)
   useEffect(() => {

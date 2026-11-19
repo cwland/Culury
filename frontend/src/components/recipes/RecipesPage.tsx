@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { recipeRoute, type RecipeRoute } from "../../recipes";
 import RecipeList from "./RecipeList";
 import RecipeView from "./RecipeView";
@@ -16,10 +16,17 @@ export default function RecipesPage() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  // A new page opens at its top; the list places itself (back from a recipe: where you left it)
   // (braces: scrollTo returns a promise in newer browsers, and an effect may only return a cleanup function)
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (route.view !== "list") window.scrollTo(0, 0);
   }, [route.view, "id" in route ? route.id : "job" in route ? route.job : 0]);
+  // Which page was showing before this one (set after each render)
+  const before = useRef<RecipeRoute["view"] | null>(null);
+  const cameBack = before.current === "recipe" || before.current === "edit" || before.current === "cook";
+  useEffect(() => {
+    before.current = route.view;
+  });
 
   if (route.view === "away") return null;
   if (route.view === "recipe") return <RecipeView key={route.id} id={route.id} />;
@@ -30,5 +37,5 @@ export default function RecipesPage() {
   if (route.view === "review") return <ReviewImport key={`review-${route.job}`} job={route.job} />;
   if (route.view === "receive") return <ReceivePage key="receive" />;
   if (route.view === "improving") return <BatchProgress key={`improving-${route.job}`} job={route.job} />;
-  return <RecipeList params={route.params} />;
+  return <RecipeList params={route.params} restore={cameBack} />;
 }

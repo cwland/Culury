@@ -10,6 +10,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.2",
+    date: "2026-11-18",
+    title: "Back to where you were in the recipe list",
+    changes: [
+      "Leaving a recipe (the ← arrow, your browser's Back, or after editing or Cook mode) puts the recipe list back where you had scrolled to, instead of at the top. The recipes show straight away while the list refreshes.",
+    ],
+  },
+  {
     version: "1.2.1",
     date: "2026-11-18",
     title: "Improve with AI: rename the recipe, servings and Makes",
