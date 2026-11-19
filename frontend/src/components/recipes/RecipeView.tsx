@@ -479,7 +479,7 @@ export default function RecipeView({ id, startEditing }: { id: number; startEdit
       )}
       {tab === "nutrition" && (
         <div role="tabpanel" id="panel-nutrition" aria-labelledby="tab-nutrition" className="mt-4">
-          <NutritionCard recipeId={r.id} servings={r.servings} value={r.nutrition} updating={r.nutritionUpdating} onChange={(nutrition) => setR({ ...r, nutrition })} />
+          <NutritionCard recipeId={r.id} servings={r.servings} yieldText={r.yieldText} value={r.nutrition} updating={r.nutritionUpdating} onChange={(nutrition) => setR((x) => x && { ...x, nutrition })} onRecipe={setR} />
         </div>
       )}
       {tab === "history" && r.versioning && (

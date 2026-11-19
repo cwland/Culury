@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NutritionCard } from "./NutritionCard";
-import { fakeServer, ndjsonStream } from "../../test/fakeServer";
+import { fakeServer, ndjsonStream, recipeJson } from "../../test/fakeServer";
 import { forgetAiStatus } from "../../ai";
 import type { Nutrition } from "../../recipes";
 
@@ -153,5 +153,88 @@ describe("nutrition panel buttons", () => {
     card(facts());
     await u.click(screen.getByRole("button", { name: "Edit nutrition" }));
     expect(await screen.findByRole("dialog", { name: "Nutrition per serving" })).toBeInTheDocument();
+  });
+});
+
+describe("Calculate nutrition on a recipe with no servings", () => {
+  const portions = {
+    totalGrams: 1150,
+    options: [
+      { servings: 46, servingSize: "1 cookie (25 g)", yieldText: "46 cookies" },
+      { servings: 28, servingSize: "1 cookie (40 g)", yieldText: "28 cookies" },
+    ],
+  };
+  const noServings = (routes: Record<string, any> = {}) => {
+    const server = fakeServer({
+      "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }),
+      "POST /api/recipes/7/portions": () => portions,
+      "PATCH /api/recipes/7": (b: any) => recipeJson({ servings: b.servings, yieldText: b.yieldText ?? null }),
+      "POST /api/recipes/7/nutrition": () => facts({ servings: 28, servingSize: "1 cookie (40 g)" }),
+      ...routes,
+    });
+    const onChange = vi.fn();
+    const onRecipe = vi.fn();
+    render(<NutritionCard recipeId={7} servings={null} yieldText={null} value={null} onChange={onChange} onRecipe={onRecipe} />);
+    return { server, onChange, onRecipe };
+  };
+
+  it("asks how many it makes first, with the AI's suggestions from the ingredients", async () => {
+    const u = userEvent.setup();
+    const { server } = noServings();
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    const dlg = await screen.findByRole("dialog", { name: "How many servings?" });
+    expect(await within(dlg).findByRole("radio", { name: /46 cookies.*1 cookie \(25 g\)/ })).toBeInTheDocument();
+    expect(within(dlg).getByRole("radio", { name: /28 cookies.*1 cookie \(40 g\)/ })).toBeInTheDocument();
+    expect(within(dlg).getByText(/about 1,150 g/)).toBeInTheDocument();
+    expect(server.writes().map((w) => w.path)).toEqual(["/api/recipes/7/portions"]); // nothing calculated yet
+  });
+
+  it("picking one saves the servings and Makes on the recipe, then calculates with that serving size", async () => {
+    const u = userEvent.setup();
+    const { server, onChange, onRecipe } = noServings();
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    await u.click(await screen.findByRole("radio", { name: /28 cookies/ }));
+    await u.click(screen.getByRole("button", { name: "Save and calculate" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const writes = server.writes();
+    expect(writes.find((w) => w.method === "PATCH")!.body).toEqual({ servings: 28, yieldText: "28 cookies" });
+    expect(writes.find((w) => w.path === "/api/recipes/7/nutrition")!.body).toEqual({ servingSize: "1 cookie (40 g)" });
+    expect(onRecipe).toHaveBeenCalledWith(expect.objectContaining({ servings: 28, yieldText: "28 cookies" }));
+    expect(screen.queryByRole("dialog", { name: "How many servings?" })).toBeNull();
+  });
+
+  it("or type your own: servings, a serving size and what it makes", async () => {
+    const u = userEvent.setup();
+    const { server } = noServings();
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    const dlg = await screen.findByRole("dialog", { name: "How many servings?" });
+    await u.click(within(dlg).getByRole("radio", { name: "Something else" }));
+    await u.type(within(dlg).getByRole("textbox", { name: "Servings" }), "10");
+    await u.type(within(dlg).getByRole("textbox", { name: "Serving size" }), "1 slice");
+    await u.type(within(dlg).getByRole("textbox", { name: "Makes" }), "1 loaf");
+    await u.click(within(dlg).getByRole("button", { name: "Save and calculate" }));
+    await waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/nutrition")).toBeTruthy());
+    expect(server.writes().find((w) => w.method === "PATCH")!.body).toEqual({ servings: 10, yieldText: "1 loaf" });
+    expect(server.writes().find((w) => w.path === "/api/recipes/7/nutrition")!.body).toEqual({ servingSize: "1 slice" });
+  });
+
+  it("no suggestions (the AI couldn't): says so, and typing your own still works", async () => {
+    const u = userEvent.setup();
+    noServings({ "POST /api/recipes/7/portions": () => ({ status: 502, json: { error: "The AI didn't suggest any portions." } }) });
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    const dlg = await screen.findByRole("dialog", { name: "How many servings?" });
+    expect(await within(dlg).findByText(/couldn't suggest portions/i)).toBeInTheDocument();
+    expect(within(dlg).getByRole("textbox", { name: "Servings" })).toBeInTheDocument();
+    expect(within(dlg).getByRole("button", { name: "Save and calculate" })).toBeDisabled();
+  });
+
+  it("a recipe that has servings calculates straight away", async () => {
+    const u = userEvent.setup();
+    fakeServer({ "GET /api/ai/status": () => ({ ready: true, photos: false, enhance: true }), "POST /api/recipes/7/nutrition": () => facts() });
+    const onChange = vi.fn();
+    card(null, { onChange });
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog", { name: "How many servings?" })).toBeNull();
   });
 });

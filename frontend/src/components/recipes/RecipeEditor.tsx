@@ -4,7 +4,7 @@ import { ingredientsText, parseMinutes, parseServings, stepsText, type Collectio
 import { clearUnsaved, useUnsavedGuard } from "../../unsavedGuard";
 import { BackIcon, CloseIcon } from "../Icons";
 import { RecipeImage } from "./RecipeList";
-import { Popup } from "../Popup";
+import { VersionChoice } from "./SectionSave";
 
 interface Form {
   title: string;
@@ -308,25 +308,7 @@ export default function RecipeEditor({ id }: { id?: number }) {
           {error && <span role="alert" className="text-error">{error}</span>}
         </div>
       </form>
-      {asking && (
-        <Popup title="Save your changes" onClose={() => setAsking(null)}>
-          <div className="p-6">
-            <p>Save changes to the current version, or save them as a new version?</p>
-            <p className="mt-2 text-sm text-subtle">A new version keeps the recipe as it was in Version history, so you can go back to it.</p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button type="button" onClick={() => void send(asking, "new")} className="rounded bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-pressed">
-                Save as new version
-              </button>
-              <button type="button" onClick={() => void send(asking, "current")} className="rounded border border-line px-5 py-2.5 font-semibold hover:bg-pressed">
-                Save to current version
-              </button>
-              <button type="button" onClick={() => setAsking(null)} className="px-2 py-2.5 font-semibold text-subtle hover:underline">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </Popup>
-      )}
+      {asking && <VersionChoice onCurrent={() => void send(asking, "current")} onNew={() => void send(asking, "new")} onCancel={() => setAsking(null)} />}
     </Frame>
   );
 }

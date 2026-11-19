@@ -69,11 +69,12 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 
 // POST and follow along: the server sends one JSON object per line as it works
 // ({"type":"step","text":…} …, then {"type":"result", [key]: …} or {"type":"error",…}). A plain JSON reply works too.
-export async function postWithProgress<T>(path: string, key: string, onStep: (text: string) => void, signal?: AbortSignal): Promise<T> {
+// body: sent as JSON when given
+export async function postWithProgress<T>(path: string, key: string, onStep: (text: string) => void, signal?: AbortSignal, body?: unknown): Promise<T> {
   const token = getToken();
   let res: Response;
   try {
-    res = await fetch(path, { method: "POST", signal, headers: { accept: "application/x-ndjson, application/json", "x-device-id": deviceId(), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+    res = await fetch(path, { method: "POST", signal, ...(body !== undefined && { body: JSON.stringify(body) }), headers: { accept: "application/x-ndjson, application/json", "x-device-id": deviceId(), ...(body !== undefined && { "content-type": "application/json" }), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   } catch {
     throw new ApiError(0, "Couldn't reach Culury. Check your connection and try again.");
   }

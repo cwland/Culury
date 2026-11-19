@@ -117,6 +117,22 @@ describe("AI Enhance on the recipe page", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Best Chili");
   });
 
+  it("Calculate nutrition on a recipe with no servings: the servings picked show on the page with the nutrition", async () => {
+    server({ ready: true, photos: false, enhance: false }, recipeJson({ servings: null }), {
+      "POST /api/recipes/7/portions": () => ({ totalGrams: 900, options: [{ servings: 6, servingSize: "1 bowl (150 g)", yieldText: "6 bowls" }] }),
+      "PATCH /api/recipes/7": () => recipeJson({ servings: 6, yieldText: "6 bowls" }),
+      "POST /api/recipes/7/nutrition": () => ({ calories: 300, fat: 1, saturatedFat: 1, carbs: 1, fiber: 1, sugar: 1, addedSugar: null, protein: 1, sodium: 1, source: "ai", servings: 6, servingSize: "1 bowl (150 g)", note: null }),
+    });
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    await u.click(await screen.findByRole("tab", { name: "Nutrition" }));
+    await u.click(await screen.findByRole("button", { name: "Calculate nutrition" }, { timeout: 3000 }));
+    await u.click(await screen.findByRole("radio", { name: /6 bowls/ }));
+    await u.click(screen.getByRole("button", { name: "Save and calculate" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Nutrition" })).toHaveTextContent("1 bowl (150 g)"));
+    expect(screen.getAllByText("6 bowls").length).toBeGreaterThan(0);
+  });
+
   it("imported with AI Enhance off: no review opens", async () => {
     window.location.hash = "#/recipes/7?imported=1";
     server({ ready: true, photos: false, enhance: false });
@@ -497,6 +513,24 @@ describe("editing in place", () => {
     expect(within(ing).queryByRole("textbox")).toBeNull();
     expect(ing).not.toHaveTextContent("nope");
     expect(writes(s)).toHaveLength(0);
+  });
+
+  it("the version question's three buttons sit in one row across the bottom, all the same size and style", async () => {
+    editable();
+    const u = userEvent.setup();
+    render(<RecipeView id={7} />);
+    const ing = await screen.findByRole("region", { name: "Ingredients" });
+    await u.click(within(ing).getByRole("button", { name: "Edit ingredients" }));
+    await u.type(within(ing).getByRole("textbox", { name: "Ingredients" }), "\n1 tsp salt");
+    await u.click(within(ing).getByRole("button", { name: "Save" }));
+    const ask = await screen.findByRole("dialog", { name: "Save your changes" });
+    const row = within(ask).getByRole("group", { name: "Save choices" });
+    const buttons = within(row).getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["Cancel", "Save to current version", "Save as new version"]);
+    expect(row.className).toMatch(/grid-cols-3/);
+    // the same shape and size: only the colors may differ
+    const shape = (b: HTMLElement) => b.className.split(" ").filter((c) => !/^(bg-|text-|border-|hover:)/.test(c) || c === "border").sort().join(" ");
+    expect(new Set(buttons.map(shape)).size).toBe(1);
   });
 
   it("Steps: saved straight away when versioning is off", async () => {

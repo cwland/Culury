@@ -31,14 +31,15 @@ const NUMBERS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // skip: AI services to leave out (ones skipped as too slow during the AI check)
-export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }, opts: { skip?: string[]; signal?: AbortSignal; onStep?: (text: string) => void } = {}): Promise<Nutrition> {
+// servingSize: one you picked (like "1 cookie (40 g)"): the AI is told it, and it's kept on the result
+export async function estimateNutrition(ai: AiService, r: { title: string; servings: number | null; yieldText: string | null; ingredients: Ingredient[] }, opts: { skip?: string[]; signal?: AbortSignal; onStep?: (text: string) => void; servingSize?: string } = {}): Promise<Nutrition> {
   const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
   if (!lines.length) throw new AiError("Add the ingredients first: nutrition is worked out from them.");
   const step = opts.onStep ?? (() => {});
   step(`Reading ${lines.length === 1 ? "1 ingredient" : `${lines.length} ingredients`}`);
   const servings = r.servings ?? null;
   // No servings given: the whole recipe is 1 serving (and the AI is told so, so its serving size matches)
-  const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText ? `${r.yieldText} (count it as 1 serving)` : "1 serving"}\nIngredients:\n${lines.join("\n")}`;
+  const user = `Recipe: ${r.title}\nMakes: ${servings ? `${servings} servings` : r.yieldText ? `${r.yieldText} (count it as 1 serving)` : "1 serving"}${opts.servingSize ? `\nServing size: ${opts.servingSize}` : ""}\nIngredients:\n${lines.join("\n")}`;
   // Room for each line's numbers (about 300 tokens), plus at least 4000 so a model that thinks
   // first still gets to the answer; OpenRouter models are asked to keep the thinking short
   const { json } = await ai.ask("quick", NUTRITION_SYSTEM, user, { maxTokens: Math.min(16000, Math.max(4000, 800 + 300 * lines.length)), reasoning: "low", ...(opts.skip?.length ? { skip: opts.skip } : {}), ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.onStep ? { onProgress: (p: AiProgress) => step(progressLine(p)) } : {}) });
@@ -47,7 +48,7 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   const common = {
     source: "ai" as const,
     servings: servings ?? 1,
-    servingSize: typeof json.servingSize === "string" && json.servingSize.trim() ? json.servingSize.trim().slice(0, 100) : null,
+    servingSize: opts.servingSize?.trim() ? opts.servingSize.trim().slice(0, 100) : typeof json.servingSize === "string" && json.servingSize.trim() ? json.servingSize.trim().slice(0, 100) : null,
     note: typeof json.note === "string" && json.note.trim() ? json.note.trim().slice(0, 300) : null,
   };
   let out: Nutrition;
@@ -68,6 +69,29 @@ export async function estimateNutrition(ai: AiService, r: { title: string; servi
   }
   if (out.calories === null) throw new AiError("The AI didn't give a calorie estimate. Try again.");
   return out;
+}
+
+// ---------- portions ----------
+
+// A recipe with no servings: a few sensible ways to portion it, worked out from the ingredients
+const PORTION_SYSTEM = `You suggest how to portion a home recipe that doesn't say how many it makes. Reply with JSON only:
+{"totalGrams": 0, "options": [{"servings": 0, "servingSize": "", "yieldText": ""}]}
+"totalGrams": about how much the finished dish weighs, from the ingredients (after cooking or baking). Give 2 or 3 options a home cook would actually use, from smaller to larger portions, each dividing that weight sensibly: for cookies, say 1 cookie at 25 g or at 40 g; for a soup, bowls of about 1½ cups; for a cake, slices. "servings": how many portions, a whole number. "servingSize": one portion in kitchen terms with its weight, like "1 cookie (40 g)" or "About 1½ cups (350 g)". "yieldText": what the whole recipe makes, like "28 cookies", "6 bowls" or "1 loaf, 12 slices".`;
+
+export type Portion = { servings: number; servingSize: string; yieldText: string | null };
+export async function suggestPortions(ai: AiService, r: { title: string; ingredients: Ingredient[] }): Promise<{ totalGrams: number | null; options: Portion[] }> {
+  const lines = r.ingredients.filter((i) => !i.section).map((i) => `- ${i.raw}`);
+  if (!lines.length) throw new AiError("Add the ingredients first: portions are worked out from them.");
+  const { json } = await ai.ask("quick", PORTION_SYSTEM, `Recipe: ${r.title}\nIngredients:\n${lines.join("\n")}`, { maxTokens: 4000, reasoning: "low" });
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 100) : null);
+  const options = (Array.isArray(json.options) ? (json.options as Record<string, unknown>[]) : [])
+    .filter((o) => o && typeof o === "object")
+    .map((o) => ({ servings: Math.round(num(o.servings, 1000) ?? 0), servingSize: text(o.servingSize), yieldText: text(o.yieldText) }))
+    .filter((o): o is Portion => o.servings >= 1 && !!o.servingSize)
+    .slice(0, 3);
+  if (!options.length) throw new AiError("The AI didn't suggest any portions. Type in how many servings it makes.");
+  const total = num(json.totalGrams, 1e6);
+  return { totalGrams: total ? Math.round(total) : null, options };
 }
 
 // ---------- grocery aisles ----------

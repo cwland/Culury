@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { recipes } from "../db/schema.js";
 import { AiError } from "../lib/ai.js";
-import { estimateNutrition, mealIdeas } from "../lib/aiHelpers.js";
+import { estimateNutrition, mealIdeas, suggestPortions } from "../lib/aiHelpers.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { idParam } from "../lib/validation.js";
 import { nutritionInput } from "../lib/recipes.js";
@@ -42,8 +42,10 @@ export default async function aiRoutes(app: FastifyInstance) {
   app.post("/api/recipes/:id/nutrition", async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const r = await recipeOf(id);
+    // servingSize: the portion picked in the app ("1 cookie (40 g)"), kept on the result
+    const { servingSize } = z.object({ servingSize: z.string().trim().max(100).optional() }).parse(req.body ?? {});
     const work = async (onStep?: (text: string) => void, signal?: AbortSignal) => {
-      const nutrition = await asHttp(() => estimateNutrition(ai, r, { ...(onStep && { onStep }), ...(signal && { signal }) }));
+      const nutrition = await asHttp(() => estimateNutrition(ai, r, { ...(onStep && { onStep }), ...(signal && { signal }), ...(servingSize && { servingSize }) }));
       await db.update(recipes).set({ nutrition }).where(eq(recipes.id, id));
       await syncActive(db, id); // nutrition goes into the active version
       return nutrition;
@@ -63,6 +65,12 @@ export default async function aiRoutes(app: FastifyInstance) {
       send({ type: "error", status, error: status === 500 && !(e instanceof HttpError) ? "Something went wrong. Try again." : (e as Error).message });
     }
     out.end();
+  });
+  // A few sensible portions for a recipe that doesn't say how many it makes (saves nothing)
+  app.post("/api/recipes/:id/portions", async (req) => {
+    const { id } = idParam.parse(req.params);
+    const r = await recipeOf(id);
+    return asHttp(() => suggestPortions(ai, r));
   });
   // Type it in (from the package or another app), or clear it with null
   app.put("/api/recipes/:id/nutrition", async (req) => {

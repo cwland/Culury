@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, postWithProgress } from "../../api";
 import { WorkingPopup } from "../WorkingPopup";
 import { useAiStatus } from "../../ai";
-import { pointsEstimate, type Nutrition } from "../../recipes";
+import { pointsEstimate, type Nutrition, type Recipe } from "../../recipes";
 import { Popup } from "../Popup";
 import { EditIcon, WandIcon } from "../Icons";
 
@@ -24,23 +24,27 @@ const ROWS: { key: keyof Nutrition; label: string; unit: string; dv?: number; in
 const SOURCE = { site: "From the recipe's site", ai: "Estimated by AI", you: "Entered by you" };
 const fmt = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
 
-export function NutritionCard({ recipeId, servings, value, updating, onChange }: { recipeId: number; servings: number | null; value: Nutrition | null; updating?: boolean; onChange: (n: Nutrition | null) => void }) {
+// onRecipe: the recipe after its servings were saved here (a recipe with none is asked for them first)
+export function NutritionCard({ recipeId, servings, yieldText, value, updating, onChange, onRecipe }: { recipeId: number; servings: number | null; yieldText?: string | null; value: Nutrition | null; updating?: boolean; onChange: (n: Nutrition | null) => void; onRecipe?: (r: Recipe) => void }) {
   const ai = useAiStatus();
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
-  const estimate = async () => {
+  const [asking, setAsking] = useState(false);
+  const calculate = async (servingSize?: string) => {
     setBusy(true);
     setError("");
     try {
       setLine("Starting…");
-      onChange(await postWithProgress<Nutrition>(`/api/recipes/${recipeId}/nutrition`, "nutrition", setLine));
+      onChange(await postWithProgress<Nutrition>(`/api/recipes/${recipeId}/nutrition`, "nutrition", setLine, undefined, servingSize ? { servingSize } : undefined));
     } catch (e) {
       setError((e as Error).message);
     }
     setBusy(false);
   };
+  // No servings on the recipe: ask how many it makes first (per serving means nothing without it)
+  const estimate = () => (servings ? calculate() : setAsking(true));
   const points = value ? pointsEstimate(value) : null;
   const stale = value?.servings && servings && value.servings !== servings;
 
@@ -64,6 +68,18 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
         )}
       </div>
       {busy && <WorkingPopup title="Calculating nutrition" line={line} />}
+      {asking && (
+        <ServingsPrompt
+          recipeId={recipeId}
+          yieldText={yieldText ?? null}
+          onClose={() => setAsking(false)}
+          onSaved={(r, servingSize) => {
+            setAsking(false);
+            onRecipe?.(r);
+            void calculate(servingSize);
+          }}
+        />
+      )}
       {updating && (
         <p role="status" className="mt-2 text-sm font-semibold text-action">
           Updating nutrition…
@@ -121,6 +137,107 @@ export function NutritionCard({ recipeId, servings, value, updating, onChange }:
         />
       )}
     </section>
+  );
+}
+
+type Portion = { servings: number; servingSize: string; yieldText: string | null };
+const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 outline-none focus:border-action";
+
+// How many servings? The AI's suggestions from the ingredients (24 cookies at 40 g…), or your own.
+// Saving puts the servings (and Makes) on the recipe; onSaved then calculates with that serving size.
+function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: number; yieldText: string | null; onClose: () => void; onSaved: (r: Recipe, servingSize?: string) => void }) {
+  const [ideas, setIdeas] = useState<{ totalGrams: number | null; options: Portion[] } | null>(null);
+  const [ideasError, setIdeasError] = useState("");
+  const [pick, setPick] = useState<number | "own" | null>(null);
+  const [own, setOwn] = useState({ servings: "", servingSize: "", yieldText: yieldText ?? "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api<{ totalGrams: number | null; options: Portion[] }>("POST", `/api/recipes/${recipeId}/portions`)
+      .then((d) => live && setIdeas(d))
+      .catch(() => {
+        if (!live) return;
+        setIdeasError("The AI couldn't suggest portions this time. Type in how many it makes.");
+        setPick("own");
+      });
+    return () => {
+      live = false;
+    };
+  }, [recipeId]);
+  const ownServings = Number(own.servings.trim());
+  const ownOk = Number.isInteger(ownServings) && ownServings >= 1 && ownServings <= 1000;
+  const chosen: Portion | null = pick === "own" ? (ownOk ? { servings: ownServings, servingSize: own.servingSize.trim(), yieldText: own.yieldText.trim() || null } : null) : pick !== null && ideas ? ideas.options[pick] : null;
+  const save = async () => {
+    if (!chosen) return;
+    setSaving(true);
+    setError("");
+    try {
+      const r = await api<Recipe>("PATCH", `/api/recipes/${recipeId}`, { servings: chosen.servings, ...(chosen.yieldText ? { yieldText: chosen.yieldText } : {}) });
+      onSaved(r, chosen.servingSize || undefined);
+    } catch (e) {
+      setError((e as Error).message);
+      setSaving(false);
+    }
+  };
+  const option = "flex cursor-pointer items-start gap-3 rounded-xl border p-3 has-[:checked]:border-action has-[:checked]:bg-brand-subtle";
+  return (
+    <Popup title="How many servings?" onClose={onClose}>
+      <div className="flex flex-col gap-3 p-6">
+        <p>This recipe doesn't say how many it makes. Nutrition is per serving, so pick one first.</p>
+        {!ideas && !ideasError && (
+          <p role="status" className="flex items-center gap-2 text-sm text-subtle">
+            <span className="size-3 animate-spin rounded-full border-2 border-action border-t-transparent" aria-hidden /> Working out some sensible portions from the ingredients…
+          </p>
+        )}
+        {ideasError && <p className="rounded-lg bg-page p-3 text-sm">{ideasError}</p>}
+        {ideas?.totalGrams && <p className="text-sm text-subtle">The whole recipe comes to about {ideas.totalGrams.toLocaleString()} g.</p>}
+        <div role="radiogroup" aria-label="Portions" className="flex flex-col gap-2">
+          {ideas?.options.map((o, i) => (
+            <label key={i} className={`${option} border-line`}>
+              <input type="radio" name="portion" checked={pick === i} onChange={() => setPick(i)} className="mt-1 accent-[var(--color-action)]" aria-label={`${o.yieldText ?? `${o.servings} servings`}, ${o.servingSize}`} />
+              <span>
+                <span className="block font-semibold">{o.yieldText ?? `${o.servings} servings`}</span>
+                <span className="text-sm text-subtle">{o.servingSize} each</span>
+              </span>
+            </label>
+          ))}
+          <label className={`${option} border-line`}>
+            <input type="radio" name="portion" checked={pick === "own"} onChange={() => setPick("own")} className="mt-1 accent-[var(--color-action)]" aria-label="Something else" />
+            <span className="font-semibold">Something else</span>
+          </label>
+        </div>
+        {pick === "own" && (
+          <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-subtle">
+            <label>
+              Servings
+              <input aria-label="Servings" inputMode="numeric" value={own.servings} onChange={(e) => setOwn({ ...own, servings: e.target.value })} placeholder="12" className={field} />
+            </label>
+            <label>
+              Serving size
+              <input aria-label="Serving size" value={own.servingSize} maxLength={100} onChange={(e) => setOwn({ ...own, servingSize: e.target.value })} placeholder="1 cookie (40 g)" className={field} />
+            </label>
+            <label className="col-span-2">
+              Makes
+              <input aria-label="Makes" value={own.yieldText} maxLength={100} onChange={(e) => setOwn({ ...own, yieldText: e.target.value })} placeholder="24 cookies" className={field} />
+            </label>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2.5 font-semibold hover:bg-pressed">
+            Cancel
+          </button>
+          <button type="button" disabled={!chosen || saving} onClick={() => void save()} className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {saving ? "Saving…" : "Save and calculate"}
+          </button>
+        </div>
+      </div>
+    </Popup>
   );
 }
 
