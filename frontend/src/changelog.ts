@@ -10,6 +10,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.2",
+    date: "2026-11-18",
+    title: "Improve with AI asks for servings first",
+    changes: [
+      "Improve with AI on a recipe with no servings asks how many it makes before the AI check starts, with the same suggestions as Calculate nutrition. The AI then works out nutrition per serving for that count, labeled with the serving size you picked.",
+      "Changing servings inside Improve with AI divides the suggested nutrition again, so per serving matches the new count. Before, the numbers stayed for the whole recipe.",
+      "A recipe whose nutrition was worked out for a different number of servings says so on its Nutrition tab. Re-calculate nutrition fixes it.",
+    ],
+  },
+  {
     version: "1.3.1",
     date: "2026-11-18",
     title: "Smaller version buttons; servings choices after the AI",

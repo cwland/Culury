@@ -3,6 +3,7 @@ import { api, ApiError, getToken } from "../../api";
 import { Popup } from "../Popup";
 import { Check, ChevronRight, EditIcon } from "../Icons";
 import { stepLabel, type Enhancement, type Nutrition, type Recipe } from "../../recipes";
+import { ServingsChooser } from "./NutritionCard";
 
 // One line of the progress list from the server
 type Skip = { id: string; name: string };
@@ -255,6 +256,19 @@ const nutritionBody = (n: Nutrition, servingSize: string | null) => {
   return { ...Object.fromEntries(NUTRITION_KEYS.filter((k) => all[k] !== undefined).map((k) => [k, all[k]])), servingSize };
 };
 
+// The AI's per-serving numbers for another number of servings (the whole recipe stays the same)
+const NUMBER_KEYS = ["calories", "fat", "saturatedFat", "carbs", "fiber", "sugar", "addedSugar", "protein", "sodium"] as const;
+export function perServingFor(n: Nutrition, servings: number): Nutrition {
+  const was = n.servings || 1;
+  if (was === servings) return n;
+  const out = { ...n, servings } as Record<string, unknown>;
+  for (const k of NUMBER_KEYS) {
+    const v = (n as unknown as Record<string, number | null | undefined>)[k];
+    if (typeof v === "number") out[k] = Math.round(((v * was) / servings) * 10) / 10;
+  }
+  return out as unknown as Nutrition;
+}
+
 const box = "w-full rounded-lg border border-line bg-page px-3 py-2 text-sm leading-relaxed outline-none focus:border-action";
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
@@ -284,6 +298,9 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
   const [dd, setDd] = useState<Partial<Record<"servings" | "servingSize" | "yieldText", string>>>({});
   const [detailsError, setDetailsError] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
+  // No servings on the recipe: asked first, since the AI's nutrition is per serving
+  const [needServings, setNeedServings] = useState(!recipe.servings);
+  const pickedSize = useRef<string | null>(null);
 
   const [lines, setLines] = useState<Progress[]>([]);
   const [errorStatus, setErrorStatus] = useState(0);
@@ -312,7 +329,8 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
           if (mineRun !== run.current) return;
           setE(r);
           setAt(0);
-          setMine({});
+          // the serving size picked before the check labels the AI's nutrition
+          setMine(pickedSize.current && r.nutrition.suggested ? { nutrition: { ...r.nutrition.suggested, servingSize: pickedSize.current } } : {});
           setUse({ steps: false, ingredients: false, nutrition: false, organize: false });
         })
         .catch((err) => {
@@ -332,9 +350,10 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
   // closing the window stops the request (the AI server stops working on it too)
   useEffect(() => () => stopper.current?.abort(), []);
   useEffect(() => {
+    if (needServings) return; // (asked for the servings first)
     skipped.current = [];
     check();
-  }, [check]);
+  }, [check, needServings]);
 
   // The AI's version of each part, with any edits made here
   const sug = e && {
@@ -372,12 +391,16 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
     const body: Record<string, unknown> = {};
     if (dd.servings !== undefined && servings !== now.servings) body.servings = servings;
     if (dd.yieldText !== undefined && yieldText !== now.yieldText) body.yieldText = yieldText;
+    // New servings: the AI's per-serving numbers are divided again (it's still the same recipe)
+    let suggested = sug?.nutrition ?? null;
+    if (body.servings && suggested) suggested = perServingFor(suggested, body.servings as number);
     // The serving size lives with the nutrition: the recipe's own, and the AI's suggested numbers
     if (dd.servingSize !== undefined && size !== servingSize) {
       if (recipe.nutrition) body.nutrition = nutritionBody(recipe.nutrition, size);
-      if (sug?.nutrition) setMine((m) => ({ ...m, nutrition: { ...sug.nutrition!, servingSize: size } }));
+      if (suggested) suggested = { ...suggested, servingSize: size };
       setNow((x) => ({ ...x, servingSize: size }));
     }
+    if (suggested && suggested !== sug?.nutrition) setMine((m) => ({ ...m, nutrition: suggested }));
     setDetailsError("");
     if (Object.keys(body).length) {
       setSavingDetails(true);
@@ -590,7 +613,7 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
   };
   const anyOpen = detailsOpen || !now.servings || !now.yieldText || (!servingSize && !!(recipe.nutrition || sug?.nutrition));
   const dirty = Object.keys(dd).length > 0;
-  const details = first ? (
+  const details = needServings ? null : first ? (
     <div role="group" aria-label="Recipe details" className="rounded-xl border border-line p-3">
       <div className="grid grid-cols-3 gap-3 text-sm">
         {detailRow("servings", "Servings", now.servings == null ? null : String(now.servings))}
@@ -644,8 +667,25 @@ export default function EnhanceWizard({ recipe, onClose, onApplied, onFinished, 
             </div>
           </div>
         )}
+        {needServings && (
+          <section aria-label="How many servings?" className="flex flex-col gap-3">
+            <h3 className="text-xl font-bold">How many servings?</h3>
+            <ServingsChooser
+              recipeId={recipe.id}
+              yieldText={recipe.yieldText}
+              onCancel={onClose}
+              saveLabel="Save and continue"
+              onSaved={(r, size) => {
+                pickedSize.current = size ?? null;
+                setNow((x) => ({ ...x, servings: r.servings, yieldText: r.yieldText, servingSize: size ?? x.servingSize }));
+                onChanged?.(r);
+                setNeedServings(false);
+              }}
+            />
+          </section>
+        )}
         {details}
-        {(lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
+        {!needServings && (lines.length > 0 || (!e && !error)) && <ProgressList lines={lines} working={!e && !error} onSkip={skipService} collapsed={!!e} />}
         {error && (
           <div role="alert" className="rounded-xl bg-error-subtle p-4">
             <p>{error}</p>

@@ -146,6 +146,17 @@ const field = "mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 outli
 // How many servings? The AI's suggestions from the ingredients (24 cookies at 40 g…), or your own.
 // Saving puts the servings (and Makes) on the recipe; onSaved then calculates with that serving size.
 function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: number; yieldText: string | null; onClose: () => void; onSaved: (r: Recipe, servingSize?: string) => void }) {
+  return (
+    <Popup title="How many servings?" onClose={onClose}>
+      <div className="p-6">
+        <ServingsChooser recipeId={recipeId} yieldText={yieldText} onCancel={onClose} onSaved={onSaved} saveLabel="Save and calculate" />
+      </div>
+    </Popup>
+  );
+}
+
+// The choices themselves (also the first step of Improve with AI for a recipe with no servings)
+export function ServingsChooser({ recipeId, yieldText, onCancel, onSaved, saveLabel }: { recipeId: number; yieldText: string | null; onCancel: () => void; onSaved: (r: Recipe, servingSize?: string) => void; saveLabel: string }) {
   const [ideas, setIdeas] = useState<{ totalGrams: number | null; options: Portion[] } | null>(null);
   const [ideasError, setIdeasError] = useState("");
   const [pick, setPick] = useState<number | "own" | null>(null);
@@ -182,8 +193,7 @@ function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: n
   };
   const option = "flex cursor-pointer items-start gap-3 rounded-xl border p-3 has-[:checked]:border-action has-[:checked]:bg-brand-subtle";
   return (
-    <Popup title="How many servings?" onClose={onClose}>
-      <div className="flex flex-col gap-3 p-6">
+      <div className="flex flex-col gap-3">
         <p>This recipe doesn't say how many it makes. Nutrition is per serving, so pick one first.</p>
         {!ideas && !ideasError && (
           <p role="status" className="flex items-center gap-2 text-sm text-subtle">
@@ -232,17 +242,16 @@ function ServingsPrompt({ recipeId, yieldText, onClose, onSaved }: { recipeId: n
           </p>
         )}
         <div className="mt-2 grid grid-cols-2 gap-3">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2.5 font-semibold hover:bg-pressed">
+          <button type="button" onClick={onCancel} className="rounded-lg border border-line px-4 py-2.5 font-semibold hover:bg-pressed">
             Cancel
           </button>
           <button type="button" disabled={!chosen || saving} onClick={() => void save()} className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-white hover:opacity-90 disabled:opacity-50">
-            {saving ? "Saving…" : "Save and calculate"}
+            {saving ? "Saving…" : saveLabel}
           </button>
         </div>
           </>
         )}
       </div>
-    </Popup>
   );
 }
 

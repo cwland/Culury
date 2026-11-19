@@ -354,3 +354,74 @@ describe("The name, servings, serving size and Makes on the first step", () => {
     expect(screen.getByText(/Serves 4 · Makes 8 bowls/)).toBeInTheDocument();
   });
 });
+
+describe("A recipe with no servings: asked first, before the AI check", () => {
+  const portions = { totalGrams: 480, options: [{ servings: 16, servingSize: "2 tbsp (30 g)", yieldText: "2 cups" }, { servings: 8, servingSize: "¼ cup (60 g)", yieldText: "2 cups" }] };
+  const noServings = { ...recipe, servings: null } as Recipe;
+
+  it("asks how many servings first; the AI check starts only once they're saved", async () => {
+    const u = userEvent.setup();
+    const server = fakeServer({
+      "POST /api/recipes/7/portions": () => portions,
+      "PATCH /api/recipes/7": () => recipeJson({ servings: 16, yieldText: "2 cups" }),
+      "POST /api/recipes/7/enhance": () => suggestion(),
+    });
+    const onChanged = vi.fn();
+    render(<EnhanceWizard recipe={noServings} onClose={() => {}} onApplied={() => {}} onChanged={onChanged} />);
+    const ask = await screen.findByRole("region", { name: "How many servings?" });
+    expect(server.sent.some((s) => s.path.startsWith("/api/recipes/7/enhance"))).toBe(false);
+    expect(screen.queryByRole("log", { name: "AI check progress" })).toBeNull(); // (nothing's being checked yet)
+    await u.click(await within(ask).findByRole("radio", { name: /16 servings|2 cups.*2 tbsp/ }));
+    await u.click(within(ask).getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    const paths = server.writes().map((w) => w.path);
+    expect(paths.indexOf("/api/recipes/7")).toBeLessThan(paths.findIndex((p) => p.startsWith("/api/recipes/7/enhance")));
+    expect(server.writes().find((w) => w.method === "PATCH")!.body).toEqual({ servings: 16, yieldText: "2 cups" });
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ servings: 16 }));
+  });
+
+  it("the serving size picked goes with the AI's nutrition", async () => {
+    const u = userEvent.setup();
+    const server = fakeServer({
+      "POST /api/recipes/7/portions": () => portions,
+      "PATCH /api/recipes/7": () => recipeJson({ servings: 16, yieldText: "2 cups" }),
+      "POST /api/recipes/7/enhance": () => suggestion(),
+      "POST /api/recipes/7/enhance/apply": () => recipeJson(),
+    });
+    render(<EnhanceWizard recipe={noServings} onClose={() => {}} onApplied={() => {}} />);
+    await u.click(await screen.findByRole("radio", { name: /2 tbsp/ }));
+    await u.click(screen.getByRole("button", { name: "Save and continue" }));
+    for (let i = 0; i < 4; i++) await u.click(await screen.findByRole("button", { name: "Accept change" }, { timeout: 3000 }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")).toBeTruthy());
+    expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body.nutrition).toMatchObject({ servingSize: "2 tbsp (30 g)" });
+  });
+
+  it("Cancel closes the wizard without checking anything", async () => {
+    const u = userEvent.setup();
+    const server = fakeServer({ "POST /api/recipes/7/portions": () => portions });
+    const onClose = vi.fn();
+    render(<EnhanceWizard recipe={noServings} onClose={onClose} onApplied={() => {}} />);
+    await u.click(await within(await screen.findByRole("region", { name: "How many servings?" })).findByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(server.sent.some((s) => s.path.startsWith("/api/recipes/7/enhance"))).toBe(false);
+  });
+});
+
+describe("Changing servings in the wizard after the check", () => {
+  it("divides the AI's nutrition again: per serving follows the new count", async () => {
+    const u = userEvent.setup();
+    const { server } = open({ "PATCH /api/recipes/7": () => recipeJson({ servings: 8 }) });
+    await screen.findByRole("region", { name: "Ingredients" }, { timeout: 3000 });
+    const details = screen.getByRole("group", { name: "Recipe details" });
+    await u.click(within(details).getByRole("button", { name: "Edit servings and size" }));
+    const servings = within(details).getByRole("textbox", { name: "Servings" });
+    await u.clear(servings);
+    await u.type(servings, "8");
+    await u.click(within(details).getByRole("button", { name: "Save details" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.method === "PATCH")).toBeTruthy());
+    for (let i = 0; i < 4; i++) await u.click(await screen.findByRole("button", { name: "Accept change" }));
+    await vi.waitFor(() => expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")).toBeTruthy());
+    // suggested for 4 servings: 410 kcal, 640 mg sodium; for 8 servings, half
+    expect(server.writes().find((w) => w.path === "/api/recipes/7/enhance/apply")!.body.nutrition).toMatchObject({ servings: 8, calories: 205, sodium: 320, protein: 16.5 });
+  });
+});
