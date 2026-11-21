@@ -371,3 +371,31 @@ describe("one post", () => {
     });
   });
 });
+
+describe("Discover's tiles across", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("starts 4 across; + and − change it, like the recipe list, and it sticks", async () => {
+    routes();
+    const u = userEvent.setup();
+    const { unmount } = render(<DiscoveryPage />);
+    await cards();
+    const grid = () => screen.getByRole("list", { name: "Recipes from your feeds" });
+    expect(grid()).toHaveAttribute("data-across", "4");
+    expect(grid().className).toContain("md:grid-cols-4");
+    await u.click(screen.getByRole("button", { name: "More tiles across" }));
+    expect(grid()).toHaveAttribute("data-across", "5");
+    expect(grid().className).toContain("xl:grid-cols-5");
+    await u.click(screen.getByRole("button", { name: "More tiles across" }));
+    expect(screen.getByRole("button", { name: "More tiles across" })).toBeDisabled();
+    for (let i = 0; i < 4; i++) await u.click(screen.getByRole("button", { name: "Fewer tiles across" }));
+    expect(grid()).toHaveAttribute("data-across", "2");
+    expect(screen.getByRole("button", { name: "Fewer tiles across" })).toBeDisabled();
+    await u.click(screen.getByRole("button", { name: "More tiles across" }));
+    unmount();
+    render(<DiscoveryPage />);
+    await cards();
+    expect(grid()).toHaveAttribute("data-across", "3");
+    expect(localStorage.getItem("culury-recipe-view")).toBeNull(); // the recipe list keeps its own
+  });
+});

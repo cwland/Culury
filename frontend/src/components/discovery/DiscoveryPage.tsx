@@ -5,6 +5,8 @@ import type { ImportJob } from "../recipes/ImportDialog";
 import { CaloriesByIngredient, NutritionFacts } from "../recipes/NutritionCard";
 import type { Nutrition } from "../../recipes";
 import { BackIcon, ChefIcon, DiscoverIcon, FeedIcon, LinkOutIcon, RefreshIcon } from "../Icons";
+import { gridClass, loadDiscoverAcross, saveDiscoverAcross } from "../recipes/recipeView";
+import { TilesAcross } from "../TilesAcross";
 
 // Discovery: recipes from the household's RSS / Atom feeds, as cards. Fetching, reading, filtering
 // and showing them is plain code on the server: no AI. #/discover is the grid, #/discover/:id one
@@ -119,6 +121,12 @@ function Grid() {
   const [managing, setManaging] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [said, setSaid] = useState("");
+  // tiles across, like the recipe list (its own number, kept in this browser)
+  const [across, setAcrossState] = useState(loadDiscoverAcross);
+  const setAcross = (n: number) => {
+    setAcrossState(n);
+    saveDiscoverAcross(n);
+  };
   const asked = useRef(0);
 
   const loadFeeds = useCallback(() => {
@@ -239,13 +247,16 @@ function Grid() {
                   ))}
                 </select>
               </label>
+              <span className="ml-auto flex items-center rounded-lg border border-line bg-page p-1 max-sm:hidden">
+                <TilesAcross across={across} onChange={setAcross} />
+              </span>
             </div>
             <Tags tags={tags} picked={picked} onToggle={toggle} onChange={saveTags} />
           </div>
 
           {items && !items.length && <p className="mt-6 text-center text-subtle">{picked.length ? "No posts match the tags you picked yet." : "No posts yet: try Refresh, or check Feeds."}</p>}
           {!!items?.length && (
-            <ul aria-label="Recipes from your feeds" className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
+            <ul aria-label="Recipes from your feeds" data-across={across} className={`mt-4 grid gap-3 sm:gap-4 ${gridClass(across)}`}>
               {items.map((i) => (
                 <li key={i.id}>
                   <Card item={i} showTags={picked.length > 0} />
@@ -278,11 +289,12 @@ function Grid() {
 
 function Card({ item, showTags }: { item: DiscoveryItem; showTags: boolean }) {
   return (
-    <a href={`#/discover/${item.id}`} className="group flex h-full flex-col overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
+    <a href={`#/discover/${item.id}`} className="group @container flex h-full flex-col overflow-hidden rounded-2xl bg-container shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]">
       <FeedImage src={item.thumbnailUrl} className="aspect-[4/3] w-full" />
-      <div className="flex flex-1 flex-col p-3">
-        <h3 className="line-clamp-2 min-h-[2lh] font-semibold leading-snug group-hover:text-action">{item.title}</h3>
-        <p className="mt-1 flex min-w-0 gap-1 overflow-hidden whitespace-nowrap text-xs text-subtle">
+      {/* text follows the tile's width (like recipe cards), so small tiles don't cut it off */}
+      <div className="flex flex-1 flex-col p-2.5 @[12rem]:p-3 @[20rem]:p-4">
+        <h3 className="line-clamp-2 min-h-[2lh] text-sm font-semibold leading-snug group-hover:text-action @[12rem]:text-base @[20rem]:text-lg">{item.title}</h3>
+        <p className="mt-1 flex min-w-0 gap-1 overflow-hidden whitespace-nowrap text-[11px] text-subtle @[12rem]:text-xs @[20rem]:text-sm">
           <span className="min-w-0 truncate">{item.feedTitle}</span>
           {item.pubDate && <span className="shrink-0">· {ago(item.pubDate)}</span>}
         </p>

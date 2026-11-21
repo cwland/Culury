@@ -13,7 +13,7 @@ export function loadView(): RecipeView {
     const n = Number(v.across);
     return {
       mode: v.mode === "list" ? "list" : "cards",
-      across: Number.isFinite(n) ? Math.min(MAX_ACROSS, Math.max(MIN_ACROSS, Math.round(n))) : DEFAULT.across,
+      across: clampAcross(n),
     };
   } catch {
     return DEFAULT;
@@ -23,6 +23,27 @@ export function loadView(): RecipeView {
 export function saveView(v: RecipeView) {
   try {
     localStorage.setItem(KEY, JSON.stringify(v));
+  } catch {
+    /* private mode or full: it just won't stick */
+  }
+}
+
+// Discover's grid has its own tiles across (cards only), kept in this browser too
+const DISCOVER_KEY = "culury-discover-across";
+const clampAcross = (n: number) => (Number.isFinite(n) ? Math.min(MAX_ACROSS, Math.max(MIN_ACROSS, Math.round(n))) : DEFAULT.across);
+
+export function loadDiscoverAcross(): number {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISCOVER_KEY) ?? "null");
+    return v == null ? DEFAULT.across : clampAcross(Number(v));
+  } catch {
+    return DEFAULT.across;
+  }
+}
+
+export function saveDiscoverAcross(n: number) {
+  try {
+    localStorage.setItem(DISCOVER_KEY, JSON.stringify(n));
   } catch {
     /* private mode or full: it just won't stick */
   }

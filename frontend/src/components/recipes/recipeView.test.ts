@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { gridClass, loadView, saveView } from "./recipeView";
+import { gridClass, loadDiscoverAcross, loadView, saveDiscoverAcross, saveView } from "./recipeView";
 
 describe("recipe list view setting", () => {
   beforeEach(() => localStorage.clear());
@@ -28,5 +28,27 @@ describe("recipe list view setting", () => {
     expect(gridClass(4).split(" ")[0]).toBe("grid-cols-2");
     expect(gridClass(6)).toContain("xl:grid-cols-6");
     expect(gridClass(6)).not.toMatch(/(^| )grid-cols-6/);
+  });
+});
+
+describe("Discover's tiles across", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("starts at 4, remembers what was picked, apart from the recipe list", () => {
+    expect(loadDiscoverAcross()).toBe(4);
+    saveDiscoverAcross(6);
+    expect(loadDiscoverAcross()).toBe(6);
+    expect(loadView().across).toBe(4);
+    saveView({ mode: "cards", across: 2 });
+    expect(loadDiscoverAcross()).toBe(6);
+  });
+
+  it("ignores broken or out-of-range saved values", () => {
+    localStorage.setItem("culury-discover-across", "{not json");
+    expect(loadDiscoverAcross()).toBe(4);
+    localStorage.setItem("culury-discover-across", "40");
+    expect(loadDiscoverAcross()).toBe(6);
+    localStorage.setItem("culury-discover-across", "1");
+    expect(loadDiscoverAcross()).toBe(2);
   });
 });

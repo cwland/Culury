@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { formatMinutes, recipesChanged, rememberList, type CollectionInfo, type RecipeSummary, type TagInfo } from "../../recipes";
-import { ChefIcon, ClockIcon, FilterIcon, GridViewIcon, ListViewIcon, MinusIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
-import { MAX_ACROSS, MIN_ACROSS, gridClass, loadView, saveView, type RecipeView } from "./recipeView";
+import { ChefIcon, ClockIcon, FilterIcon, GridViewIcon, ListViewIcon, PinIcon, PlusIcon, SearchIcon, StarIcon } from "../Icons";
+import { gridClass, loadView, saveView, type RecipeView } from "./recipeView";
+import { TilesAcross, tileButton } from "../TilesAcross";
 import { Popup } from "../Popup";
 import ImportDialog from "./ImportDialog";
 
@@ -463,23 +464,16 @@ function RecipeCard({ r }: { r: RecipeSummary }) {
 }
 
 function ViewControls({ view, onChange }: { view: RecipeView; onChange: (v: RecipeView) => void }) {
-  const btn = "flex size-8 items-center justify-center rounded-md text-subtle hover:bg-brand-subtle hover:text-action disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-subtle";
+  const btn = tileButton;
   const list = view.mode === "list";
   const label = list ? "Show as cards" : "Show as a list";
   return (
     <div className="flex items-center gap-1 rounded-lg border border-line bg-container p-1">
       {!list && (
-        // phones always show 2 across, so the size buttons only show on wider screens
-        <span className="hidden items-center gap-1 sm:flex">
-          <button type="button" aria-label="Fewer tiles across" title="Fewer tiles across" disabled={view.across <= MIN_ACROSS} onClick={() => onChange({ ...view, across: view.across - 1 })} className={btn}>
-            <MinusIcon />
-          </button>
-          <span aria-hidden className="w-4 text-center text-sm font-semibold tabular-nums">{view.across}</span>
-          <button type="button" aria-label="More tiles across" title="More tiles across" disabled={view.across >= MAX_ACROSS} onClick={() => onChange({ ...view, across: view.across + 1 })} className={btn}>
-            <PlusIcon className="size-4" />
-          </button>
-          <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
-        </span>
+        <>
+          <TilesAcross across={view.across} onChange={(across) => onChange({ ...view, across })} />
+          <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-line sm:block" />
+        </>
       )}
       <button type="button" aria-label={label} title={label} onClick={() => onChange({ ...view, mode: list ? "cards" : "list" })} className={btn}>
         {list ? <GridViewIcon /> : <ListViewIcon />}

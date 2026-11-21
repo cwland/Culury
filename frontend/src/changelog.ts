@@ -10,6 +10,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.3",
+    date: "2026-11-20",
+    title: "Tiles across on Discover",
+    changes: [
+      "Discover has the same − / + tiles across control as your recipes, from 2 to 6. It keeps its own number, so Discover and your recipes can be set differently.",
+      "Discover's cards size their text to fit the tile, like recipe cards.",
+    ],
+  },
+  {
     version: "1.3.2",
     date: "2026-11-18",
     title: "Improve with AI asks for servings first",
