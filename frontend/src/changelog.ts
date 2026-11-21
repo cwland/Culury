@@ -5,17 +5,23 @@ export interface Release {
   version: string;
   date: string; // YYYY-MM-DD
   title?: string;
-  changes: string[];
+  // Plain bullets; or sorted under Added / Changed / Fixed. **Lead.** at the start shows bold.
+  changes?: string[];
+  added?: string[];
+  changed?: string[];
+  fixed?: string[];
 }
 
 export const CHANGELOG: Release[] = [
   {
     version: "1.3.3",
     date: "2026-11-20",
-    title: "Tiles across on Discover",
-    changes: [
-      "Discover has the same − / + tiles across control as your recipes, from 2 to 6. It keeps its own number, so Discover and your recipes can be set differently.",
-      "Discover's cards size their text to fit the tile, like recipe cards.",
+    title: "Tiles across on Discover; a new What's new",
+    added: [
+      "**Tiles across on Discover.** The same − / + control as your recipes, from 2 to 6 tiles in a row. Discover keeps its own number, so it and your recipes can be set differently. Discover's cards size their text to fit the tile, like recipe cards.",
+    ],
+    changed: [
+      "**What's new looks different.** The newest version is a card at the top, with its changes under Added, Changed and Fixed. Earlier updates are folded into a list: click › to open one.",
     ],
   },
   {

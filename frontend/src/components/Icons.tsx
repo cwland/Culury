@@ -1,6 +1,10 @@
 // App icons from Lucide (lucide.dev, open source, ISC license). Each wrapper keeps the app's own
 // name and default size, so screens just use <RecipesIcon /> etc.
 import {
+  BadgeCheck,
+  CirclePlus,
+  Wrench,
+  RefreshCcwDot,
   ArrowLeft,
   Compass,
   RefreshCw,
@@ -117,3 +121,7 @@ export const Logo = ({ className = "size-8" }: P) => (
     <path d="M10 22.5 18 14" stroke="var(--color-brand)" strokeWidth="1.8" strokeLinecap="round" />
   </svg>
 );
+export const WhatsNewIcon = icon(BadgeCheck, "size-8", 1.6);
+export const AddedIcon = icon(CirclePlus, "size-4", 2);
+export const ChangedIcon = icon(RefreshCcwDot, "size-4", 2);
+export const FixedIcon = icon(Wrench, "size-4", 2);
