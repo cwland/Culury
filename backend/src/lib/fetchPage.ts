@@ -77,7 +77,7 @@ export async function fetchUrl(url: string, opts: FetchOptions = {}): Promise<{ 
         continue;
       }
       // Turned away: read the reply page (a little of it) to tell a security check from a refusal
-      if ([401, 403, 429, 503].includes(res.status)) {
+      if ([401, 402, 403, 429, 503].includes(res.status)) {
         const page = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0))).subarray(0, 512 * 1024).toString("utf8");
         throw new BlockedError(detectBlock(res.status, page) ?? { reason: "refused" }, u.hostname, res.status);
       }

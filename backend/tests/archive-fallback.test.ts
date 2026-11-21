@@ -45,6 +45,15 @@ describe("a saved copy when the site blocks the import", () => {
     expect(log.detail).toMatch(/asked for a security check/);
   });
 
+  it("a 402 (how Allrecipes turns apps away) tries the saved copy too", async () => {
+    const url = "https://www.allrecipes.test/recipe/13647/pork";
+    t.web.pages[url] = { status: 402, body: "Payment Required" };
+    t.web.pages[waybackHas(url)] = { body: fixture("atk-paywalled.html") };
+    const job = await importUrl(url);
+    expect(job).toMatchObject({ status: "done", result: { how: "schema.org", savedCopy: { from: "Wayback Machine" } } });
+    expect((await t.api("GET", `/api/recipes/${job.result.recipeId}`)).body.sourceUrl).toBe(url);
+  });
+
   it("no Wayback copy: archive.ph (its pages have no recipe data, so the AI reads the text)", async () => {
     await turnOnAi();
     t.web.pages["https://food.test/pork"] = { status: 403, body: "Forbidden" };

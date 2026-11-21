@@ -63,6 +63,14 @@ describe("blocked", () => {
     expect(c.result.blocked).toMatchObject({ reason: "unavailable" });
   });
 
+  it("402 (Allrecipes and other Dotdash Meredith sites answer apps with it) counts as refused", async () => {
+    t.web.pages["https://www.allrecipes.test/recipe/1"] = { status: 402, body: "Payment Required" };
+    const job = await importUrl("https://www.allrecipes.test/recipe/1");
+    expect(job.status).toBe("failed");
+    expect(job.error).toBe("www.allrecipes.test turned the request away (402). Some sites block apps.");
+    expect(job.result.blocked).toMatchObject({ reason: "refused", url: "https://www.allrecipes.test/recipe/1" });
+  });
+
   it("a paywall: with AI off it says paywall, not “turn on AI”", async () => {
     t.web.pages["https://news.test/pork"] = { body: '<html><head><title>Pork</title><script type="application/ld+json">{"@type":"NewsArticle","headline":"Pork","isAccessibleForFree":false}</script></head><body><p>Subscribe to unlock this recipe.</p></body></html>' };
     const job = await importUrl("https://news.test/pork");

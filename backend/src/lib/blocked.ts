@@ -39,7 +39,8 @@ export function detectBlock(status: number, html: string, opts: { noRecipe?: boo
   const check = CHECKS.find(([, re]) => re.test(html));
   if (check && (!ok || visibleText(html).length < 1500)) return { reason: "captcha", by: check[0] };
   if (status === 429) return { reason: "rate-limited" };
-  if (status === 403 || status === 401) return { reason: "refused" };
+  // 402 "Payment Required": Allrecipes and the other Dotdash Meredith sites answer apps with it
+  if (status === 403 || status === 401 || status === 402) return { reason: "refused" };
   if (status === 503) return { reason: "unavailable" };
   if (!ok) return null;
   if (markedNotFree(html)) return { reason: "paywall" };

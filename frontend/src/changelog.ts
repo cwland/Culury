@@ -14,6 +14,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.4",
+    date: "2026-11-20",
+    title: "Allrecipes links",
+    fixed: [
+      "**Allrecipes (and its sister sites) now count as blocked.** They answer apps with “402”, which Culury showed as a bare error. Now Culury tries a saved copy of the page, and if there isn't one, shows the usual blocked-site help: import it from your browser with Culury Companion or the Send to Culury bookmark, or paste the recipe.",
+    ],
+  },
+  {
     version: "1.3.3",
     date: "2026-11-20",
     title: "Tiles across on Discover; a new What's new",
