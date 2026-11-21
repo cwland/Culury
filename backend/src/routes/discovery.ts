@@ -196,7 +196,7 @@ export default async function discoveryRoutes(app: FastifyInstance) {
     });
     const shown = fresh(p);
     const payload = shown?.recipe
-      ? { url: p.link, discoveryItemId: p.id, preview: { recipe: shown.recipe, how: shown.how, fromFeed: shown.from === "feed" } }
+      ? { url: p.link, discoveryItemId: p.id, preview: { recipe: shown.recipe, how: shown.how, fromFeed: shown.from === "feed", ...(shown.savedCopy ? { savedCopy: shown.savedCopy } : {}) } }
       : { url: p.link, feedCopy: feedCopyOf(p), discoveryItemId: p.id };
     const job = await app.jobs.enqueue("import-url", payload, userOf(req));
     return reply.status(202).send(jobView(job));

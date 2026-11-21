@@ -14,6 +14,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.5",
+    date: "2026-11-20",
+    title: "Discover uses saved copies too",
+    fixed: [
+      "**Discover tries saved copies.** When a recipe's site keeps Culury out (Allrecipes, for one), opening the post, Read with AI and Import Recipe now look for a saved copy of the page (Wayback Machine, then archive.ph) before falling back to the feed's post, the same way Import from a link does. The preview says when it came from a saved copy, with a link to it.",
+    ],
+  },
+  {
     version: "1.3.4",
     date: "2026-11-20",
     title: "Allrecipes links",

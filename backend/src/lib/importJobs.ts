@@ -145,7 +145,7 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
   // When the site keeps it from us (a security check, a paywall, a refusal), a saved copy in a web
   // archive is tried next, unless that's switched off in Settings › Recipes.
   queue.handle("import-url", async (job) => {
-    const { url, force, html: sent, feedCopy, discoveryItemId, preview } = job.payload as { url: string; force?: boolean; html?: string; feedCopy?: string; discoveryItemId?: number; preview?: { recipe: ImportedRecipe; how: JobResult["how"] | null; fromFeed: boolean } };
+    const { url, force, html: sent, feedCopy, discoveryItemId, preview } = job.payload as { url: string; force?: boolean; html?: string; feedCopy?: string; discoveryItemId?: number; preview?: { recipe: ImportedRecipe; how: JobResult["how"] | null; fromFeed: boolean; savedCopy?: JobResult["savedCopy"] } };
     const remember = (result: JobResult) => d.db.update(jobs).set({ result }).where(eq(jobs.id, job.id));
     // From Discovery: the post remembers the recipe it became (or the one already saved)
     const linked = async (result: JobResult) => {
@@ -158,9 +158,9 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         const dup = await findDuplicate(d.db, url);
         if (dup) return linked(await alreadySaved(d, url, dup));
       }
-      let read: Read;
+      let read: Read | undefined;
       // From Discovery, the recipe as it was shown: saved as is (no reading the page again)
-      if (preview) read = { r: preview.recipe, how: preview.how === "schema.org" || preview.how === "ai" || preview.how === "text" ? preview.how : "schema.org", info: pageInfo("", url), sourceUrl: preview.recipe.sourceUrl ?? url, fromFeed: preview.fromFeed || undefined };
+      if (preview) read = { r: preview.recipe, how: preview.how === "schema.org" || preview.how === "ai" || preview.how === "text" ? preview.how : "schema.org", info: pageInfo("", url), sourceUrl: preview.recipe.sourceUrl ?? url, fromFeed: preview.fromFeed || undefined, savedCopy: preview.savedCopy };
       else try {
         // Sent from your browser (Send to Culury): that page, not a fetch
         const page = sent ? { url, contentType: "text/html", body: Buffer.from(sent, "utf8") } : await fetchUrl(url, d.fetchOptions);
@@ -174,34 +174,39 @@ export function registerImportJobs(queue: JobQueue, d: Deps) {
         }
         read = { ...(await readPage(d.ai, html, page.url)), sourceUrl };
       } catch (e) {
-        // From Discovery: the site couldn't be read (kept out, gone, no recipe there), so the feed's
-        // copy of the post is read instead, the same way (its recipe data, or AI on its text)
-        if (feedCopy) {
-          try {
-            read = { ...(await readPage(d.ai, feedCopy, url)), sourceUrl: url, why: `${(e as Error).message} Read from the feed's copy of the post instead.`, fromFeed: true };
-          } catch (err) {
-            throw new Error(`${(e as Error).message} The feed's copy of the post didn't have the recipe either${err instanceof AiError ? ` (${(err as Error).message})` : ""}.`);
+        // Kept from us: look for a saved copy first (saying which archive, for the import window).
+        // From Discovery, when that finds nothing (or the site just couldn't be read), the feed's
+        // copy of the post is read instead, the same way (its recipe data, or AI on its text).
+        let why = (e as Error).message;
+        let copyError: CopyError | null = null;
+        if (e instanceof BlockedError && !sent && (await isOn(d.db, "savedCopies"))) {
+          const blocked = { ...e.block, url };
+          const { found, tried } = await findSavedCopy(url, d.fetchOptions ?? {}, async (copy) => {
+            try {
+              return await readPage(d.ai, copy.html, copy.pageUrl);
+            } catch (err) {
+              if (err instanceof BlockedError || err instanceof AiError) return null; // nothing to read there
+              throw err;
+            }
+          }, (from) => remember({ blocked, trying: from }).then(() => {}));
+          if (found) {
+            const original = new URL(url).hostname;
+            const canonical = found.recipe.info.canonical;
+            read = { ...found.recipe, sourceUrl: canonical && /^https?:/.test(canonical) && new URL(canonical).hostname === original ? canonical : url, savedCopy: { from: found.copy.from, url: found.copy.url, ...(found.copy.date ? { date: found.copy.date } : {}) }, why: e.message };
+          } else {
+            await remember({ blocked, savedCopies: tried });
+            why = `${e.message} ${copiesMessage(tried)}`;
+            copyError = new CopyError(why, e);
           }
-        } else {
-        if (!(e instanceof BlockedError)) throw e;
-        if (sent || !(await isOn(d.db, "savedCopies"))) throw e; // you had the page open: no archives
-        // Kept from us: look for a saved copy (saying which archive, for the import window)
-        const blocked = { ...e.block, url };
-        const { found, tried } = await findSavedCopy(url, d.fetchOptions ?? {}, async (copy) => {
-          try {
-            return await readPage(d.ai, copy.html, copy.pageUrl);
-          } catch (err) {
-            if (err instanceof BlockedError || err instanceof AiError) return null; // nothing to read there
-            throw err;
-          }
-        }, (from) => remember({ blocked, trying: from }).then(() => {}));
-        if (!found) {
-          await remember({ blocked, savedCopies: tried });
-          throw new CopyError(`${e.message} ${copiesMessage(tried)}`, e);
         }
-        const original = new URL(url).hostname;
-        const canonical = found.recipe.info.canonical;
-        read = { ...found.recipe, sourceUrl: canonical && /^https?:/.test(canonical) && new URL(canonical).hostname === original ? canonical : url, savedCopy: { from: found.copy.from, url: found.copy.url, ...(found.copy.date ? { date: found.copy.date } : {}) }, why: e.message };
+        if (!read) {
+          if (feedCopy) {
+            try {
+              read = { ...(await readPage(d.ai, feedCopy, url)), sourceUrl: url, why: `${why} Read from the feed's copy of the post instead.`, fromFeed: true };
+            } catch (err) {
+              throw new Error(`${why} The feed's copy of the post didn't have the recipe either${err instanceof AiError ? ` (${(err as Error).message})` : ""}.`);
+            }
+          } else throw copyError ?? e;
         }
       }
       const { r, how, info, sourceUrl, savedCopy } = read;

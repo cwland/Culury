@@ -305,6 +305,19 @@ describe("one post", () => {
       expect(within(r).getByText(/That page couldn't be reached \(403\)/)).toBeInTheDocument();
     });
 
+    it("read from a saved copy (the site kept Culury out): says which, when, and links to it", async () => {
+      open({ "GET /api/discovery/items/5/recipe": () => preview({ how: "schema.org", from: "copy", savedCopy: { from: "Wayback Machine", url: "https://web.archive.org/web/20251201185510/https://kitchen.example.com/p5", date: "2025-12-01" }, problem: "www.allrecipes.com turned the request away (402). Some sites block apps." }) });
+      const r = await region();
+      expect(await within(r).findByText("Read from a saved copy (Wayback Machine, Dec 1, 2025), without AI")).toBeInTheDocument();
+      expect(within(r).getByRole("link", { name: "Open the saved copy" })).toHaveAttribute("href", "https://web.archive.org/web/20251201185510/https://kitchen.example.com/p5");
+      expect(within(r).getByText(/turned the request away \(402\)/)).toBeInTheDocument();
+    });
+
+    it("read with AI from a saved copy", async () => {
+      open({ "GET /api/discovery/items/5/recipe": () => preview({ how: "ai", from: "copy", savedCopy: { from: "archive.ph", url: "https://archive.ph/Xy12" }, problem: "kept out" }) });
+      expect(await within(await region()).findByText("Read with AI from a saved copy (archive.ph)")).toBeInTheDocument();
+    });
+
     it("no recipe on the page: says why, and Read with AI reads it when asked; Import only once there's a recipe", async () => {
       const s = open({
         "GET /api/discovery/items/5/recipe": () => preview({ recipe: null, how: null, from: null, problem: "The recipe's page has no recipe data Culury can read without AI." }),

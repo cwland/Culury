@@ -381,7 +381,8 @@ export const substitutions = pgTable(
 export interface RecipePreview {
   recipe: import("../lib/importRecipe.js").ImportedRecipe | null;
   how: "schema.org" | "text" | "ai" | null;
-  from: "site" | "feed" | null; // the recipe's own page, or the feed's copy of the post
+  from: "site" | "copy" | "feed" | null; // the recipe's own page, a saved copy of it (the site kept Culury out), or the feed's copy of the post
+  savedCopy?: { from: string; url: string; date?: string }; // from "copy": which archive, the copy's address and date
   problem: string | null; // why the site's page couldn't give the recipe
 }
 

@@ -107,6 +107,66 @@ describe("the recipe preview on a discovered post", () => {
     expect(String(t.ai.calls.at(-1)!.body.messages.at(-1).content)).toContain("A soup we like a lot.");
   });
 
+  // A site that keeps Culury out (Allrecipes answers 402): a saved copy of the page, like Import
+  const waybackHas = (url: string, ts = "20251201185510") => {
+    t.web.pages[`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`] = { type: "application/json", body: JSON.stringify({ url, archived_snapshots: { closest: { status: "200", available: true, url: `http://web.archive.org/web/${ts}/${url}`, timestamp: ts } } }) };
+    return `https://web.archive.org/web/${ts}id_/${url}`;
+  };
+
+  it("the site keeps Culury out: a saved copy's recipe data comes before the feed's post, still no AI", async () => {
+    const id = (await subscribe())("Pork Roast");
+    t.web.pages[LINK] = { status: 402, type: "text/html", body: "Payment Required" };
+    t.web.pages[waybackHas(LINK)] = { type: "text/html", body: site("Pork Roast (saved copy)") };
+    await aiOn();
+    const r = (await preview(id)).body;
+    expect(r).toMatchObject({
+      how: "schema.org",
+      from: "copy",
+      savedCopy: { from: "Wayback Machine", url: `https://web.archive.org/web/20251201185510/${LINK}`, date: "2025-12-01" },
+      recipe: { title: "Pork Roast (saved copy)", ingredients: ["1 (5-pound) pork butt", "3 tbsp brown sugar"], sourceUrl: LINK },
+    });
+    expect(r.problem).toMatch(/turned the request away \(402\)/);
+    expect(t.ai.calls).toHaveLength(0);
+    // Import saves it as shown, and says it came from the saved copy
+    const start = await t.api("POST", `/api/discovery/items/${id}/import`);
+    await t.app.jobs.drain();
+    const job = (await t.api("GET", `/api/imports/${start.body.id}`)).body;
+    expect(job).toMatchObject({ status: "done", result: { title: "Pork Roast (saved copy)", savedCopy: { from: "Wayback Machine", date: "2025-12-01" } } });
+  });
+
+  it("saved copies turned off in Settings: straight to the feed's post", async () => {
+    const id = (await subscribe())("Pork Roast");
+    t.web.pages[LINK] = { status: 402, type: "text/html", body: "Payment Required" };
+    t.web.pages[waybackHas(LINK)] = { type: "text/html", body: site("Pork Roast (saved copy)") };
+    await t.api("PUT", "/api/settings/features", { savedCopies: false });
+    const r = (await preview(id)).body;
+    expect(r).toMatchObject({ how: "text", from: "feed" });
+    expect(t.web.calls.some((u) => u.includes("archive.org"))).toBe(false);
+  });
+
+  it("Read with AI, the site blocked: a saved copy's text is read before the feed's post", async () => {
+    const id = (await subscribe())("Plain Soup");
+    t.web.pages[PLAIN] = { status: 402, type: "text/html", body: "Payment Required" };
+    t.web.pages[`https://archive.ph/newest/${PLAIN}`] = { status: 302, location: "https://archive.ph/Xy12", body: "" };
+    t.web.pages["https://archive.ph/Xy12"] = { type: "text/html", body: "<html><body><h1>Plain Soup</h1><p>Saved copy: 2 onions, 6 cups stock. Simmer.</p></body></html>" };
+    await aiOn();
+    await preview(id);
+    t.ai.respond = () => reply({ isRecipe: true, title: "Plain Soup", ingredients: ["2 onions", "6 cups stock"], steps: ["Simmer."] });
+    const r = (await t.api("POST", `/api/discovery/items/${id}/recipe/ai`)).body;
+    expect(r).toMatchObject({ how: "ai", from: "copy", savedCopy: { from: "archive.ph", url: "https://archive.ph/Xy12" }, recipe: { sourceUrl: PLAIN } });
+    expect(String(t.ai.calls.at(-1)!.body.messages.at(-1).content)).toContain("2 onions, 6 cups stock");
+  });
+
+  it("Read with AI, blocked and no saved copy anywhere: the feed's post, and the problem says both", async () => {
+    const id = (await subscribe())("Plain Soup");
+    t.web.pages[PLAIN] = { status: 402, type: "text/html", body: "Payment Required" };
+    await aiOn();
+    t.ai.respond = () => reply({ isRecipe: true, title: "Plain Soup", ingredients: ["1 onion"], steps: ["Simmer."] });
+    const r = (await t.api("POST", `/api/discovery/items/${id}/recipe/ai`)).body;
+    expect(r).toMatchObject({ how: "ai", from: "feed" });
+    expect(r.problem).toMatch(/\(402\).*No saved copy could be found either\./);
+  });
+
   it("Read with AI with AI off (409), or nothing to read (422): says why", async () => {
     const id = (await subscribe())("Plain Soup");
     t.web.pages[PLAIN] = { type: "text/html", body: "<html><body>Soup.</body></html>" };

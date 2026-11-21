@@ -63,6 +63,31 @@ describe("Import Recipe from a discovered post", () => {
     expect((await t.api("GET", `/api/recipes/${job.result.recipeId}`)).body.sourceUrl).toBe(LINK);
   });
 
+  it("the site keeps Culury out (Allrecipes: 402): a saved copy of the page comes before the feed's copy", async () => {
+    const items = await subscribe();
+    t.web.pages[LINK] = { status: 402, type: "text/html", body: "Payment Required" };
+    const ts = "20251201185510";
+    t.web.pages[`https://archive.org/wayback/available?url=${encodeURIComponent(LINK)}`] = { type: "application/json", body: JSON.stringify({ url: LINK, archived_snapshots: { closest: { status: "200", available: true, url: `http://web.archive.org/web/${ts}/${LINK}`, timestamp: ts } } }) };
+    t.web.pages[`https://web.archive.org/web/${ts}id_/${LINK}`] = { type: "text/html", body: site };
+    const { job } = await importItem(items.find((i) => i.title === "Pork Roast")!.id);
+    expect(job).toMatchObject({ status: "done", result: { title: "Pork Roast (from the site)", how: "schema.org", savedCopy: { from: "Wayback Machine" } } });
+    expect(job.result.fromFeed).toBeUndefined();
+    expect(t.ai.calls).toHaveLength(0);
+    expect((await t.api("GET", `/api/recipes/${job.result.recipeId}`)).body.sourceUrl).toBe(LINK);
+  });
+
+  it("kept out and no saved copy: the feed's copy, and the reason says both", async () => {
+    const items = await subscribe();
+    t.web.pages[LINK] = { status: 402, type: "text/html", body: "Payment Required" };
+    await t.api("PUT", "/api/settings/ai", { services: [{ provider: "openai", model: "tiny", apiKey: "k" }], maxPerRun: 50 });
+    await t.api("PUT", "/api/settings/features", { autoNutrition: false });
+    t.ai.respond = () => reply({ title: "Pork Roast", ingredients: ["1 pork butt", "3 tbsp brown sugar"], steps: ["Roast it low and slow."] });
+    const { job } = await importItem(items.find((i) => i.title === "Pork Roast")!.id);
+    expect(job).toMatchObject({ status: "done", result: { fromFeed: true } });
+    const log = (await t.api("GET", "/api/logs?category=import")).body[0];
+    expect(log.detail).toMatch(/\(402\).*No saved copy could be found either\..*feed's copy/);
+  });
+
   it("neither works: says why", async () => {
     const items = await subscribe();
     t.web.pages[LINK] = { status: 404, type: "text/html", body: "gone" };

@@ -57,7 +57,8 @@ export interface PreviewRecipe {
 export interface RecipePreview {
   recipe: PreviewRecipe | null;
   how: "schema.org" | "text" | "ai" | null;
-  from: "site" | "feed" | null;
+  from: "site" | "copy" | "feed" | null;
+  savedCopy?: { from: string; url: string; date?: string }; // from "copy": the site kept Culury out
   problem: string | null;
   canAi: boolean;
 }
@@ -547,8 +548,12 @@ function Post({ id }: { id: number }) {
 }
 
 const minutes = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}`);
-const howRead = (pv: RecipePreview) =>
-  pv.how === "ai" ? `Read with AI from ${pv.from === "feed" ? "the feed's post" : "the recipe's site"}` : pv.from === "feed" ? "Read from the feed's post, without AI" : "Read from the recipe's site, without AI";
+const copyDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const copyName = (pv: RecipePreview) => (pv.savedCopy ? `a saved copy (${[pv.savedCopy.from, pv.savedCopy.date && copyDate(pv.savedCopy.date)].filter(Boolean).join(", ")})` : "a saved copy");
+const howRead = (pv: RecipePreview) => {
+  const where = pv.from === "feed" ? "the feed's post" : pv.from === "copy" ? copyName(pv) : "the recipe's site";
+  return pv.how === "ai" ? `Read with AI from ${where}` : `Read from ${where}, without AI`;
+};
 
 // The staging area: the recipe as read from its page, before anything is saved. Read with AI and
 // Calculate nutrition are the only AI here, and only when pressed.
@@ -594,7 +599,12 @@ function Preview({ id, postTitle, preview: pv, error, onChange }: { id: number; 
       {pv && r && (
         <>
           <p className="text-xs font-semibold uppercase tracking-wide text-subtle">{howRead(pv)}</p>
-          {pv.from === "feed" && pv.problem && <p className="mt-1 text-xs text-subtle">The recipe's site: {pv.problem}</p>}
+          {(pv.from === "feed" || pv.from === "copy") && pv.problem && <p className="mt-1 text-xs text-subtle">The recipe's site: {pv.problem}</p>}
+          {pv.from === "copy" && pv.savedCopy && (
+            <a href={pv.savedCopy.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-link hover:underline">
+              Open the saved copy <LinkOutIcon className="size-3" />
+            </a>
+          )}
           {/* the recipe's own name, when the post calls it something else */}
           {r.title.trim().toLowerCase() !== postTitle.trim().toLowerCase() && <h2 className="mt-2 text-xl font-bold">{r.title}</h2>}
           {(() => {
